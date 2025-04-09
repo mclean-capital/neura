@@ -2,13 +2,18 @@
 
 ### Usage
 
-#### Multimodal
+#### Backend
+
+- cd nuera-backend
+- `python3 agent.py dev`
+
+#### Multimodal Frontend
 
 - cd agents-playground
 - `npm install`
 - `npm run dev`
 
-#### Audio Only
+#### Audio Only Frontend
 
 - cd nuera-frontend
 - `pnpm install`
