@@ -39,10 +39,10 @@ export default function Home() {
     <main className="flex flex-col h-screen bg-gray-900 text-white">
       <header className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <div className="mx-auto  w-20 h-20 rounded-full flex items-center pointer-events-none justify-center">
+          <div className="mx-auto w-10 h-10 rounded-full flex items-center pointer-events-none justify-center">
             <Image
-              width={200}
-              height={200}
+              width={100}
+              height={100}
               priority
               src={NeuraLogo}
               alt="neura logo"
