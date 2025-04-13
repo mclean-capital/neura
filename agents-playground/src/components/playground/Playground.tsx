@@ -55,6 +55,7 @@ export default function Playground({
   const { localParticipant } = useLocalParticipant();
 
   const voiceAssistant = useVoiceAssistant();
+  console.warn("voiceAssistant: ", voiceAssistant);
 
   const roomState = useConnectionState();
   const tracks = useTracks();
@@ -216,20 +217,24 @@ export default function Playground({
       );
     }
     return <></>;
-  }, [config.settings.theme_color, voiceAssistant.audioTrack, voiceAssistant.agent]);
+  }, [
+    config.settings.theme_color,
+    voiceAssistant.audioTrack,
+    voiceAssistant.agent,
+  ]);
 
   const handleRpcCall = useCallback(async () => {
     if (!voiceAssistant.agent || !room) return;
-    
+
     try {
       const response = await room.localParticipant.performRpc({
         destinationIdentity: voiceAssistant.agent.identity,
         method: rpcMethod,
         payload: rpcPayload,
       });
-      console.log('RPC response:', response);
+      console.log("RPC response:", response);
     } catch (e) {
-      console.error('RPC call failed:', e);
+      console.error("RPC call failed:", e);
     }
   }, [room, rpcMethod, rpcPayload, voiceAssistant.agent]);
 
@@ -246,7 +251,11 @@ export default function Playground({
           <div className="flex flex-col gap-4">
             <EditableNameValueRow
               name="Room"
-              value={roomState === ConnectionState.Connected ? name : config.settings.room_name}
+              value={
+                roomState === ConnectionState.Connected
+                  ? name
+                  : config.settings.room_name
+              }
               valueColor={`${config.settings.theme_color}-500`}
               onValueChange={(value) => {
                 const newSettings = { ...config.settings };
@@ -258,9 +267,11 @@ export default function Playground({
             />
             <EditableNameValueRow
               name="Participant"
-              value={roomState === ConnectionState.Connected ? 
-                (localParticipant?.identity || '') : 
-                (config.settings.participant_name || '')}
+              value={
+                roomState === ConnectionState.Connected
+                  ? localParticipant?.identity || ""
+                  : config.settings.participant_name || ""
+              }
               valueColor={`${config.settings.theme_color}-500`}
               onValueChange={(value) => {
                 const newSettings = { ...config.settings };
@@ -280,7 +291,7 @@ export default function Playground({
               className="w-full text-white text-sm bg-transparent border border-gray-800 rounded-sm px-3 py-2"
               placeholder="RPC method name"
             />
-            
+
             <div className="text-xs text-gray-500 mt-2">RPC Payload</div>
             <textarea
               value={rpcPayload}
@@ -289,14 +300,15 @@ export default function Playground({
               placeholder="RPC payload"
               rows={2}
             />
-            
+
             <button
               onClick={handleRpcCall}
               disabled={!voiceAssistant.agent || !rpcMethod}
               className={`mt-2 px-2 py-1 rounded-sm text-xs 
-                ${voiceAssistant.agent && rpcMethod 
-                  ? `bg-${config.settings.theme_color}-500 hover:bg-${config.settings.theme_color}-600` 
-                  : 'bg-gray-700 cursor-not-allowed'
+                ${
+                  voiceAssistant.agent && rpcMethod
+                    ? `bg-${config.settings.theme_color}-500 hover:bg-${config.settings.theme_color}-600`
+                    : "bg-gray-700 cursor-not-allowed"
                 } text-white`}
             >
               Perform RPC Call

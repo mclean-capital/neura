@@ -1,66 +1,137 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
+# Neura Backend
 
-# Python Voice Agent
+A Node.js backend server for the Neura application, providing Gemini Live API integration with Google authentication.
 
-<p>
-  <a href="https://cloud.livekit.io/projects/p_/sandbox"><strong>Deploy a sandbox app</strong></a>
-  •
-  <a href="https://docs.livekit.io/agents/overview/">LiveKit Agents Docs</a>
-  •
-  <a href="https://livekit.io/cloud">LiveKit Cloud</a>
-  •
-  <a href="https://blog.livekit.io/">Blog</a>
-</p>
+## Features
 
-A basic example of a voice agent using LiveKit and Python.
+- **Gemini Live API Integration**: Direct REST API integration with Google's Gemini Live API for AI-powered conversations
+- **Streaming Responses**: WebSocket-based streaming of AI responses in real-time
+- **Google Authentication**: Secure authentication using Google OAuth
+- **Access Restriction**: Limit access to specific email addresses
+- **Rate Limiting**: Prevent abuse with built-in rate limiting
 
-## Dev Setup
+## Prerequisites
 
-Clone the repository and install dependencies to a virtual environment:
+- Node.js (v16+)
+- npm or yarn
+- Google Cloud account with API access
+- Gemini API key
+- Google OAuth credentials
 
-```console
-# Linux/macOS
-cd voice-pipeline-agent-python
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python3 agent.py download-files
+## Setup
+
+1. Clone the repository or download the source code
+2. Install dependencies:
+
+```bash
+npm install
 ```
 
-<details>
-  <summary>Windows instructions (click to expand)</summary>
-  
-```cmd
-:: Windows (CMD/PowerShell)
-cd voice-pipeline-agent-python
-python3 -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-</details>
+3. Create a `.env.local` file in the root directory based on `.env.example`:
 
+```bash
+# Server configuration
+PORT=3001
 
-Set up the environment by copying `.env.example` to `.env.local` and filling in the required values:
+# Google Gemini API
+GEMINI_API_KEY=your_gemini_api_key_here
 
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-- `OPENAI_API_KEY`
-- `CARTESIA_API_KEY`
-- `DEEPGRAM_API_KEY`
+# Google OAuth
+GOOGLE_CLIENT_ID=your_google_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
 
-You can also do this automatically using the LiveKit CLI:
+# JWT Secret for session tokens
+JWT_SECRET=your_strong_jwt_secret_key
 
-```console
-lk app env
+# Allowed email (restrict access to only this email)
+ALLOWED_EMAIL=your_email@gmail.com
 ```
 
-Run the agent:
+## Getting API Keys
 
-```console
-python3 agent.py dev
+### Gemini API Key
+
+1. Go to the [Google AI Studio](https://ai.google.dev/)
+2. Sign in with your Google account
+3. Navigate to the API keys section
+4. Create a new API key and copy it
+
+### Google OAuth Credentials
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Navigate to "APIs & Services" > "Credentials"
+4. Click "Create Credentials" > "OAuth client ID"
+5. Set up the OAuth consent screen
+6. Create a Web application client ID
+7. Add authorized redirect URIs (e.g., `http://localhost:3000` for development)
+8. Copy the Client ID and Client Secret
+
+## Running the Server
+
+### Development Mode
+
+```bash
+npm run dev
 ```
 
-This agent requires a frontend application to communicate with. You can use one of our example frontends in [livekit-examples](https://github.com/livekit-examples/), create your own following one of our [client quickstarts](https://docs.livekit.io/realtime/quickstarts/), or test instantly against one of our hosted [Sandbox](https://cloud.livekit.io/projects/p_/sandbox) frontends.
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+## API Endpoints
+
+| Endpoint           | Method | Description                       | Authentication Required |
+| ------------------ | ------ | --------------------------------- | ----------------------- |
+| `/api/auth/google` | POST   | Authenticate with Google ID token | No                      |
+| `/api/auth/verify` | GET    | Verify authentication token       | Yes                     |
+| `/health`          | GET    | Server health check               | No                      |
+
+## WebSocket Connection
+
+Connect to the WebSocket server at `ws://localhost:3001?token=YOUR_JWT_TOKEN`
+
+### Message Format
+
+**Request:**
+
+```json
+{
+  "type": "prompt",
+  "content": "Your message to Gemini here"
+}
+```
+
+**Response:**
+
+```json
+{
+  "type": "response",
+  "content": "AI response text chunk",
+  "done": false
+}
+```
+
+**Final chunk:**
+
+```json
+{
+  "type": "response",
+  "content": "",
+  "done": true
+}
+```
+
+## Security Considerations
+
+- Keep your API keys and secrets secure
+- Use HTTPS in production
+- The app restricts access to the email specified in ALLOWED_EMAIL
+- JWT tokens expire after 7 days
+
+## License
+
+MIT

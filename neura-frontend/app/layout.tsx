@@ -1,3 +1,4 @@
+import { GoogleAuthProvider } from "@/components/GoogleAuthProvider";
 import "@livekit/components-styles";
 import { Public_Sans } from "next/font/google";
 import "./globals.css";
@@ -14,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`h-full ${publicSans400.className}`}>
-      <body className="h-full">{children}</body>
+      <body className="h-full">
+        <GoogleAuthProvider>{children}</GoogleAuthProvider>
+      </body>
     </html>
   );
 }

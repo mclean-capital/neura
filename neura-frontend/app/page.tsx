@@ -1,142 +1,101 @@
 "use client";
 
-import { CloseIcon } from "@/components/CloseIcon";
-import { NoAgentNotification } from "@/components/NoAgentNotification";
-import TranscriptionView from "@/components/TranscriptionView";
-import {
-  BarVisualizer,
-  DisconnectButton,
-  RoomAudioRenderer,
-  RoomContext,
-  VoiceAssistantControlBar,
-  useVoiceAssistant,
-} from "@livekit/components-react";
-import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
-import { AnimatePresence, motion } from "framer-motion";
-import { Room, RoomEvent } from "livekit-client";
-import { useCallback, useEffect, useState } from "react";
-import type { ConnectionDetails } from "./api/connection-details/route";
+import ChatInterface from "@/components/ChatInterface";
+import { useAuth } from "@/components/GoogleAuthProvider";
+import Image from "next/Image";
+// Removed GoogleAuthProvider import
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import NeuraLogo from "./media/images/logo-512x512.png";
 
-export default function Page() {
-  const [room] = useState(new Room());
+export default function Home() {
+  // Added export default
+  const { user, isLoading, token } = useAuth();
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
-  const onConnectButtonClicked = useCallback(async () => {
-    // Generate room connection details, including:
-    //   - A random Room name
-    //   - A random Participant name
-    //   - An Access Token to permit the participant to join the room
-    //   - The URL of the LiveKit server to connect to
-    //
-    // In real-world application, you would likely allow the user to specify their
-    // own participant name, and possibly to choose from existing rooms to join.
-
-    const url = new URL(
-      process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT ?? "/api/connection-details",
-      window.location.origin
-    );
-    const response = await fetch(url.toString());
-    const connectionDetailsData: ConnectionDetails = await response.json();
-
-    await room.connect(connectionDetailsData.serverUrl, connectionDetailsData.participantToken);
-    await room.localParticipant.setMicrophoneEnabled(true);
-  }, [room]);
-
+  // Set mounted state on client side
   useEffect(() => {
-    room.on(RoomEvent.MediaDevicesError, onDeviceFailure);
+    setMounted(true);
+  }, []);
 
-    return () => {
-      room.off(RoomEvent.MediaDevicesError, onDeviceFailure);
-    };
-  }, [room]);
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (mounted && !isLoading && !user) {
+      router.push("/login");
+    }
+  }, [user, isLoading, router, mounted]);
+
+  // Show loading state while checking authentication
+  if (!mounted || isLoading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-900">
+        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
-    <main data-lk-theme="default" className="h-full grid content-center bg-[var(--lk-bg)]">
-      <RoomContext.Provider value={room}>
-        <div className="lk-room-container max-h-[90vh]">
-          <SimpleVoiceAssistant onConnectButtonClicked={onConnectButtonClicked} />
+    <main className="flex flex-col h-screen bg-gray-900 text-white">
+      <header className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="mx-auto  w-20 h-20 rounded-full flex items-center pointer-events-none justify-center">
+            <Image
+              width={200}
+              height={200}
+              priority
+              src={NeuraLogo}
+              alt="neura logo"
+              className="rounded-full"
+            />
+          </div>
+          <h1 className="text-xl font-bold">Neura</h1>
         </div>
-      </RoomContext.Provider>
+
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {user.picture ? (
+              <Image
+                width={100}
+                height={100}
+                src={
+                  "https://lh3.googleusercontent.com/a/ACg8ocKMLbjobS1K7hcb1IqXA1W5-TqFfdSvJQ13v2xMqYTitXQEzSY=s96-c"
+                }
+                // src={user.picture}
+                alt={user.name || user.email}
+                className="w-8 h-8 rounded-full"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                <span className="text-white font-medium">{user.name?.[0] || user.email[0]}</span>
+              </div>
+            )}
+            <span className="text-sm hidden md:inline">{user.name || user.email}</span>
+          </div>
+
+          <LogoutButton />
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-hidden">
+        <ChatInterface token={token} />
+      </div>
     </main>
   );
 }
 
-function SimpleVoiceAssistant(props: { onConnectButtonClicked: () => void }) {
-  const { state: agentState } = useVoiceAssistant();
-  return (
-    <>
-      <AnimatePresence>
-        {agentState === "disconnected" && (
-          <motion.button
-            initial={{ opacity: 0, top: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, top: "-10px" }}
-            transition={{ duration: 1, ease: [0.09, 1.04, 0.245, 1.055] }}
-            className="uppercase absolute left-1/2 -translate-x-1/2 px-4 py-2 bg-white text-black rounded-md"
-            onClick={() => props.onConnectButtonClicked()}
-          >
-            Start a conversation
-          </motion.button>
-        )}
-        <div className="w-3/4 lg:w-1/2 mx-auto h-full">
-          <TranscriptionView />
-        </div>
-      </AnimatePresence>
-
-      <RoomAudioRenderer />
-      <NoAgentNotification state={agentState} />
-      <div className="fixed bottom-0 w-full px-4 py-2">
-        <ControlBar />
-      </div>
-    </>
-  );
-}
-
-function ControlBar() {
-  /**
-   * Use Krisp background noise reduction when available.
-   * Note: This is only available on Scale plan, see {@link https://livekit.io/pricing | LiveKit Pricing} for more details.
-   */
-  const krisp = useKrispNoiseFilter();
-  useEffect(() => {
-    krisp.setNoiseFilterEnabled(true);
-  }, []);
-
-  const { state: agentState, audioTrack } = useVoiceAssistant();
+function LogoutButton() {
+  const { logout } = useAuth();
 
   return (
-    <div className="relative h-[100px]">
-      <AnimatePresence>
-        {agentState !== "disconnected" && agentState !== "connecting" && (
-          <motion.div
-            initial={{ opacity: 0, top: "10px" }}
-            animate={{ opacity: 1, top: 0 }}
-            exit={{ opacity: 0, top: "-10px" }}
-            transition={{ duration: 0.4, ease: [0.09, 1.04, 0.245, 1.055] }}
-            className="flex absolute w-full h-full justify-between px-8 sm:px-4"
-          >
-            <BarVisualizer
-              state={agentState}
-              barCount={5}
-              trackRef={audioTrack}
-              className="agent-visualizer w-24 gap-2"
-              options={{ minHeight: 12 }}
-            />
-            <div className="flex items-center">
-              <VoiceAssistantControlBar controls={{ leave: false }} />
-              <DisconnectButton>
-                <CloseIcon />
-              </DisconnectButton>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <button
+      onClick={logout}
+      className="px-3 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+    >
+      Logout
+    </button>
   );
 }
 
-function onDeviceFailure(error: Error) {
-  console.error(error);
-  alert(
-    "Error acquiring camera or microphone permissions. Please make sure you grant the necessary permissions in your browser and reload the tab"
-  );
-}
+// Removed LogoutButton component as it's defined within Home now
+// Removed HomeWithAuth wrapper component
