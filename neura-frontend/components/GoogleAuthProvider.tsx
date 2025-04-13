@@ -27,6 +27,7 @@ export function GoogleAuthProvider({ children }: { children: React.ReactNode }) 
 
   // Initialize auth state from localStorage
   useEffect(() => {
+    // Normal initialization from localStorage
     const storedToken = localStorage.getItem("authToken");
     const storedUser = localStorage.getItem("authUser");
 

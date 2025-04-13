@@ -5,6 +5,7 @@ import AudioModule from "@/components/ui/AudioModule";
 import EnhancedChatInterface from "@/components/ui/EnhancedChatInterface";
 import StatusModule from "@/components/ui/StatusModule";
 import VideoModule from "@/components/ui/VideoModule";
+import { ChatProvider } from "@/contexts/ChatContext";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -80,31 +81,35 @@ export default function Home() {
         </div>
       </header>
 
-      {/* New modular layout */}
-      <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
-        {/* Status module row */}
-        <div className="w-full">
-          <StatusModule roomConnected={isConnected} agentConnected={isConnected} />
-        </div>
-
-        {/* Main content grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
-          {/* Left column - Video & Audio */}
-          <div className="flex flex-col gap-4 h-full">
-            <div className="flex-1">
-              <VideoModule isConnected={isConnected} />
-            </div>
-            <div className="flex-1">
-              <AudioModule isConnected={isConnected} />
-            </div>
+      {/* Wrap all content that needs chat functionality with ChatProvider */}
+      <ChatProvider autoConnect={true}>
+        {/* New modular layout */}
+        <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+          {/* Status module row */}
+          <div className="w-full">
+            <StatusModule roomConnected={isConnected} agentConnected={isConnected} />
           </div>
 
-          {/* Right column - Chat */}
-          <div className="h-full">
-            <EnhancedChatInterface autoConnect={true} />
+          {/* Main content grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+            {/* Left column - Video & Audio */}
+            <div className="flex flex-col gap-4 h-full">
+              <div className="flex-1">
+                <VideoModule isConnected={isConnected} />
+              </div>
+              <div className="flex-1">
+                <AudioModule isConnected={isConnected} chatEnabled={true} />
+              </div>
+            </div>
+
+            {/* Right column - Chat */}
+            <div className="h-full">
+              <EnhancedChatInterface autoConnect={false} />{" "}
+              {/* Don't auto-connect here as the parent ChatProvider handles it */}
+            </div>
           </div>
         </div>
-      </div>
+      </ChatProvider>
     </main>
   );
 }

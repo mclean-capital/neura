@@ -7,7 +7,7 @@ interface EnhancedChatInterfaceProps {
   autoConnect?: boolean;
 }
 
-const EnhancedChatInterface: React.FC<EnhancedChatInterfaceProps> = ({ autoConnect = true }) => {
+const EnhancedChatInterface: React.FC<EnhancedChatInterfaceProps> = ({ autoConnect = false }) => {
   return (
     <PlaygroundTile title="CHAT" className="w-full h-full" padding={false} childrenClassName="p-0">
       <div className="w-full h-full">

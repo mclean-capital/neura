@@ -1,5 +1,6 @@
 "use client";
 
+import { useMedia } from "@/contexts/MediaContext";
 import { useEffect, useRef, useState } from "react";
 
 interface DeviceSelectorProps {
@@ -14,41 +15,58 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
   className = "",
 }) => {
   const [showMenu, setShowMenu] = useState(false);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [selectedDeviceName, setSelectedDeviceName] = useState("Select device");
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Initialize devices
+  // Get media context
+  const {
+    videoDevices,
+    audioDevices,
+    activeVideoDeviceId,
+    activeAudioDeviceId,
+    setActiveVideoDevice,
+    setActiveAudioDevice,
+    requestVideoPermission,
+    requestAudioPermission,
+    cameraPermission,
+    microphonePermission,
+    videoError,
+    audioError,
+  } = useMedia();
+
+  // Get the relevant devices and state based on the kind
+  const devices = kind === "videoinput" ? videoDevices : audioDevices;
+  const activeDeviceId = kind === "videoinput" ? activeVideoDeviceId : activeAudioDeviceId;
+  const permissionState = kind === "videoinput" ? cameraPermission : microphonePermission;
+  const error = kind === "videoinput" ? videoError : audioError;
+
+  // Update selected device name when active device changes
   useEffect(() => {
-    const getDevices = async () => {
-      try {
-        // Request permission first
-        if (kind === "videoinput") {
-          await navigator.mediaDevices.getUserMedia({ video: true });
-        } else if (kind === "audioinput") {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-        }
+    const activeDevice = devices.find((d) => d.deviceId === activeDeviceId);
+    if (activeDevice) {
+      setSelectedDeviceName(
+        activeDevice.label || `Default ${kind === "videoinput" ? "Camera" : "Microphone"}`
+      );
+    } else if (devices.length > 0) {
+      // If no active device but we have devices, select the first one
+      setSelectedDeviceName(
+        devices[0].label || `Default ${kind === "videoinput" ? "Camera" : "Microphone"}`
+      );
+    } else {
+      setSelectedDeviceName(`Select ${kind === "videoinput" ? "Camera" : "Microphone"}`);
+    }
+  }, [activeDeviceId, devices, kind]);
 
-        // Get devices
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        const filteredDevices = allDevices.filter((device) => device.kind === kind);
-        setDevices(filteredDevices);
-
-        // Set initial active device
-        if (filteredDevices.length > 0 && !activeDeviceId) {
-          setActiveDeviceId(filteredDevices[0].deviceId);
-          setSelectedDeviceName(
-            filteredDevices[0].label || `Default ${kind === "videoinput" ? "Camera" : "Microphone"}`
-          );
-        }
-      } catch (err) {
-        console.error("Error accessing media devices:", err);
+  // Request permissions if needed
+  useEffect(() => {
+    if (permissionState === "prompt") {
+      if (kind === "videoinput") {
+        requestVideoPermission();
+      } else if (kind === "audioinput") {
+        requestAudioPermission();
       }
-    };
-
-    getDevices();
-  }, [kind, activeDeviceId]);
+    }
+  }, [kind, permissionState, requestVideoPermission, requestAudioPermission]);
 
   // Handle click outside to close menu
   useEffect(() => {
@@ -64,28 +82,32 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
     };
   }, []);
 
-  // Create a custom event for device change
+  // Set active device
   const setActiveMediaDevice = (deviceId: string) => {
-    setActiveDeviceId(deviceId);
-    const matchingDevice = devices.find((d) => d.deviceId === deviceId);
-    if (matchingDevice) {
-      setSelectedDeviceName(
-        matchingDevice.label || `Selected ${kind === "videoinput" ? "Camera" : "Microphone"}`
-      );
+    if (kind === "videoinput") {
+      setActiveVideoDevice(deviceId);
+    } else if (kind === "audioinput") {
+      setActiveAudioDevice(deviceId);
     }
-
-    // Dispatch custom event
-    const event = new CustomEvent("devicechange", {
-      detail: { deviceId, kind },
-    });
-    window.dispatchEvent(event);
   };
 
   return (
     <div className={`relative ${className}`} ref={menuRef}>
       <button
         className="flex gap-1 items-center px-2 py-1 bg-gray-900 text-gray-300 border border-gray-800 rounded-sm hover:bg-gray-800 text-xs"
-        onClick={() => setShowMenu(!showMenu)}
+        onClick={() => {
+          // If permission denied, try to request permission again
+          if (permissionState === "denied") {
+            if (kind === "videoinput") {
+              requestVideoPermission();
+            } else if (kind === "audioinput") {
+              requestAudioPermission();
+            }
+            return;
+          }
+
+          setShowMenu(!showMenu);
+        }}
         title={`Select ${kind === "videoinput" ? "Camera" : "Microphone"}`}
       >
         {kind === "videoinput" ? (
@@ -94,7 +116,9 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
           <MicIcon className="w-3 h-3" />
         )}
         <span className="max-w-[80px] overflow-hidden whitespace-nowrap text-ellipsis hidden md:inline">
-          {selectedDeviceName}
+          {permissionState === "denied"
+            ? `${kind === "videoinput" ? "Camera" : "Microphone"} blocked`
+            : selectedDeviceName}
         </span>
         <ChevronIcon className="w-3 h-3" />
       </button>
@@ -107,9 +131,16 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
             {kind === "videoinput" ? "Select Camera" : "Select Microphone"}
           </div>
 
-          {devices.length === 0 ? (
+          {permissionState === "denied" && (
+            <div className="text-xs py-2 px-3 text-amber-400">
+              Permission denied. Click the device selector button to request access again.
+            </div>
+          )}
+
+          {permissionState !== "denied" && devices.length === 0 ? (
             <div className="text-xs py-2 px-3 text-gray-400">No devices found</div>
           ) : (
+            permissionState !== "denied" &&
             devices.map((device, index) => (
               <div
                 key={device.deviceId || index}

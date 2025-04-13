@@ -1,5 +1,6 @@
 "use client";
 
+import { useMedia } from "@/contexts/MediaContext";
 import { useEffect, useState } from "react";
 import DeviceSelector from "./DeviceSelector";
 import { PlaygroundTile } from "./PlaygroundTile";
@@ -9,72 +10,23 @@ interface VideoModuleProps {
 }
 
 const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
-  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
 
-  // Function to start video with specific device
-  const startVideo = async (deviceId?: string) => {
-    // Stop existing tracks
-    if (videoStream) {
-      videoStream.getTracks().forEach((track) => track.stop());
-    }
+  // Get media context
+  const { videoStream, requestVideoPermission, videoError, cameraPermission } = useMedia();
 
-    setLoading(true);
-    try {
-      // Request video with specific device if provided
-      const constraints: MediaStreamConstraints = {
-        video: deviceId ? { deviceId: { exact: deviceId } } : true,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      setVideoStream(stream);
-
-      // Store current device ID
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        const settings = videoTrack.getSettings();
-        setCurrentDeviceId(settings.deviceId || null);
-      }
-
-      setError(null);
-    } catch (err) {
-      console.error("Error accessing camera:", err);
-      setError("Could not access camera");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Initial video setup
+  // Initial permission request
   useEffect(() => {
-    if (isConnected && !videoStream && !currentDeviceId) {
-      startVideo();
-    }
-
-    // Cleanup
-    return () => {
-      if (videoStream) {
-        videoStream.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, [isConnected, videoStream, currentDeviceId]);
-
-  // Listen for device change events
-  useEffect(() => {
-    const handleDeviceChange = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      if (customEvent.detail && customEvent.detail.kind === "videoinput") {
-        startVideo(customEvent.detail.deviceId);
+    const initializeCamera = async () => {
+      if (isConnected && cameraPermission === "prompt") {
+        setLoading(true);
+        await requestVideoPermission();
+        setLoading(false);
       }
     };
 
-    window.addEventListener("devicechange", handleDeviceChange);
-    return () => {
-      window.removeEventListener("devicechange", handleDeviceChange);
-    };
-  }, []);
+    initializeCamera();
+  }, [isConnected, cameraPermission, requestVideoPermission]);
 
   return (
     <PlaygroundTile
@@ -90,13 +42,21 @@ const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
           </div>
         )}
 
-        {error && !loading && (
-          <div className="flex items-center justify-center text-gray-700 text-center w-full h-full">
-            {error}
+        {videoError && !loading && (
+          <div className="flex flex-col items-center justify-center text-gray-700 text-center w-full h-full gap-3">
+            <div>{videoError}</div>
+            {cameraPermission === "denied" && (
+              <button
+                onClick={() => requestVideoPermission()}
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+              >
+                Request Camera Access
+              </button>
+            )}
           </div>
         )}
 
-        {!isConnected && !loading && (
+        {!isConnected && !loading && !videoError && (
           <div className="flex items-center justify-center text-gray-700 text-center w-full h-full">
             No video track. Connect to get started.
           </div>

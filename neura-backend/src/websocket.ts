@@ -1,38 +1,36 @@
 import http from "http";
-import { IncomingMessage } from "http";
-import WebSocket from "ws";
+import { Server, Socket } from "socket.io";
 import geminiService from "./services/gemini";
 import config from "./config";
 
-// Simplified user tracking for WebSocket connections
-
-interface WebSocketWithUser extends WebSocket {
-  // Track connection ID for logging purposes only
-  connectionId?: string;
-}
-
-interface WebSocketMessage {
+interface ChatMessage {
   type: string;
   content?: string;
+  audioData?: string;
+  audioMimeType?: string;
   done?: boolean;
 }
 
 /**
- * Setup WebSocket server
+ * Setup Socket.IO server
  * @param server HTTP server instance
- * @returns WebSocket server instance
+ * @returns Socket.IO server instance
  */
 export function setupWebSocketServer(server: http.Server) {
-  const wss = new WebSocket.Server({ server });
+  const io = new Server(server, {
+    cors: {
+      origin: "*", // Configure as needed for production
+      methods: ["GET", "POST"],
+    },
+  });
 
   // Generate connection IDs for logging
   let connectionCounter = 0;
 
   // Set up connection handling
-  wss.on("connection", (ws: WebSocketWithUser, req: IncomingMessage) => {
+  io.on("connection", (socket: Socket) => {
     // Assign a connection ID for tracking
     const connectionId = `conn-${++connectionCounter}`;
-    ws.connectionId = connectionId;
 
     console.log(`Client connected: ${connectionId}`);
 
@@ -42,94 +40,118 @@ export function setupWebSocketServer(server: http.Server) {
       messageCount = 0;
     }, 60000); // Reset every minute
 
-    // Handle messages from client
-    ws.on("message", async (message: WebSocket.Data) => {
+    // Send welcome message
+    socket.emit("connected", {
+      content: "Connected to Gemini chat service",
+    });
+
+    // Handle prompt messages from client
+    socket.on("prompt", async (data: { content: string }) => {
       try {
         // Rate limiting check
         messageCount++;
         if (messageCount > 30) {
           // 30 messages per minute
-          ws.send(
-            JSON.stringify({
-              type: "error",
-              content: "Rate limit exceeded. Please try again later.",
-            })
-          );
+          socket.emit("error", {
+            content: "Rate limit exceeded. Please try again later.",
+          });
           return;
         }
 
-        // Parse message
-        const data = JSON.parse(message.toString()) as WebSocketMessage;
-
-        if (data.type === "prompt" && data.content) {
-          // Log the request
-          console.log(`Processing prompt request from ${ws.connectionId}`);
-
-          // Get a stream from the Gemini service
+        if (data.content) {
+          // Process text prompt
+          console.log(`Processing text prompt request from ${connectionId}`);
           const stream = await geminiService.streamChat(data.content);
-
-          // Handle the stream data
-          stream.on("data", (chunk: Buffer | string) => {
-            ws.send(
-              JSON.stringify({
-                type: "response",
-                content: chunk.toString(),
-                done: false,
-              })
-            );
-          });
-
-          stream.on("end", () => {
-            ws.send(
-              JSON.stringify({
-                type: "response",
-                content: "",
-                done: true,
-              })
-            );
-          });
-
-          stream.on("error", (err: Error) => {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                content: `Error processing request: ${err.message}`,
-              })
-            );
-          });
+          handleStreamResponse(stream, socket);
         } else {
-          ws.send(
-            JSON.stringify({
-              type: "error",
-              content: "Invalid request type",
-            })
-          );
+          socket.emit("error", {
+            content: "Invalid request: Missing content",
+          });
         }
       } catch (error) {
-        console.error("Error processing WebSocket message:", error);
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            content: "Failed to process request",
-          })
-        );
+        console.error("Error processing prompt:", error);
+        socket.emit("error", {
+          content: "Failed to process request",
+        });
       }
     });
 
+    // Handle audio messages from client
+    socket.on(
+      "audio",
+      async (data: { audioData: string; audioMimeType: string }) => {
+        try {
+          // Rate limiting check
+          messageCount++;
+          if (messageCount > 30) {
+            // 30 messages per minute
+            socket.emit("error", {
+              content: "Rate limit exceeded. Please try again later.",
+            });
+            return;
+          }
+
+          if (data.audioData && data.audioMimeType) {
+            // Process audio prompt
+            console.log(`Processing audio prompt request from ${connectionId}`);
+
+            // Convert base64 string to buffer
+            const audioBuffer = Buffer.from(data.audioData, "base64");
+
+            // Call Gemini with audio data
+            const stream = await geminiService.streamAudioChat({
+              mimeType: data.audioMimeType,
+              data: audioBuffer,
+            });
+
+            // Handle the response stream
+            handleStreamResponse(stream, socket);
+          } else {
+            socket.emit("error", {
+              content: "Invalid audio request: Missing required parameters",
+            });
+          }
+        } catch (error) {
+          console.error("Error processing audio:", error);
+          socket.emit("error", {
+            content: "Failed to process audio request",
+          });
+        }
+      }
+    );
+
+    // Helper function to handle stream responses
+    function handleStreamResponse(
+      stream: NodeJS.ReadableStream,
+      socket: Socket
+    ) {
+      stream.on("data", (chunk: Buffer | string) => {
+        socket.emit("response", {
+          content: chunk.toString(),
+          done: false,
+        });
+      });
+
+      stream.on("end", () => {
+        socket.emit("response", {
+          content: "",
+          done: true,
+        });
+      });
+
+      stream.on("error", (err: Error) => {
+        socket.emit("error", {
+          content: `Error processing request: ${err.message}`,
+        });
+      });
+    }
+
     // Handle client disconnection
-    ws.on("close", () => {
-      console.log(`Client disconnected: ${ws.connectionId}`);
+    socket.on("disconnect", () => {
+      console.log(`Client disconnected: ${connectionId}`);
       clearInterval(messageCountResetInterval);
     });
-
-    // Send welcome message
-    ws.send(
-      JSON.stringify({
-        type: "connected",
-        content: "Connected to Gemini chat service",
-      })
-    );
   });
 
-  return wss;
+  return io;
 }

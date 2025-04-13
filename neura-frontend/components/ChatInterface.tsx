@@ -1,6 +1,6 @@
 "use client";
 
-import useGeminiChat from "@/hooks/useGeminiChat";
+import { useChatContext } from "@/contexts/ChatContext";
 import { useEffect, useRef } from "react";
 import { ChatMessage } from "./ChatMessage";
 import { ChatMessageInput } from "./ChatMessageInput";
@@ -10,33 +10,10 @@ interface ChatInterfaceProps {
 }
 
 export default function ChatInterface({ autoConnect = true }: ChatInterfaceProps) {
-  // Destructure hook values (currentMessage and autoConnect removed)
-  const {
-    messages,
-    isConnected,
-    isLoading,
-    error,
-    sendMessage,
-    clearMessages,
-    connect,
-    disconnect,
-  } = useGeminiChat({
-    // No options needed here anymore
-  });
+  // Get chat methods from shared context
+  const { messages, isConnected, isLoading, error, sendMessage, clearMessages } = useChatContext();
 
-  // Connect to chat service when component mounts if autoConnect is true
-  useEffect(() => {
-    if (autoConnect) {
-      console.log("ChatInterface: Auto-connecting...");
-      connect();
-    }
-
-    // Cleanup function
-    return () => {
-      console.log("ChatInterface: Cleanup effect, disconnecting...");
-      disconnect();
-    };
-  }, [autoConnect, connect, disconnect]);
+  // No need to handle connection - it's managed by the context provider now
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
