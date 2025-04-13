@@ -6,10 +6,10 @@ import { ChatMessage } from "./ChatMessage";
 import { ChatMessageInput } from "./ChatMessageInput";
 
 interface ChatInterfaceProps {
-  token: string | null;
+  autoConnect?: boolean;
 }
 
-export default function ChatInterface({ token }: ChatInterfaceProps) {
+export default function ChatInterface({ autoConnect = true }: ChatInterfaceProps) {
   // Destructure hook values (currentMessage and autoConnect removed)
   const {
     messages,
@@ -24,21 +24,19 @@ export default function ChatInterface({ token }: ChatInterfaceProps) {
     // No options needed here anymore
   });
 
-  // Connect to chat service when component mounts
+  // Connect to chat service when component mounts if autoConnect is true
   useEffect(() => {
-    if (token) {
-      console.log("ChatInterface: User authenticated, connecting...");
+    if (autoConnect) {
+      console.log("ChatInterface: Auto-connecting...");
       connect();
-    } else {
-      console.log("ChatInterface: No user authentication, disconnecting...");
-      disconnect();
     }
+
     // Cleanup function
     return () => {
       console.log("ChatInterface: Cleanup effect, disconnecting...");
       disconnect();
     };
-  }, [token, connect, disconnect]);
+  }, [autoConnect, connect, disconnect]);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -64,27 +62,6 @@ export default function ChatInterface({ token }: ChatInterfaceProps) {
   return (
     // Use flex-col and h-full to take up available space
     <div className="flex flex-col w-full h-full bg-gray-900 text-white">
-      {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center flex-shrink-0">
-        <h1 className="text-xl font-semibold">Gemini Chat</h1>
-        <div className="flex items-center gap-3">
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              isConnected ? "bg-green-500" : "bg-red-500"
-            }`}
-          ></span>
-          <span className="text-sm text-gray-400">
-            {isConnected ? "Connected" : "Disconnected"}
-          </span>
-          <button
-            onClick={clearMessages}
-            className="px-3 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
-          >
-            Clear Chat
-          </button>
-        </div>
-      </div>
-
       {/* Messages area - Use flex-1 to take remaining space, add padding */}
       <div
         ref={messagesContainerRef}

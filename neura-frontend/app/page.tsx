@@ -1,18 +1,21 @@
 "use client";
 
-import ChatInterface from "@/components/ChatInterface";
 import { useAuth } from "@/components/GoogleAuthProvider";
-import Image from "next/Image";
-// Removed GoogleAuthProvider import
+import AudioModule from "@/components/ui/AudioModule";
+import EnhancedChatInterface from "@/components/ui/EnhancedChatInterface";
+import StatusModule from "@/components/ui/StatusModule";
+import VideoModule from "@/components/ui/VideoModule";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import NeuraLogo from "./media/images/logo-512x512.png";
 
 export default function Home() {
-  // Added export default
   const { user, isLoading, token } = useAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  // Set connection state for demo components
+  const [isConnected, setIsConnected] = useState(true);
 
   // Set mounted state on client side
   useEffect(() => {
@@ -77,8 +80,30 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-hidden">
-        <ChatInterface token={token} />
+      {/* New modular layout */}
+      <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+        {/* Status module row */}
+        <div className="w-full">
+          <StatusModule roomConnected={isConnected} agentConnected={isConnected} />
+        </div>
+
+        {/* Main content grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+          {/* Left column - Video & Audio */}
+          <div className="flex flex-col gap-4 h-full">
+            <div className="flex-1">
+              <VideoModule isConnected={isConnected} />
+            </div>
+            <div className="flex-1">
+              <AudioModule isConnected={isConnected} />
+            </div>
+          </div>
+
+          {/* Right column - Chat */}
+          <div className="h-full">
+            <EnhancedChatInterface autoConnect={true} />
+          </div>
+        </div>
       </div>
     </main>
   );
@@ -96,6 +121,3 @@ function LogoutButton() {
     </button>
   );
 }
-
-// Removed LogoutButton component as it's defined within Home now
-// Removed HomeWithAuth wrapper component
