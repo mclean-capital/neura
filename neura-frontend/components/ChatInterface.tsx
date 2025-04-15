@@ -5,13 +5,9 @@ import { useEffect, useRef } from "react";
 import { ChatMessage } from "./ChatMessage";
 import { ChatMessageInput } from "./ChatMessageInput";
 
-interface ChatInterfaceProps {
-  autoConnect?: boolean;
-}
-
-export default function ChatInterface({ autoConnect = true }: ChatInterfaceProps) {
+export default function ChatInterface() {
   // Get chat methods from shared context
-  const { messages, isConnected, isLoading, error, sendMessage, clearMessages } = useChatContext();
+  const { messages, isConnected, isLoading, error, sendMessage } = useChatContext();
 
   // No need to handle connection - it's managed by the context provider now
 
@@ -37,15 +33,19 @@ export default function ChatInterface({ autoConnect = true }: ChatInterfaceProps
 
   // Layout adapted from agents-playground ChatTile
   return (
-    // Use flex-col and h-full to take up available space
-    <div className="flex flex-col w-full h-full bg-gray-900 text-white">
-      {/* Messages area - Use flex-1 to take remaining space, add padding */}
+    // Main container with fixed height
+    <div className="flex flex-col w-full h-full bg-gray-900 text-white relative">
+      {/* Scrollable messages container with absolute positioning */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-2" // Added py-2 for vertical padding
+        className="absolute inset-x-0 top-0 bottom-[64px] px-4 py-4 overflow-y-scroll"
+        style={{
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "thin",
+        }}
       >
-        {/* Inner div to push messages to the bottom */}
-        <div className="flex flex-col min-h-full justify-end">
+        {/* Messages with spacing */}
+        <div className="flex flex-col space-y-4 pb-4">
           {/* Initial placeholder */}
           {messages.length === 0 && !isLoading && (
             <div className="flex flex-col items-center justify-center flex-1 text-gray-400">
@@ -85,8 +85,8 @@ export default function ChatInterface({ autoConnect = true }: ChatInterfaceProps
         </div>
       </div>
 
-      {/* Input area - Use flex-shrink-0 to prevent shrinking */}
-      <div className="flex-shrink-0">
+      {/* Input area - Fixed at the bottom */}
+      <div className="absolute inset-x-0 bottom-0">
         <ChatMessageInput
           onSend={handleSend}
           accentColor="blue"

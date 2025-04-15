@@ -12,11 +12,11 @@ import { useEffect, useState } from "react";
 import NeuraLogo from "./media/images/logo-512x512.png";
 
 export default function Home() {
-  const { user, isLoading, token } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   // Set connection state for demo components
-  const [isConnected, setIsConnected] = useState(true);
+  const isConnected = true; // Simplified from state since setter is unused
 
   // Set mounted state on client side
   useEffect(() => {
@@ -104,8 +104,7 @@ export default function Home() {
 
             {/* Right column - Chat */}
             <div className="h-full">
-              <EnhancedChatInterface autoConnect={false} />{" "}
-              {/* Don't auto-connect here as the parent ChatProvider handles it */}
+              <EnhancedChatInterface />
             </div>
           </div>
         </div>

@@ -3,15 +3,16 @@
 import ChatInterface from "../ChatInterface";
 import { PlaygroundTile } from "./PlaygroundTile";
 
-interface EnhancedChatInterfaceProps {
-  autoConnect?: boolean;
-}
-
-const EnhancedChatInterface: React.FC<EnhancedChatInterfaceProps> = ({ autoConnect = false }) => {
+const EnhancedChatInterface: React.FC = () => {
   return (
-    <PlaygroundTile title="CHAT" className="w-full h-full" padding={false} childrenClassName="p-0">
+    <PlaygroundTile
+      title="CHAT"
+      className="w-full h-full"
+      padding={false}
+      childrenClassName="p-0 h-full flex flex-col"
+    >
       <div className="w-full h-full">
-        <ChatInterface autoConnect={autoConnect} />
+        <ChatInterface />
       </div>
     </PlaygroundTile>
   );
