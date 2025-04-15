@@ -59,11 +59,11 @@ export const MediaProvider: React.FC<MediaProviderProps> = ({ children }) => {
 
   // Initialize permissions
   useEffect(() => {
-    checkPermissions();
+    setTimeout(checkPermissions);
 
     // Set up a polling mechanism to check permissions periodically
     // This is a workaround since the Permissions API doesn't have standard event listeners
-    const permissionCheckInterval = setInterval(checkPermissions, 2000);
+    // const permissionCheckInterval = setInterval(checkPermissions, 2000);
 
     return () => {
       // Clean up streams
@@ -74,7 +74,7 @@ export const MediaProvider: React.FC<MediaProviderProps> = ({ children }) => {
         audioStream.getTracks().forEach((track) => track.stop());
       }
       // Clear interval
-      clearInterval(permissionCheckInterval);
+      // clearInterval(permissionCheckInterval);
     };
   }, []);
 
@@ -181,23 +181,23 @@ export const MediaProvider: React.FC<MediaProviderProps> = ({ children }) => {
       await refreshDevices();
 
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error requesting video permission:", err);
 
       // Handle different error types
-      if (err.name === "NotAllowedError") {
+      if ((err as Error).name === "NotAllowedError") {
         setVideoError(
           "Camera access was denied. Please allow camera access in your browser settings."
         );
         setCameraPermission("denied");
-      } else if (err.name === "NotFoundError") {
+      } else if ((err as Error).name === "NotFoundError") {
         setVideoError("No camera found. Please connect a camera and try again.");
-      } else if (err.name === "NotReadableError") {
+      } else if ((err as Error).name === "NotReadableError") {
         setVideoError(
           "Camera is in use by another application. Please close other applications using the camera."
         );
       } else {
-        setVideoError(`Camera error: ${err.message}`);
+        setVideoError(`Camera error: ${(err as Error).message}`);
       }
 
       return false;
@@ -235,23 +235,23 @@ export const MediaProvider: React.FC<MediaProviderProps> = ({ children }) => {
       await refreshDevices();
 
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error requesting audio permission:", err);
 
       // Handle different error types
-      if (err.name === "NotAllowedError") {
+      if ((err as Error).name === "NotAllowedError") {
         setAudioError(
           "Microphone access was denied. Please allow microphone access in your browser settings."
         );
         setMicrophonePermission("denied");
-      } else if (err.name === "NotFoundError") {
+      } else if ((err as Error).name === "NotFoundError") {
         setAudioError("No microphone found. Please connect a microphone and try again.");
-      } else if (err.name === "NotReadableError") {
+      } else if ((err as Error).name === "NotReadableError") {
         setAudioError(
           "Microphone is in use by another application. Please close other applications using the microphone."
         );
       } else {
-        setAudioError(`Microphone error: ${err.message}`);
+        setAudioError(`Microphone error: ${(err as Error).message}`);
       }
 
       return false;
@@ -283,9 +283,9 @@ export const MediaProvider: React.FC<MediaProviderProps> = ({ children }) => {
           detail: { deviceId, kind: "videoinput" },
         });
         window.dispatchEvent(event);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error switching video device:", err);
-        setVideoError(`Error switching camera: ${err.message}`);
+        setVideoError(`Error switching camera: ${(err as Error).message}`);
       }
     }
   };
@@ -315,9 +315,9 @@ export const MediaProvider: React.FC<MediaProviderProps> = ({ children }) => {
           detail: { deviceId, kind: "audioinput" },
         });
         window.dispatchEvent(event);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error switching audio device:", err);
-        setAudioError(`Error switching microphone: ${err.message}`);
+        setAudioError(`Error switching microphone: ${(err as Error)?.message || ""}`);
       }
     }
   };

@@ -36,7 +36,7 @@ export const ChatMessageInput = ({
   // Styling adapted from agents-playground ChatMessageInput
   return (
     // Use pt-3 like agents-playground, remove p-4 and bg-gray-800 if ChatInterface handles padding/bg
-    <div className="border-t border-t-gray-800 pt-3">
+    <div className="border-t border-t-gray-800 pt-3 pb-3">
       <div className="flex flex-row gap-2 items-center relative px-2">
         {" "}
         {/* Add some horizontal padding */}

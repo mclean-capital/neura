@@ -8,30 +8,24 @@ import VideoModule from "@/components/ui/VideoModule";
 import { ChatProvider } from "@/contexts/ChatContext";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import NeuraLogo from "./media/images/logo-512x512.png";
 
 export default function Home() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
   // Set connection state for demo components
   const isConnected = true; // Simplified from state since setter is unused
 
-  // Set mounted state on client side
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (mounted && !isLoading && !user) {
+    if (!isLoading && !user) {
       router.push("/login");
     }
-  }, [user, isLoading, router, mounted]);
+  }, [user, isLoading, router]);
 
   // Show loading state while checking authentication
-  if (!mounted || isLoading || !user) {
+  if (isLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-900">
         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -62,10 +56,7 @@ export default function Home() {
               <Image
                 width={100}
                 height={100}
-                src={
-                  "https://lh3.googleusercontent.com/a/ACg8ocKMLbjobS1K7hcb1IqXA1W5-TqFfdSvJQ13v2xMqYTitXQEzSY=s96-c"
-                }
-                // src={user.picture}
+                src={user.picture}
                 alt={user.name || user.email}
                 className="w-8 h-8 rounded-full"
               />
@@ -91,22 +82,25 @@ export default function Home() {
           </div>
 
           {/* Main content grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
-            {/* Left column - Video & Audio */}
-            <div className="flex flex-col gap-4 h-full">
-              <div className="flex-1">
-                <VideoModule isConnected={isConnected} />
-              </div>
-              <div className="flex-1">
-                <AudioModule isConnected={isConnected} chatEnabled={true} />
-              </div>
-            </div>
+          {!isLoading && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+              {/* Left column - Video & Audio */}
 
-            {/* Right column - Chat */}
-            <div className="h-full">
-              <EnhancedChatInterface />
+              <div className="flex flex-col gap-4 h-full">
+                <div className="flex-1">
+                  <VideoModule isConnected={isConnected} />
+                </div>
+                <div className="flex-1">
+                  <AudioModule isConnected={isConnected} chatEnabled={true} />
+                </div>
+              </div>
+
+              {/* Right column - Chat */}
+              <div className="h-full">
+                <EnhancedChatInterface />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </ChatProvider>
     </main>

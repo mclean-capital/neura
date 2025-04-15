@@ -15,18 +15,18 @@ const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
   // Get media context
   const { videoStream, requestVideoPermission, videoError, cameraPermission } = useMedia();
 
+  const initializeCamera = async () => {
+    if (isConnected && cameraPermission === "prompt") {
+      setLoading(true);
+      await requestVideoPermission();
+      setLoading(false);
+    }
+  };
+
   // Initial permission request
   useEffect(() => {
-    const initializeCamera = async () => {
-      if (isConnected && cameraPermission === "prompt") {
-        setLoading(true);
-        await requestVideoPermission();
-        setLoading(false);
-      }
-    };
-
     initializeCamera();
-  }, [isConnected, cameraPermission, requestVideoPermission]);
+  }, []);
 
   return (
     <PlaygroundTile
@@ -72,7 +72,7 @@ const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
                 videoElement.srcObject = videoStream;
               }
             }}
-            className="absolute top-1/2 -translate-y-1/2 object-contain object-position-center w-full h-full"
+            className="absolute -scale-x-100 object-contain object-position-center w-full h-full"
           />
         )}
       </div>

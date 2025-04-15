@@ -59,13 +59,17 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
 
   // Request permissions if needed
   useEffect(() => {
-    if (permissionState === "prompt") {
-      if (kind === "videoinput") {
-        requestVideoPermission();
-      } else if (kind === "audioinput") {
-        requestAudioPermission();
+    const requestPermission = async () => {
+      if (permissionState === "prompt") {
+        if (kind === "videoinput") {
+          await requestVideoPermission();
+        } else if (kind === "audioinput") {
+          await requestAudioPermission();
+        }
       }
-    }
+    };
+
+    requestPermission();
   }, [kind, permissionState, requestVideoPermission, requestAudioPermission]);
 
   // Handle click outside to close menu
