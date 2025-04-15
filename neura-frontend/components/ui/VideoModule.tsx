@@ -1,7 +1,7 @@
 "use client";
 
 import { useMedia } from "@/contexts/MediaContext";
-import { useEffect, useState } from "react";
+import { LegacyRef, useEffect, useRef, useState } from "react";
 import DeviceSelector from "./DeviceSelector";
 import { PlaygroundTile } from "./PlaygroundTile";
 
@@ -11,6 +11,7 @@ interface VideoModuleProps {
 
 const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
   const [loading, setLoading] = useState<boolean>(false);
+  const videoElement = useRef<HTMLVideoElement>();
 
   // Get media context
   const { videoStream, requestVideoPermission, videoError, cameraPermission } = useMedia();
@@ -27,6 +28,12 @@ const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
   useEffect(() => {
     initializeCamera();
   }, []);
+
+  useEffect(() => {
+    if (videoElement && videoElement.current && !videoElement.current.srcObject && videoStream) {
+      videoElement.current.srcObject = videoStream;
+    }
+  }, [videoElement, videoStream]);
 
   return (
     <PlaygroundTile
@@ -62,19 +69,15 @@ const VideoModule: React.FC<VideoModuleProps> = ({ isConnected = false }) => {
           </div>
         )}
 
-        {videoStream && !loading && (
+        {
           <video
             autoPlay
             playsInline
             muted
-            ref={(videoElement) => {
-              if (videoElement && videoStream) {
-                videoElement.srcObject = videoStream;
-              }
-            }}
+            ref={videoElement as unknown as LegacyRef<HTMLVideoElement>}
             className="absolute -scale-x-100 object-contain object-position-center w-full h-full"
           />
-        )}
+        }
       </div>
     </PlaygroundTile>
   );
