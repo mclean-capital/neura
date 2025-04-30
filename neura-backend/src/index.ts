@@ -1,10 +1,11 @@
+// Load environment variables before all other imports
+import dotenv from "dotenv";
+dotenv.config();
 import express from "express";
 import http from "http";
 import cors from "cors";
-import { setupWebSocketServer } from "./websocket";
-import { authMiddleware } from "./middleware/auth";
-import { googleAuth, verifyAuth } from "./controllers/auth";
-import config from "./config";
+import config from "./config.js";
+import { startLivekitAgent } from "./services/livekit-openai-server.js";
 
 // Initialize Express app
 const app = express();
@@ -15,15 +16,6 @@ app.use(express.json());
 
 // Create HTTP server
 const server = http.createServer(app);
-
-// Setup WebSocket server
-setupWebSocketServer(server);
-
-// Public routes
-app.post("/api/auth/google", googleAuth);
-
-// Protected routes
-app.get("/api/auth/verify", authMiddleware, verifyAuth);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -52,6 +44,9 @@ server.listen(port, () => {
   if (config.isDev) {
     console.log(`⚙️ Running in development mode`);
   }
+
+  // Start the LiveKit agent server
+  startLivekitAgent();
 });
 
 // Handle graceful shutdown
