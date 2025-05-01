@@ -1,103 +1,115 @@
-# Neura - Google Gemini Live API Integration
+# Neura Project
 
-A full-stack application demonstrating the integration of Google's Gemini Live API with a secure authentication system.
+Neura is a modern application that integrates AI-powered speech recognition and natural language processing capabilities using LiveKit and Deepgram.
 
 ## Project Overview
 
-This project implements a backend-based integration with Google's Gemini Live API, demonstrating best practices for:
+The project consists of:
 
-- API key security (backend-only access)
-- Real-time streaming of AI responses via WebSockets
-- Google OAuth authentication with restricted access
-- Clean separation of frontend and backend responsibilities
+- **Frontend**: A Next.js web application with LiveKit components for real-time communication
+- **Backend**: A Python backend using LiveKit Agents and Deepgram for speech-to-text
 
-## Repository Structure
+## Features
 
-The project consists of two main parts:
+- 🎙️ Real-time speech-to-text using Deepgram's nova-3 model
+- 🤖 AI assistant with natural language understanding
+- 🌐 Real-time audio/video communication
+- 🔄 Dynamic configuration options
+- 🧠 Conversational AI capabilities
 
-- `neura-backend/`: Node.js/Express backend with Gemini Live API integration
-- `neura-frontend/`: Next.js/React frontend with WebSocket client
+## Architecture
 
-## Why Backend Integration?
+```mermaid
+graph TD
+    A[User] -- Audio --> B[LiveKit Room]
+    B -- Audio Stream --> C[Python Backend]
+    C -- Audio --> D[Deepgram STT]
+    D -- Transcription --> C
+    C -- Transcription --> B
+    B -- Transcription --> E[Frontend]
+    E -- Display --> A
+    C -- User Query --> F[OpenAI LLM]
+    F -- AI Response --> C
+    C -- Voice --> G[Cartesia TTS]
+    G -- Audio Response --> C
+    C -- Audio Response --> B
+    B -- Audio Response --> A
+```
 
-While client-side integration is possible, we chose a backend-based integration for several reasons:
+## Getting Started
 
-1. **API Key Security**: Keeps API keys secure on the server side
-2. **Rate Limiting & Caching**: Centralized control of API usage
-3. **Access Control**: Ability to restrict access to specific users
-4. **Consistent Interface**: Backend can evolve while maintaining a stable API
-5. **Cross-platform Support**: Same backend can serve web, mobile, and desktop clients
+### Prerequisites
 
-## Quick Start
+- Node.js 16+ for the frontend
+- Python 3.8+ for the backend
+- API keys for:
+  - LiveKit
+  - OpenAI
+  - Deepgram
+  - Cartesia
 
-### Backend Setup
+### Setup
+
+1. Clone the repository:
 
 ```bash
-# Install dependencies
-cd neura-backend
-npm install
+git clone https://github.com/yourusername/neura.git
+cd neura
+```
 
-# Create .env.local file (see .env.example)
-# Then start the development server
+2. Run the setup script to install all dependencies:
+
+```bash
+npm run setup
+```
+
+3. Configure the environment variables:
+   - Copy `.env.example` to `.env` in both `neura-frontend-web` and `neura-backend-py` directories
+   - Fill in your API keys and configuration
+
+### Running the Application
+
+You can run both the frontend and backend with a single command:
+
+```bash
 npm run dev
 ```
 
-Required environment variables:
-
-- `GEMINI_API_KEY`: Your Google Gemini API key
-- `GOOGLE_CLIENT_ID`: OAuth client ID
-- `GOOGLE_CLIENT_SECRET`: OAuth client secret
-- `JWT_SECRET`: Secret for JWT token generation
-- `ALLOWED_EMAIL`: Email allowed to access the app
-
-### Frontend Setup
+Or run them separately:
 
 ```bash
-# Install dependencies
-cd neura-frontend
-npm install
+# Run just the frontend
+npm run frontend
 
-# Create .env.local file (see .env.example)
-# Then start the development server
-npm run dev
+# Run just the backend
+npm run backend
 ```
 
-Required environment variables:
+## Project Structure
 
-- `NEXT_PUBLIC_API_URL`: Backend API URL (default: http://localhost:3001)
-- `NEXT_PUBLIC_GOOGLE_CLIENT_ID`: Google OAuth client ID
+```
+neura/
+├── neura-frontend-web/     # Next.js frontend application
+├── neura-backend-py/       # Python backend for LiveKit and Deepgram
+│   ├── agent/              # AI assistant implementation
+│   ├── services/           # Backend services (transcription, etc.)
+│   └── utils/              # Utility functions
+├── package.json            # Root package.json with workspace configuration
+└── README.md               # This file
+```
 
-### Using the Application
+## Development
 
-1. Start both backend and frontend servers
-2. Navigate to `http://localhost:3000` in your browser
-3. Sign in with Google (must use the allowed email)
-4. Start chatting with Gemini's AI
+The project is set up with npm workspaces, making it easy to manage both the frontend and backend together:
 
-## API Documentation
+- **Frontend**: Located in `neura-frontend-web/`
+- **Backend**: Located in `neura-backend-py/`
 
-See the README files in each project directory for detailed API documentation:
+### Making Changes
 
-- [Backend API Documentation](neura-backend/README.md)
-- [Frontend Documentation](neura-frontend/README.md)
-
-## Setting Up Google Cloud
-
-1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
-2. Enable the required APIs:
-   - Gemini API
-   - OAuth2 API
-3. Create credentials:
-   - API key for Gemini
-   - OAuth Client ID for authentication
-
-## Security Considerations
-
-- Keep API keys and secrets secure
-- Only use HTTPS in production
-- The application restricts access to the specific email in your environment variables
-- Consider additional security measures for production use
+- Frontend: Edit files in `neura-frontend-web/src/`
+- Backend: Edit files in `neura-backend-py/`
 
 ## License
 
-MIT
+[MIT License](LICENSE)

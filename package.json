@@ -1,0 +1,20 @@
+{
+  "name": "neura",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "neura-frontend",
+    "neura-backend"
+  ],
+  "scripts": {
+    "frontend": "cd neura-frontend && npm run dev",
+    "backend": "cd neura-backend && npm run dev",
+    "dev": "npx concurrently \"npm run frontend\" \"npm run backend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

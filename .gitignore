@@ -3,6 +3,21 @@ node_modules/
 .pnp/
 .pnp.js
 
+#python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
 # Environment variables
 .env
 .env.local
@@ -14,6 +29,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+firebase-debug.log
 
 # Build output
 dist/
