@@ -7,7 +7,7 @@
     "neura-backend"
   ],
   "scripts": {
-    "frontend": "cd neura-frontend && npm run dev",
+    "frontend": "cd frontend && npm run dev",
     "backend": "cd neura-backend && npm run dev",
     "dev": "npx concurrently \"npm run frontend\" \"npm run backend\""
   },

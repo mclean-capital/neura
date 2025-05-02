@@ -2,9 +2,12 @@
 import dotenv from "dotenv";
 dotenv.config();
 import express from "express";
+import logger from "morgan";
+import bodyParser from "body-parser";
 import http from "http";
 import cors from "cors";
 import config from "./config.js";
+import api from "./api/index.js";
 import { startLivekitAgent } from "./services/livekit-openai-server.js";
 
 // Initialize Express app
@@ -14,6 +17,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.use(logger("dev"));
+app.set("trust proxy", true);
+app.use(bodyParser.json({ limit: "5mb" }));
+app.use(bodyParser.urlencoded({ limit: "3mb", extended: true }));
+app.disable("x-powered-by");
+
 // Create HTTP server
 const server = http.createServer(app);
 
@@ -21,6 +30,8 @@ const server = http.createServer(app);
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
+
+app.use("/api", api);
 
 // Error handler
 app.use(
