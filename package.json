@@ -4,12 +4,19 @@
   "private": true,
   "workspaces": [
     "frontend",
-    "backend"
+    "backend",
+    "agent"
   ],
   "scripts": {
+    "build": "npm run build --workspaces --if-present",
     "frontend": "cd frontend && npm run dev",
     "backend": "cd backend && npm run dev",
-    "dev": "npx concurrently \"npm run frontend\" \"npm run backend\""
+    "agent": "cd agent && npm run dev",
+    "frontend:preview": "cd frontend && npm run preview",
+    "backend:preview": "cd backend && npm run preview",
+    "agent:preview": "cd agent && npm run preview",
+    "dev": "npx concurrently \"npm run frontend\" \"npm run backend\" \"npm run agent\"",
+    "preview": "npx concurrently \"npm run frontend:preview\" \"npm run backend:preview\" \"npm run agent:preview\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
