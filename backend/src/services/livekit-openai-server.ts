@@ -38,18 +38,7 @@ export const startLivekitAgent = () => {
   }
 
   try {
-    // Pass the dev command and environment variables explicitly to cli.runApp
-    process.argv = [
-      process.argv[0],
-      process.argv[1],
-      "dev",
-      "--url",
-      process.env.LIVEKIT_URL,
-      "--api-key",
-      process.env.LIVEKIT_API_KEY,
-      "--api-secret",
-      process.env.LIVEKIT_API_SECRET,
-    ];
+    // Removed manual process.argv manipulation
 
     // Debug the LiveKit configuration
     console.log("LiveKit configuration:", {
@@ -59,6 +48,7 @@ export const startLivekitAgent = () => {
     });
 
     // Start the agent with the CLI
+    console.log("Attempting to start agent worker via cli.runApp..."); // Added log
     cli.runApp(
       new WorkerOptions({
         agent: fileURLToPath(import.meta.url),
