@@ -12,13 +12,12 @@ import {
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
-  apiKey: "AIzaSyD5HWO9t7ULKSpOxH-tKSDgANJF5_QZJnA", // IMPORTANT: Consider moving this to environment variables for security
-  authDomain: "neura-456613.firebaseapp.com",
-  projectId: "neura-456613",
-  storageBucket: "neura-456613.firebasestorage.app",
-  messagingSenderId: "1064422077579",
-  appId: "1:1064422077579:web:a5820e4f0159f0589cd08e",
-  measurementId: "G-Y9Q1VG70M6",
+  apiKey: "AIzaSyDA_o4IBmtXWVfi_39euyU3gnntHMt20BQ",
+  authDomain: "neura-20293.firebaseapp.com",
+  projectId: "neura-20293",
+  storageBucket: "neura-20293.firebasestorage.app",
+  messagingSenderId: "785551987611",
+  appId: "1:785551987611:web:55c162aab2e3619e67873e",
 };
 
 // --- Initialize Firebase and Auth ---
