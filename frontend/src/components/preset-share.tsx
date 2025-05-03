@@ -12,7 +12,7 @@ import {
   PopoverTrigger,
 } from "../components/ui/popover";
 import { usePlaygroundState } from "../hooks/use-playground-state";
-import { playgroundStateHelpers } from "../../lib/playground-state-helpers";
+import { playgroundStateHelpers } from "../lib/playground-state-helpers";
 import { LockClosedIcon } from "@radix-ui/react-icons";
 
 export function PresetShare() {

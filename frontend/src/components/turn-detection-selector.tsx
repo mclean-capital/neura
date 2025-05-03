@@ -26,8 +26,7 @@ import { VadPrefixPaddingSelector } from "./vad-prefix-padding-selector";
 import { VadSilenceDurationSelector } from "./vad-silence-duration-selector";
 
 export function TurnDetectionSelector({
-  form,
-  ...props
+  form
 }: ConfigurationFormFieldProps) {
   const turnDetection = form.watch("turnDetection");
 

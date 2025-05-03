@@ -11,7 +11,7 @@ export function Transcript({
 }) {
   const { displayTranscriptions } = useAgent();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [, setShowScrollButton] = useState(false);
   const calculateDistanceFromBottom = (container: HTMLElement) => {
     const { scrollHeight, scrollTop, clientHeight } = container;
     return scrollHeight - scrollTop - clientHeight;

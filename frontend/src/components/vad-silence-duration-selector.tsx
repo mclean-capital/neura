@@ -30,9 +30,7 @@ const getMinMaxForField = (schema: z.ZodNumber) => {
 };
 
 export function VadSilenceDurationSelector({
-  form,
-  schema,
-  ...props
+  form
 }: ConfigurationFormFieldProps) {
   const { minValue, maxValue } = getMinMaxForField(
     ConfigurationFormSchema.shape.vadSilenceDurationMs,

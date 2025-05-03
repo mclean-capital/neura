@@ -20,7 +20,7 @@ export function InstructionsEditor({
 }: InstructionsEditorProps) {
   const connectionState = useConnectionState();
   const { pgState, dispatch } = usePlaygroundState();
-  const [dirty, setDirty] = useState<boolean>(false);
+  const [,setDirty] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState(instructions || "");
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {

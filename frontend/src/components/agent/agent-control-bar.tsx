@@ -1,4 +1,4 @@
-import { AgentState } from "../data/agent";
+import { AgentState } from "../../data/agent";
 import { ComponentType, CSSProperties } from "react";
 import { AgentBarVisualizer } from "./visualizers/bar-visualizer";
 import { AgentGridVisualizer } from "./visualizers/grid-visualizer";
@@ -75,18 +75,10 @@ export const AgentVisualizer = ({
     );
   }
   return (
-    <AgentWaveformVisualizer
-      state={state}
-      volumeBands={volumeBands}
-      options={options}
-    />
+    <AgentWaveformVisualizer />
   );
 };
 
-export const AgentWaveformVisualizer = ({
-  state,
-  volumeBands,
-  options,
-}: AgentVisualizerProps) => {
+export const AgentWaveformVisualizer = () => {
   return <div></div>;
 };

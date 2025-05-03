@@ -74,10 +74,6 @@ export function ConfigurationForm() {
         ? values.maxOutputTokens.toString()
         : "",
     };
-    // Check if the local participant already has attributes set
-    const hadExistingAttributes =
-      Object.keys(localParticipant.attributes).length > 0;
-
     // Check if only the voice attribute has changed
     const onlyVoiceChanged = Object.keys(attributes).every(
       (key) =>

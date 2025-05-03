@@ -57,12 +57,12 @@ const signInWithGoogle = async (): Promise<User> => {
     // TODO: handle this on server later
     const ALLOWED_EMAILS = [
       "donmcleanx@gmail.com",
-      "don.mclean@mcleancaptial.org",
-      "reign@mcleancaptial.org",
+      "don.mclean@mcleancapital.org",
+      "reign@mcleancapital.org",
     ];
 
     if (!ALLOWED_EMAILS.includes(result.user?.email || "")) {
-      signOut(auth);
+      await signOut(auth);
       throw new Error("You're not welcomed here ;)");
     }
 
