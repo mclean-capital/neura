@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 dotenv.config();
 import express from "express";
 import logger from "morgan";
-import bodyParser from "body-parser";
 import http from "http";
 import cors from "cors";
 import config from "./config.js";
@@ -19,8 +18,9 @@ app.use(express.json());
 
 app.use(logger("dev"));
 app.set("trust proxy", true);
-app.use(bodyParser.json({ limit: "5mb" }));
-app.use(bodyParser.urlencoded({ limit: "3mb", extended: true }));
+// Use built-in Express middleware instead of body-parser
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ limit: "3mb", extended: true }));
 app.disable("x-powered-by");
 
 // Create HTTP server

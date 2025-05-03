@@ -78,10 +78,13 @@ export default defineAgent({
       console.log("Agent entry point called for room:", ctx.room.name);
 
       // Connect to the room
+      console.time("AgentConnectTime");
       await ctx.connect();
+      console.timeEnd("AgentConnectTime");
       console.log("Connected to room successfully");
 
       // Initialize Deepgram STT with an improved configuration
+      console.time("DeepgramInitTime");
       const deepgramStt = new deepgram.STT({
         apiKey: process.env.DEEPGRAM_API_KEY,
         model: "nova-3-general", // Latest model specified in the STTModels type
@@ -93,12 +96,14 @@ export default defineAgent({
         fillerWords: true,
         profanityFilter: false,
       });
+      console.timeEnd("DeepgramInitTime");
 
       console.log(
         "Deepgram transcription initialized with nova-3-general model"
       );
 
       // Create a more responsive voice assistant with Deepgram integration
+      console.time("AgentInitTime");
       const agent = new multimodal.MultimodalAgent({
         model: new openai.realtime.RealtimeModel({
           instructions: `
@@ -127,6 +132,7 @@ export default defineAgent({
           // We don't directly attach the Deepgram STT here, as it's not supported in this interface
         }),
       });
+      console.timeEnd("AgentInitTime");
 
       // Create a transcription stream from Deepgram STT
       const transcriptionStream = deepgramStt.stream();
@@ -216,7 +222,9 @@ export default defineAgent({
 
       // Start the agent
       console.log("Starting agent...");
+      console.time("AgentStartTime");
       await agent.start(ctx.room);
+      console.timeEnd("AgentStartTime");
       console.log(
         "Agent started successfully with Deepgram nova-3-general transcription"
       );
