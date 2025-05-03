@@ -70,6 +70,7 @@ export const playgroundStateHelpers = {
         const configKey = key.split(
           "."
         )[1] as keyof PlaygroundState["sessionConfig"];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         sessionConfig[configKey] = value as any;
       }
     });

@@ -5,7 +5,7 @@ import {
 } from "livekit-client";
 
 export class AudioVisualizer {
-  private interval: any;
+  private interval?: NodeJS.Timeout;
   private callback: (values: number[], volume: number) => void;
   private bands: number;
   private cleanup: (() => Promise<void>) | null = null;

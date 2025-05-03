@@ -2,6 +2,7 @@ export const visualizerVariations: {
   name: string;
   style: "grid" | "bar" | "radial" | "waveform";
   count: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   options: any;
 }[] = [
   {

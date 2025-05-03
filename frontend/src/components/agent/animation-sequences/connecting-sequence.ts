@@ -3,7 +3,7 @@ export const generateConnectingSequence = (
   columns: number,
   ringDistance: number
 ) => {
-  let seq = [];
+  const seq = [];
   const centerY = Math.floor(rows / 2);
 
   // Calculate the boundaries of the ring based on the ring distance
@@ -42,7 +42,7 @@ export const generateConnectingSequence = (
 export const generateConnectingSequenceBar = (
   columns: number
 ): number[] | number[][] => {
-  let seq = [];
+  const seq = [];
 
   for (let x = 0; x <= columns; x++) {
     seq.push([x, columns - 1 - x]);
@@ -54,7 +54,7 @@ export const generateConnectingSequenceBar = (
 export const generateConnectingSequenceRadialBar = (
   columns: number
 ): number[] | number[][] => {
-  let seq = [];
+  const seq = [];
 
   for (let x = 0; x <= columns; x++) {
     seq.push([x, columns - 1 - x]);

@@ -94,7 +94,7 @@ function playgroundStateReducer(
     case "SET_SELECTED_PRESET_ID":
       presetStorageHelper.setStoredSelectedPresetId(action.payload);
 
-      let newState = {
+      const newState = {
         ...state,
         selectedPresetId: action.payload,
       };
