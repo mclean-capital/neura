@@ -7,13 +7,43 @@ import http from "http";
 import cors from "cors";
 import config from "./config.js";
 import api from "./api/index.js";
-import { startLivekitAgent } from "./services/livekit-openai-server.js";
 
 // Initialize Express app
 const app = express();
 
 // Middleware
-app.use(cors());
+// Define allowed origins
+const allowedOrigins = [
+  "https://neura-20293.web.app", // Production frontend
+  "http://localhost:5173", // Default Vite dev server
+  "http://127.0.0.1:5173", // Alternative Vite dev server
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  // Add any other ports if your local setup uses them
+];
+
+const corsOptions = {
+  origin: function (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void
+  ) {
+    // Allow requests with no origin OR from allowed origins
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      const msg =
+        "The CORS policy for this site does not allow access from the specified Origin.";
+      callback(new Error(msg), false);
+    }
+  },
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+  allowedHeaders: "Content-Type, Authorization",
+  credentials: true,
+};
+
+// Apply configured CORS middleware
+app.use(cors(corsOptions));
+// app.options('*', cors(corsOptions)); // Keep this commented for now
 app.use(express.json());
 
 app.use(logger("dev"));
@@ -48,9 +78,6 @@ server.listen(port, () => {
   if (config.isDev) {
     console.log(`⚙️ Running in development mode`);
   }
-
-  // Start the LiveKit agent server
-  startLivekitAgent();
 });
 
 // Handle graceful shutdown
