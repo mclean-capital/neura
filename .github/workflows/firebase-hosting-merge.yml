@@ -21,6 +21,7 @@ jobs:
           projectId: neura-20293
         env:
           VITE_BACKEND_API_URL: https://neura--neura-20293.us-central1.hosted.app
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
   build_and_deploy_backend:
     runs-on: ubuntu-latest
     steps:

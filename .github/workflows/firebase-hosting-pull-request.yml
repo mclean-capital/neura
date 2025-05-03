@@ -22,6 +22,7 @@ jobs:
           projectId: neura-20293
         env:
           VITE_BACKEND_API_URL: https://neura--neura-20293.us-central1.hosted.app
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
   build_and_preview_backend:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
