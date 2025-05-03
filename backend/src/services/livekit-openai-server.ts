@@ -66,7 +66,8 @@ export const startLivekitAgent = () => {
       new WorkerOptions({
         agent: fileURLToPath(import.meta.url),
         workerType: JobType.JT_ROOM,
-        initializeProcessTimeout: 60000, // Increase timeout to 60 seconds
+        initializeProcessTimeout: 20000, // Increase timeout to 20 seconds
+        port: 0,
       })
     );
     // Corrected log message
