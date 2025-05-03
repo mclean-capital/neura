@@ -2,25 +2,22 @@
 
 import React from "react";
 import { usePlaygroundState } from "../hooks/use-playground-state";
-import { z } from "zod";
-import { ellipsisMiddle } from "../../lib/utils";
-// Import the specific function needed
+import { ellipsisMiddle } from "../lib/utils";
 import { signOutUser } from "../services/firebase";
-
-const AuthFormSchema = z.object({
-  openaiAPIKey: z.string().min(1, { message: "API key is required" }),
-});
+import { useNavigate } from 'react-router';
+import { ROUTE_PATHS } from "../main";
 
 export function Auth() {
+  const navigate = useNavigate();
   const { pgState, dispatch } = usePlaygroundState();
 
-  const onLogout = (e: React.MouseEvent) => {
+  const onLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     dispatch({ type: "SET_API_KEY", payload: null });
-    // Use the imported function
-    signOutUser();
+    await signOutUser();
+    navigate(ROUTE_PATHS.HOME);
   };
 
   return (

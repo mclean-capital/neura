@@ -1,8 +1,22 @@
 import { RoomComponent } from "../components/room-component";
 import { HeaderMain } from "../components/header-main";
+import { useEffect } from "react";
+import { useNavigate } from 'react-router';
+import { ROUTE_PATHS } from "../main";
+import { useAuth } from "../hooks/useAuth";
 
 export default function Dashboard() {
-  return (
+  const navigate = useNavigate();
+  const {user, loading} = useAuth();
+
+  // Redirect if already logged out
+  useEffect(() => {
+    if (!user && !loading) {
+      navigate(ROUTE_PATHS.LOGIN);
+    }
+  }, [user, loading, navigate]);
+
+  return user && (
     <div className="flex flex-col h-full bg-neutral-100">
       <HeaderMain />
       <main className="flex flex-col flex-grow overflow-hidden p-0 md:p-2 md:pt-0 w-full md:mx-auto">

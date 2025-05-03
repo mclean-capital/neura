@@ -1,5 +1,5 @@
 {
-  "name": "neura-backend",
+  "name": "backend",
   "version": "1.0.0",
   "description": "Backend server for Neura with Gemini Live API integration",
   "main": "dist/index.js",

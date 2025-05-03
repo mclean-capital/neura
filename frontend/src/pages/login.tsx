@@ -4,6 +4,7 @@ import NeuraLogo from "../assets/media/images/logo-512x512.png";
 import { signInWithGoogle } from "../services/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router";
+import { ROUTE_PATHS } from "../main";
 
 const LoginPage = () => {
   const { user, loading, error } = useAuth();
@@ -12,7 +13,7 @@ const LoginPage = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user && !loading) {
-      navigate("/");
+      navigate(ROUTE_PATHS.HOME);
     }
   }, [user, loading, navigate]);
 

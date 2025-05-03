@@ -3,10 +3,19 @@ import { Button } from "../components/ui/button";
 import NeuraLogo from "../assets/media/images/logo-512x512.png";
 import { useAuth } from "../hooks/useAuth";
 import { signOutUser } from "../services/firebase";
+import { useNavigate } from 'react-router';
+import { ROUTE_PATHS } from "../main";
 
 export const HeaderMain = () => {
-  // Get user from the auth context
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const onLogout = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await signOutUser();
+    navigate(ROUTE_PATHS.LOGIN);
+  }
 
   return (
     <header className="flex flex-shrink-0 h-12 items-center justify-between px-4 w-full md:mx-auto">
@@ -39,11 +48,8 @@ export const HeaderMain = () => {
           </span>
         </div>
 
-        {/* Use the imported signOutUser function */}
-        <Button onClick={signOutUser}>Logout</Button>
+        <Button onClick={onLogout}>Logout</Button>
       </div>
-
-      {/* <Auth /> */}
     </header>
   );
 };

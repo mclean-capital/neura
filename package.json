@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "neura-frontend",
-    "neura-backend"
+    "frontend",
+    "backend"
   ],
   "scripts": {
     "frontend": "cd frontend && npm run dev",
-    "backend": "cd neura-backend && npm run dev",
+    "backend": "cd backend && npm run dev",
     "dev": "npx concurrently \"npm run frontend\" \"npm run backend\""
   },
   "devDependencies": {
