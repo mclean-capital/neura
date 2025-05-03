@@ -38,7 +38,18 @@ export const startLivekitAgent = () => {
   }
 
   try {
-    // Removed manual process.argv manipulation
+    // Conditionally add "dev" command for local development
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        "NODE_ENV is development, adding 'dev' to process.argv for agent CLI"
+      );
+      process.argv.splice(2, 0, "dev"); // Insert 'dev' after node executable and script path
+    } else {
+      console.log(
+        "NODE_ENV is NOT development, adding 'start' to process.argv for agent CLI"
+      );
+      process.argv.splice(2, 0, "start"); // Insert 'start' for production
+    }
 
     // Debug the LiveKit configuration
     console.log("LiveKit configuration:", {
