@@ -11,6 +11,17 @@ import * as deepgram from "@livekit/agents-plugin-deepgram";
 import { JobType } from "@livekit/protocol";
 import { fileURLToPath } from "node:url";
 
+// Log environment variables at the top level of the worker module
+// This might execute even if the library crashes before the entry function
+try {
+  console.log(
+    "Worker Top Level Env (initial load):",
+    JSON.stringify(process.env, null, 2)
+  );
+} catch (e) {
+  console.error("Error logging top-level env:", e);
+}
+
 // Create a function to start the LiveKit agent server
 export const startLivekitAgent = () => {
   console.log("Starting LiveKit agent server...");
@@ -66,9 +77,10 @@ export const startLivekitAgent = () => {
         workerType: JobType.JT_ROOM,
       })
     );
-    console.log("LiveKit agent started successfully");
+    // Corrected log message
+    console.log("cli.runApp called in main process (worker process launched)");
   } catch (error) {
-    console.error("Failed to start LiveKit agent:", error);
+    console.error("Error calling cli.runApp in main process:", error);
   }
 };
 

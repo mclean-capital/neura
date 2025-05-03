@@ -4,8 +4,8 @@ runConfig:
   minInstances: 0
   # maxInstances: 100
   # concurrency: 80
-  cpu: 2 # Increase CPU to 2 vCPUs
-  memoryMiB: 2048 # Keep memory at 2 GiB
+  # cpu: 1
+  # memoryMiB: 512
   # Environment variables and secrets.
   # env:
   # Configure environment variables.
