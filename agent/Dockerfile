@@ -1,15 +1,19 @@
-FROM node:22-alpine
+FROM node:20-slim AS base
 
-# Setup work directory
-ARG APP_DIR=app
-RUN mkdir -p ${APP_DIR}
-WORKDIR ${APP_DIR}
+WORKDIR /app
 
-# Copy project files
-COPY . .
+# throw away build stage to reduce size of final image
+FROM base AS build
 
-# Install dependencies, build and remove dependencies  
-RUN npm i --platform=linux --arch=x64 && npm run build
+RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates
+COPY --link . .
+
+RUN npm i
+RUN npm run build
+
+FROM base
+COPY --from=build /app /app
+COPY --from=build /etc/ssl/certs /etc/ssl/certs
 
 # Expose running port
 EXPOSE 8081
