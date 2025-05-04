@@ -33,22 +33,23 @@ steps:
       - "CLOUDSDK_COMPUTE_ZONE=${_GKE_LOCATION}"
       - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
 
+  # set image for deployment
+  - name: gcr.io/cloud-builders/kubectl
+    args:
+      - set
+      - image
+      - deployment/$_K8S_APP_NAME
+      - deployment/$_K8S_APP_NAME=gcr.io/$PROJECT_ID/$REPO_NAME/agent:$COMMIT_SHA
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=${_GKE_LOCATION}"
+      - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
+
   # scale current gke deployment to 0
   - name: gcr.io/cloud-builders/kubectl
     args:
       - scale
       - --replicas=1
       - deployment/$_K8S_APP_NAME
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=${_GKE_LOCATION}"
-      - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
-
-  - name: gcr.io/cloud-builders/kubectl
-    args:
-      - set
-      - image
-      - deployment/$_K8S_APP_NAME
-      - $_K8S_APP_NAME=gcr.io/$PROJECT_ID/$REPO_NAME/agent:$COMMIT_SHA
     env:
       - "CLOUDSDK_COMPUTE_ZONE=${_GKE_LOCATION}"
       - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
