@@ -1,3 +1,5 @@
+apiVersion: cloud.google.com/v1
+kind: Build
 steps:
   # store environment variables in .env file
   - name: "bash"
