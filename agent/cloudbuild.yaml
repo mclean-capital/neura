@@ -1,5 +1,3 @@
-apiVersion: cloud.google.com/v1
-kind: Build
 steps:
   # store environment variables in .env file
   - name: "bash"
@@ -170,4 +168,3 @@ tags:
 # tags:
 #   - gcp-cloud-build-deploy
 #   - $_K8S_APP_NAME
-
