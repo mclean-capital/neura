@@ -6,7 +6,7 @@ WORKDIR /app
 FROM base AS build
 
 RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates
-COPY --link . .
+COPY . .
 
 RUN npm i
 RUN npm run build
