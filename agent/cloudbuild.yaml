@@ -26,7 +26,7 @@ steps:
   - name: gcr.io/cloud-builders/gke-deploy
     args:
       - prepare
-      - "--filename=$_K8S_YAML_PATH"
+      # - "--filename=$_K8S_YAML_PATH"
       - "--image=$_IMAGE_NAME:$COMMIT_SHA"
       - "--app=$_K8S_APP_NAME"
       - "--version=$COMMIT_SHA"
