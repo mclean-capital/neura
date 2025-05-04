@@ -66,8 +66,8 @@ options:
 substitutions:
   _K8S_LABELS: ""
   _OUTPUT_BUCKET_PATH: neura-20293_cloudbuild/deploy
-  _DOCKERFILE_DIR: ""
-  _K8S_YAML_PATH: agent/
+  _DOCKERFILE_DIR: "agent"
+  _K8S_YAML_PATH: agent
   _K8S_APP_NAME: neura-agent-deployment
   _DOCKERFILE_NAME: Dockerfile
   _K8S_NAMESPACE: default
