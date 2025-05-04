@@ -8,8 +8,8 @@ WORKDIR ${APP_DIR}
 # Copy project files
 COPY . .
 
-# Install dependencies, build and remove dependencies
-RUN npm i && npm run build
+# Install dependencies, build and remove dependencies  
+RUN npm i --platform=linux --arch=x64 && npm run build
 
 # Expose running port
 EXPOSE 8081
