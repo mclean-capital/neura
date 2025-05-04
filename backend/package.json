@@ -9,7 +9,6 @@
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "NODE_ENV=production node dist/index.js",
     "dev": "NODE_ENV=development node --loader ts-node/esm src/index.ts",
-    "dev:livekit": "node --loader ts-node/esm src/services/livekit-openai-server.ts dev",
     "lint": "eslint ."
   },
   "dependencies": {
