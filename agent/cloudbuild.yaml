@@ -35,3 +35,5 @@ steps:
       - "$_LOCATION"
       - "--platform=managed" # Add platform flag for Cloud Run
       - "--allow-unauthenticated" # Add this to allow public access
+options:
+  logging: CLOUD_LOGGING_ONLY
