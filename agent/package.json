@@ -16,6 +16,7 @@
     "@livekit/agents-plugin-deepgram": "^0.5.5",
     "@livekit/agents-plugin-openai": "^0.9.1",
     "@livekit/protocol": "^1.36.1",
+    "@livekit/rtc-node": "^0.13.11",
     "dotenv": "^16.5.0"
   },
   "devDependencies": {
