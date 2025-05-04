@@ -30,6 +30,8 @@ steps:
       - "run"
       - "deploy"
       - "neura-agent"
+      - "--port"
+      - "8081"
       - "--image"
       - "gcr.io/$PROJECT_ID/$REPO_NAME/agent:latest" # Changed repo name to match your job name
       - "--region"
