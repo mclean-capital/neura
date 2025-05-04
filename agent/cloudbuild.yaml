@@ -6,6 +6,7 @@ steps:
       printenv >> .env
   # build container image with both latest and commit SHA tags
   - name: "gcr.io/cloud-builders/docker"
+    dir: "agent"
     args:
       - "build"
       - "-t"
