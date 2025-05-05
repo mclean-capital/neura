@@ -25,15 +25,15 @@ const RootLayout = ({
 }>) => {
   return (
     <PlaygroundStateProvider>
-      <ConnectionProvider>
-        <TooltipProvider>
-          <AuthProvider>
+      <AuthProvider>
+        <ConnectionProvider>
+          <TooltipProvider>
             {/* <PostHogPageView /> */}
             {children}
             <Toaster />
-          </AuthProvider>
-        </TooltipProvider>
-      </ConnectionProvider>
+          </TooltipProvider>
+        </ConnectionProvider>
+      </AuthProvider>
     </PlaygroundStateProvider>
   );
 };

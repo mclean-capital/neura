@@ -4,6 +4,7 @@ import React, { createContext, useState, useCallback, useContext } from "react";
 import { PlaygroundState } from "../data/playground-state";
 import { usePlaygroundState } from "./use-playground-state";
 import { VoiceId } from "../data/voices";
+import { useAuth } from "./useAuth";
 
 export type ConnectFn = () => Promise<void>;
 
@@ -34,8 +35,9 @@ export const ConnectionProvider = ({
   }>({ wsUrl: "", token: "", shouldConnect: false, voice: VoiceId.alloy });
 
   const { pgState } = usePlaygroundState();
+  const { user } = useAuth();
 
-  const connect = async () => {
+  const connect = useCallback(async () => {
     const response = await fetch(
       `${import.meta.env.VITE_BACKEND_API_URL}/api/token`,
       {
@@ -43,7 +45,9 @@ export const ConnectionProvider = ({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(pgState),
+        body: JSON.stringify({
+          email: user?.email,
+        }),
       }
     );
 
@@ -57,9 +61,9 @@ export const ConnectionProvider = ({
       wsUrl: url,
       token: accessToken,
       shouldConnect: true,
-      voice: pgState.sessionConfig.voice,
+      voice: VoiceId.alloy,
     });
-  };
+  }, [user?.email]);
 
   const disconnect = useCallback(async () => {
     setConnectionDetails((prev) => ({ ...prev, shouldConnect: false }));

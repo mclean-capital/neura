@@ -6,7 +6,8 @@ const tokenRouter = express.Router();
 // POST /token
 tokenRouter.post("/", async (req, res) => {
   try {
-    const roomName = Math.random().toString(36).slice(7);
+    const email = req.body.email;
+    const roomName = `${email}-${Math.random().toString(36).slice(7)}`;
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     if (!apiKey || !apiSecret) {
@@ -24,6 +25,7 @@ tokenRouter.post("/", async (req, res) => {
       canSubscribe: true,
       canUpdateOwnMetadata: true,
     });
+
     return res.json({
       accessToken: await at.toJwt(),
       url: process.env.LIVEKIT_URL,
