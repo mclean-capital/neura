@@ -11,12 +11,10 @@ fi
 echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Install dependencies if needed
-if [ "$1" == "--install" ] || [ "$1" == "-i" ]; then
-    echo "Installing dependencies..."
-    pip install -r requirements.txt
-    shift # Remove the install argument
-fi
+# Always install/update dependencies to ensure environment is correct
+echo "Installing/updating dependencies (forcing reinstall)..."
+pip install --upgrade --force-reinstall -r requirements.txt
+echo "Dependencies installed/updated."
 
 # Run the agent
 echo "Starting agent service..."
