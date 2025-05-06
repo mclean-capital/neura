@@ -1,4 +1,4 @@
-livekit-agents[openai,silero,deepgram,turn-detector]~=1.0 # Added extras
+livekit-agents[openai,google,silero,deepgram,turn-detector]~=1.0 # Added extras
 livekit-plugins-openai~=1.0
 livekit-plugins-deepgram~=1.0
 livekit-plugins-silero~=1.0
