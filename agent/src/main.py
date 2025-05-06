@@ -44,6 +44,7 @@ from livekit.agents import (
 # from livekit.agents.voice import Agent as VoiceAgent # Removed, using top-level Agent
 from livekit.agents.stt import SpeechEventType      # For STT event types
 from livekit.plugins import openai, deepgram, silero # Silero for VAD
+from livekit.plugins.turn_detector.english import EnglishModel # For client-side turn detection
 
 # Import local modules
 from .instructions import instructions
@@ -54,14 +55,14 @@ class MyAgent(Agent): # Inherit from livekit.agents.Agent
                  job_ctx: JobContext, 
                  llm_plugin: Union[llm.LLM, llm.RealtimeModel], # Changed to Union for Py3.9
                  instructions_text: str, 
-                 turn_detection_config: dict):
-        # Initialize the base VoiceAgent.
+                 turn_detector: EnglishModel): # Changed from dict to EnglishModel
+        # Initialize the base Agent.
         # STT and TTS will be picked up from the AgentSession.
-        # If we wanted to override session STT/TTS, we could pass stt_plugin/tts_plugin here.
+        # LLM and turn_detector are passed directly to the Agent.
         super().__init__(
             instructions=instructions_text,
             llm=llm_plugin,
-            turn_detection=turn_detection_config
+            turn_detection=turn_detector # Pass the EnglishModel instance
         )
         self.job_ctx = job_ctx # For publishing transcriptions to frontend
 
@@ -226,20 +227,18 @@ async def agent_entry(ctx: JobContext):
             else instructions["REIGN"]
         )
 
-        # Turn detection configuration for the Agent
-        turn_detection_config = {
-            "type": "server_vad",
-            "threshold": 0.5,
-            "silence_duration_ms": 300,
-            "prefix_padding_ms": 200,
-        }
+        # Turn detection plugin instance
+        # The EnglishModel can take parameters like min_silence_duration, etc.
+        # Using defaults for now.
+        turn_detector_plugin = EnglishModel()
+        logger.info("EnglishModel turn detector initialized.")
 
         # Create our custom agent
         my_agent = MyAgent(
             job_ctx=ctx,
             llm_plugin=openai_llm_plugin,
             instructions_text=resolved_instructions,
-            turn_detection_config=turn_detection_config
+            turn_detector=turn_detector_plugin # Pass the instance
         )
         logger.info("MyAgent instance created.")
 
