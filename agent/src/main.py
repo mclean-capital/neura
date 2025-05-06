@@ -9,7 +9,7 @@ import os
 import sys
 import asyncio
 import signal
-from typing import Optional
+from typing import Optional, Union # Added Union
 import logging
 
 # Setup logging
@@ -52,7 +52,7 @@ from .instructions import instructions
 class MyAgent(Agent): # Inherit from livekit.agents.Agent
     def __init__(self, 
                  job_ctx: JobContext, 
-                 llm_plugin: llm.LLM | llm.RealtimeModel, 
+                 llm_plugin: Union[llm.LLM, llm.RealtimeModel], # Changed to Union for Py3.9
                  instructions_text: str, 
                  turn_detection_config: dict):
         # Initialize the base VoiceAgent.
