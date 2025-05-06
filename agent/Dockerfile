@@ -33,6 +33,9 @@ ENV PATH="/home/appuser/.local/bin:${PATH}"
 # Copy the rest of the application code as 'appuser'
 COPY --chown=appuser:0 . .
 
+# ensure that any dependent models are downloaded at build-time
+RUN python src/download.py download-files
+
 # Expose port if the application is expected to listen on it
 # Note: The current agent doesn't inherently listen on a port.
 EXPOSE 8081
