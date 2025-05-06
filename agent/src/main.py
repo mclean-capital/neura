@@ -43,7 +43,7 @@ from livekit.agents import (
 )
 # from livekit.agents.voice import Agent as VoiceAgent # Removed, using top-level Agent
 from livekit.agents.stt import SpeechEventType      # For STT event types
-from livekit.plugins import openai, deepgram, silero # Silero for VAD
+from livekit.plugins import openai, deepgram, silero, google # Silero for VAD, Google for LLM
 from livekit.plugins.turn_detector.english import EnglishModel # For client-side turn detection
 
 # Import local modules
@@ -152,14 +152,26 @@ def check_environment_variables() -> bool:
         )
         return False
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        logger.error("OPENAI_API_KEY is missing. Please check your .env file.")
-        return False
+    # OPENAI_API_KEY and GOOGLE_API_KEY are checked based on MODEL_TYPE below
+    # if not os.environ.get("OPENAI_API_KEY"):
+    #     logger.error("OPENAI_API_KEY is missing. Please check your .env file.")
+    #     return False
 
     if not os.environ.get("DEEPGRAM_API_KEY"):
         logger.error("DEEPGRAM_API_KEY is missing. Please check your .env file.")
         return False
 
+    model_type = os.environ.get("MODEL_TYPE", "openai").lower()
+    if model_type in ["google", "gemini"]:
+        if not os.environ.get("GOOGLE_API_KEY"):
+            logger.error("GOOGLE_API_KEY is missing for Google LLM. Please check your .env file.")
+            return False
+    elif model_type == "openai": # Explicitly check for openai
+        if not os.environ.get("OPENAI_API_KEY"):
+            logger.error("OPENAI_API_KEY is missing for OpenAI LLM. Please check your .env file.")
+            return False
+    # else: # Other model types or invalid, could add a warning/error if strict
+    #    logger.warning(f"MODEL_TYPE is '{model_type}', not 'openai' or 'google'/'gemini'. API key for the selected model might be missing.")
     return True
 
 
@@ -183,6 +195,12 @@ async def agent_entry(ctx: JobContext):
     try:
         room_name = ctx.job.room.name if ctx.job.room else "default_room"
         logger.info(f"Agent entry point called for room: {room_name}")
+
+        # Determine which instructions to use
+        is_don = room_name is not None and "don" in room_name.lower()
+        resolved_instructions = (
+            instructions["DON"] if is_don else instructions["REIGN"]
+        )
 
         # Connect JobContext to the room, similar to basic_agent.py example
         # This might handle default auto-subscription.
@@ -209,23 +227,63 @@ async def agent_entry(ctx: JobContext):
         openai_tts_plugin = openai.TTS(api_key=os.environ["OPENAI_API_KEY"], voice="alloy") # This is fine for session
         logger.info("OpenAI TTS plugin initialized.")
 
-        # LLM Plugin (OpenAI RealtimeModel)
-        openai_llm_plugin = openai.realtime.RealtimeModel(
-            # instructions are passed to MyAgent, then to super().__init__
-            voice="alloy", # This is for the LLM's integrated TTS, if used by RealtimeModel directly
-            temperature=0.7
-            # max_response_output_tokens=2000, # Removed, not a valid param in v1.0 plugin
-            # modalities=["text", "audio"] # Removed, also not a valid param in the installed v1.0 plugin
-            # turn_detection for RealtimeModel is configured below for the Agent
-        )
-        logger.info("OpenAI RealtimeModel LLM plugin initialized.")
+        # Determine LLM plugin based on MODEL_TYPE environment variable
+        model_type = os.environ.get("MODEL_TYPE", "openai").lower()
+        logger.info(f"Selected LLM model type: {model_type}")
 
-        # Determine which instructions to use
-        resolved_instructions = (
-            instructions["DON"]
-            if room_name and "don" in room_name.lower()
-            else instructions["REIGN"]
-        )
+        llm_plugin: Union[llm.LLM, llm.RealtimeModel]
+
+        if model_type in ["google", "gemini"]:
+            try:
+                # Determine which voice to use
+                resolved_gemini_voice = (
+                    "Puck" if is_don else "Zephyr"
+                )
+                google_llm_plugin = google.beta.realtime.RealtimeModel(
+                    temperature=0.7,
+                    voice=resolved_gemini_voice
+                    # model="gemini-1.5-flash-latest" # Example, or let it use its default
+                    # GOOGLE_API_KEY is typically picked up from env by the plugin
+                )
+                llm_plugin = google_llm_plugin
+                logger.info("Google RealtimeModel LLM plugin initialized.")
+            except Exception as e:
+                logger.error(f"Failed to initialize Google LLM plugin: {e}", exc_info=True)
+                # Fallback to OpenAI if Google fails and OpenAI key is present
+                if os.environ.get("OPENAI_API_KEY"):
+                    logger.warning("Falling back to OpenAI LLM due to Google LLM initialization error.")
+                    openai_llm_plugin = openai.realtime.RealtimeModel(
+                        voice="alloy",
+                        temperature=0.7
+                    )
+                    llm_plugin = openai_llm_plugin
+                    logger.info("OpenAI RealtimeModel LLM plugin initialized as fallback.")
+                else:
+                    logger.error("OpenAI API key not available for fallback. Cannot initialize LLM.")
+                    raise  # Re-raise if no fallback possible
+        elif model_type == "openai":
+            openai_llm_plugin = openai.realtime.RealtimeModel(
+                voice="alloy",
+                temperature=0.7
+            )
+            llm_plugin = openai_llm_plugin
+            logger.info("OpenAI RealtimeModel LLM plugin initialized.")
+        else:
+            logger.error(f"Unsupported MODEL_TYPE: {model_type}. Defaulting to OpenAI.")
+            # Fallback to OpenAI if type is unsupported and key is present
+            if os.environ.get("OPENAI_API_KEY"):
+                openai_llm_plugin = openai.realtime.RealtimeModel(
+                    voice="alloy",
+                    temperature=0.7
+                )
+                llm_plugin = openai_llm_plugin
+                logger.info("OpenAI RealtimeModel LLM plugin initialized as fallback for unsupported type.")
+            else:
+                logger.error("OpenAI API key not available for fallback. Cannot initialize LLM for unsupported type.")
+                # This situation should ideally be caught by check_environment_variables earlier
+                # if we make the check stricter for unknown model_type.
+                # For now, raise to make it clear.
+                raise ValueError(f"Unsupported MODEL_TYPE '{model_type}' and no OpenAI fallback key.")
 
         # Turn detection plugin instance
         # The EnglishModel can take parameters like min_silence_duration, etc.
@@ -236,7 +294,7 @@ async def agent_entry(ctx: JobContext):
         # Create our custom agent
         my_agent = MyAgent(
             job_ctx=ctx,
-            llm_plugin=openai_llm_plugin,
+            llm_plugin=llm_plugin, # Use the dynamically selected LLM plugin
             instructions_text=resolved_instructions,
             turn_detector=turn_detector_plugin # Pass the instance
         )

@@ -13,7 +13,7 @@ source venv/bin/activate
 
 # Always install/update dependencies to ensure environment is correct
 echo "Installing/updating dependencies (forcing reinstall)..."
-pip install --upgrade --force-reinstall -r requirements.txt
+pip install --upgrade -r requirements.txt
 echo "Dependencies installed/updated."
 
 # Run the agent

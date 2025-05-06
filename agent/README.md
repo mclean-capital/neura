@@ -57,8 +57,12 @@ The agent can be configured through environment variables:
 - `LIVEKIT_URL`: The WebSocket URL of your LiveKit server
 - `LIVEKIT_API_KEY`: Your LiveKit API key
 - `LIVEKIT_API_SECRET`: Your LiveKit API secret
-- `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_API_KEY`: Your OpenAI API key. Required if `MODEL_TYPE` is "openai" or as a fallback.
 - `DEEPGRAM_API_KEY`: Your Deepgram API key
+- `MODEL_TYPE`: (Optional) Specifies the LLM provider.
+  - `"openai"` (default): Uses OpenAI's models. Requires `OPENAI_API_KEY`.
+  - `"google"` or `"gemini"`: Uses Google's Gemini models. Requires `GOOGLE_API_KEY`.
+- `GOOGLE_API_KEY`: Your Google API key for Gemini models. Required if `MODEL_TYPE` is "google" or "gemini" and you are not using Vertex AI for authentication.
 
 ## Features
 
