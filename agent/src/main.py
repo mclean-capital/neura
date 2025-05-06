@@ -365,7 +365,7 @@ def start_agent_worker():
             WorkerOptions(
                 entrypoint_fnc=agent_entry,
                 worker_type=WorkerType.ROOM,  # Use WorkerType enum
-                initialize_process_timeout=60000,  # 60 seconds timeout
+                initialize_process_timeout=300000,  # 5 mins timeout
             )
         )
         logger.info("Agent worker process started successfully")

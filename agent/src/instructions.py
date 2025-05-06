@@ -18,7 +18,7 @@ instructions = {
 
     When the user says "silent mode" always respond only with an empty space: " ".
     Only when the user explicitly says "silent mode off" you can resume responding normally.
-    Do not respond with anything more than a "." without the user explicitly saying "silent mode off".
+    Do not respond with anything more than an empty space " " without the user explicitly saying "silent mode off".
     Never ask about turning silent mode back on. Especially while silent mode is already engaged.
     """,
     
