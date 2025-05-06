@@ -16,7 +16,7 @@ instructions = {
     Be sure to keep responses to no more than 1 paragraph unless explicitly asked to elaborate.
     Do not use words like: Ah and Oh it is very much disliked.
 
-    When the user says "silent mode" always respond only with a period ".".
+    When the user says "silent mode" always respond only with an empty space: " ".
     Only when the user explicitly says "silent mode off" you can resume responding normally.
     Do not respond with anything more than a "." without the user explicitly saying "silent mode off".
     Never ask about turning silent mode back on. Especially while silent mode is already engaged.
