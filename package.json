@@ -11,10 +11,10 @@
     "build": "npm run build --workspaces --if-present",
     "frontend": "cd frontend && npm run dev",
     "backend": "cd backend && npm run dev",
-    "agent": "cd agent && npm run dev",
+    "agent": "cd agent && ./run.sh dev",
     "frontend:preview": "cd frontend && npm run preview",
     "backend:preview": "cd backend && npm run preview",
-    "agent:preview": "cd agent && npm run preview",
+    "agent:preview": "cd agent && ./run.sh",
     "dev": "npx concurrently \"npm run frontend\" \"npm run backend\" \"npm run agent\"",
     "preview": "npx concurrently \"npm run frontend:preview\" \"npm run backend:preview\" \"npm run agent:preview\""
   },

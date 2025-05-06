@@ -41,13 +41,13 @@ This is a Python implementation of the LiveKit Agent service, ported from TypeSc
 Build the Docker image:
 
 ```bash
-docker build -t livekit-agent-py .
+docker build --no-cache -t neura-agent .
 ```
 
 Run with Docker:
 
 ```bash
-docker run -p 8081:8081 --env-file .env livekit-agent-py
+docker run -d -p 8081:8081 -it --env-file ./agent/.env neura-agent
 ```
 
 ## Configuration
