@@ -7,6 +7,7 @@
     "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "node --env-file=.env dist/index.js",
     "build": "tsc",
+    "db:create": "psql \"$DATABASE_URL\" -d postgres -c \"CREATE DATABASE neura\"",
     "db:init": "psql \"$DATABASE_URL\" -f src/db/schema.sql && psql \"$DATABASE_URL\" -f src/db/seed.sql",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
