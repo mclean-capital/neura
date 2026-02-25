@@ -34,7 +34,8 @@ Neura is a self-configuring AI assistant that stores its own configuration, inst
 **Key patterns:**
 - All `.js` import extensions (ESM with Node16 module resolution)
 - Express 5 async middleware — errors propagate to the global handler in `app.ts`
-- Agent config lives in `agents` + `agent_instructions` tables; the agent queries these via `docker exec -i postgres psql -U postgres -d neura -t -A -c "SQL"`
+- Agent config lives in `agents` + `agent_instructions` tables; the agent queries these via `psql "$DATABASE_URL" -t -A -c "SQL"`
+- `psql` must be on PATH — it's a runtime dependency for the agent's `shell_execute` tool
 - `ModelMessage` (not `CoreMessage`) is the AI SDK v6 message type
 - `maxOutputTokens` (not `maxTokens`) is the AI SDK v6 token limit setting
 - Unused function params prefixed with `_` (e.g., `_req`, `_next`) to satisfy no-unused-vars

@@ -36,8 +36,14 @@ Client
 ### Prerequisites
 
 - Node.js >= 24.0.0
-- PostgreSQL (local or Docker)
+- PostgreSQL 17+ with `psql` on PATH (the agent calls `psql` at runtime via `shell_execute`)
 - At least one LLM API key (Anthropic, OpenAI, or Google)
+
+#### Installing PostgreSQL
+
+- **macOS**: `brew install postgresql@17` (includes the `psql` client)
+- **Windows**: `winget install PostgreSQL.PostgreSQL` or use the [installer](https://www.postgresql.org/download/windows/)
+- **Docker** (alternative): `docker run -d --name postgres -e POSTGRES_PASSWORD=password -p 5432:5432 postgres:17` — you'll still need `psql` on the host for the agent's runtime queries
 
 ### Setup
 
@@ -50,11 +56,8 @@ cp .env.example .env   # edit with your values
 ### Database
 
 ```bash
-# If using Docker:
-docker run -d --name postgres -e POSTGRES_DB=neura -e POSTGRES_PASSWORD=password -p 5432:5432 postgres:17
-
-# Initialize schema + seed data:
-npm run db:init
+npm run db:create   # create the database (safe to re-run)
+npm run db:init     # apply schema + seed data
 ```
 
 ### Run
@@ -191,7 +194,7 @@ Neura's system prompt is assembled at runtime from the database:
 2. Agent personality from the `agents` table
 3. Instructions from `agent_instructions`, ordered by priority
 
-The agent accesses its own database through the `shell_execute` tool via `psql`, so it can update its own instructions, store memories, and modify its configuration.
+The agent accesses its own database through the `shell_execute` tool via `psql "$DATABASE_URL"`, so it can update its own instructions, store memories, and modify its configuration. This requires `psql` to be on the host's PATH.
 
 ### Supported models
 
@@ -248,7 +251,8 @@ src/
 | `dev`          | `tsx watch --env-file=.env src/index.ts`    | Development server with auto-reload        |
 | `start`        | `node --env-file=.env dist/index.js`        | Production server (requires `build` first) |
 | `build`        | `tsc`                                       | Compile TypeScript to `dist/`              |
-| `db:init`      | `psql ... -f schema.sql && ... -f seed.sql` | Initialize database schema and seed data   |
+| `db:create`    | `tsx scripts/db-create.ts`                  | Create the database (idempotent)           |
+| `db:init`      | `tsx scripts/db-init.ts`                    | Initialize database schema and seed data   |
 | `lint`         | `eslint src/`                               | Check for lint issues                      |
 | `lint:fix`     | `eslint src/ --fix`                         | Auto-fix lint issues                       |
 | `format`       | `prettier --write "src/**/*.ts"`            | Format all source files                    |
