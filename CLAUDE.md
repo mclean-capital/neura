@@ -20,8 +20,9 @@ npm run format:check # check formatting (CI gate)
 
 Neura is a self-configuring AI assistant that stores its own configuration, instructions, and memories in PostgreSQL. The agent can read and modify its own behavior at runtime via the `shell_execute` tool (which runs psql commands against its database).
 
-**Single process, three protocols:**
+**Single process, four protocols:**
 - `POST /chat` — REST chat endpoint (streaming by default via AI SDK `streamText`)
+- `GET /v1/models` · `POST /v1/chat/completions` — OpenAI-compatible API (for Open WebUI, etc.)
 - `POST /a2a` — A2A JSON-RPC (agent-to-agent, implements `tasks/send`)
 - `POST|GET|DELETE /mcp` — MCP HTTP streamable transport with session management
 

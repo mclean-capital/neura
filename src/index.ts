@@ -19,6 +19,7 @@ async function main() {
     logger.info(`Chat:    http://localhost:${env.PORT}/chat`);
     logger.info(`A2A:     http://localhost:${env.PORT}/.well-known/agent-card.json`);
     logger.info(`MCP:     http://localhost:${env.PORT}/mcp`);
+    logger.info(`OpenAI:  http://localhost:${env.PORT}/v1/chat/completions`);
   });
 }
 

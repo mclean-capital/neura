@@ -16,8 +16,11 @@ Client
   │                              │                            │       └─ psql, files, etc.
   │                              └─ Tool Registry             │
   │                                                           ▼
-  ├─ POST /a2a ───────────► A2A Handler ──► Agent Core   LLM Response
-  │                                                       (streamed or full)
+  ├─ /v1/chat/completions ► OpenAI Adapter ► Agent Core  LLM Response
+  │   /v1/models                                          (streamed or full)
+  │
+  ├─ POST /a2a ───────────► A2A Handler ──► Agent Core
+  │
   ├─ POST /mcp ───────────► MCP Transport ──► MCP Server
   │
   └─ GET /health ─────────► DB Health Check
@@ -76,6 +79,7 @@ Health:  http://localhost:3000/health
 Chat:    http://localhost:3000/chat
 A2A:     http://localhost:3000/.well-known/agent-card.json
 MCP:     http://localhost:3000/mcp
+OpenAI:  http://localhost:3000/v1/chat/completions
 ```
 
 ## Environment variables
@@ -89,6 +93,7 @@ MCP:     http://localhost:3000/mcp
 | `ANTHROPIC_API_KEY`            | No       | —             | Claude API key                                               |
 | `OPENAI_API_KEY`               | No       | —             | OpenAI API key                                               |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No       | —             | Google Gemini API key                                        |
+| `API_KEY`                      | No       | —             | Protects `/v1/*` OpenAI-compatible endpoints                 |
 
 At least one LLM API key is needed. The default agent uses Anthropic.
 
@@ -166,6 +171,38 @@ MCP HTTP streamable transport. Exposes a `shell_execute` tool for database queri
 
 Sessions are managed via the `mcp-session-id` header.
 
+### `GET /v1/models`
+
+Lists available agents as OpenAI-compatible model entries.
+
+```bash
+curl http://localhost:3000/v1/models
+```
+
+### `POST /v1/chat/completions`
+
+OpenAI-compatible chat completions endpoint. Works with Open WebUI and other OpenAI-compatible clients.
+
+```bash
+# Non-streaming (default)
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"neura","messages":[{"role":"user","content":"Hello"}]}'
+
+# Streaming
+curl -N -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"neura","messages":[{"role":"user","content":"Hello"}],"stream":true}'
+```
+
+When `API_KEY` is set, include `Authorization: Bearer <key>` in requests to `/v1/*` endpoints.
+
+#### Open WebUI configuration
+
+Connect via Settings → Connections → OpenAI API:
+- **URL**: `http://<host>:3000/v1`
+- **API Key**: value of `API_KEY` env var (or any string if auth is disabled)
+
 ## Database schema
 
 Initialized with `npm run db:init`. Key tables:
@@ -224,7 +261,8 @@ src/
 │   ├── app.ts               # Express app factory
 │   └── routes/
 │       ├── health.ts        # GET /health
-│       └── chat.ts          # POST /chat
+│       ├── chat.ts          # POST /chat
+│       └── openai.ts        # /v1/models, /v1/chat/completions
 ├── agent/
 │   ├── core.ts              # streamText / generateText with multi-provider support
 │   ├── system-prompt.ts     # DB-driven prompt assembly
@@ -278,7 +316,7 @@ This opens a multi-turn conversation loop (up to 6 turns) that sends messages vi
 | Server     | Express 5                                   |
 | AI         | Vercel AI SDK v6, multi-provider            |
 | Database   | PostgreSQL via `pg`                         |
-| Protocols  | REST, A2A (JSON-RPC), MCP (HTTP streamable) |
+| Protocols  | REST, OpenAI-compat, A2A (JSON-RPC), MCP    |
 | Logging    | Pino 10                                     |
 | Validation | Zod                                         |
 | Linting    | ESLint 9 (flat config) + typescript-eslint  |

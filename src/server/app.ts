@@ -4,6 +4,7 @@ import { healthRouter } from "./routes/health.js";
 import { chatRouter } from "./routes/chat.js";
 import { a2aRouter } from "../a2a/handler.js";
 import { mcpRouter } from "../mcp/transport.js";
+import { openaiRouter } from "./routes/openai.js";
 import { logger } from "../lib/logger.js";
 
 export function createApp() {
@@ -14,6 +15,7 @@ export function createApp() {
   // Routes
   app.use(healthRouter);
   app.use(chatRouter);
+  app.use(openaiRouter);
   app.use(a2aRouter);
   app.use(mcpRouter);
 

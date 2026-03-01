@@ -6,7 +6,10 @@ import { logger } from "../../lib/logger.js";
 export const chatRouter = Router();
 
 chatRouter.post("/chat", async (req, res) => {
-  const { message, stream = true } = req.body;
+  const { message } = req.body;
+  const streamQuery = req.query.stream;
+  const streamBody = req.body.stream;
+  const stream = streamQuery !== undefined ? streamQuery === "true" : (streamBody ?? true);
 
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "message is required and must be a string" });
