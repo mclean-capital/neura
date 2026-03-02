@@ -27,6 +27,13 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.test.ts", "src/test-setup.ts"],
+    rules: {
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
     ignores: ["dist/", "node_modules/", "**/*.sql"],
   },
 );

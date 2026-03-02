@@ -1,6 +1,4 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { randomUUID } from "node:crypto";
-import { type ModelMessage } from "ai";
 import { runAgent, runAgentStream } from "../../agent/core.js";
 import { query } from "../../db/connection.js";
 import {
@@ -10,6 +8,13 @@ import {
 } from "../../db/conversations.js";
 import { env } from "../../env.js";
 import { logger } from "../../lib/logger.js";
+import {
+  generateChatId,
+  toModelMessages,
+  toOpenAIFinishReason,
+  UUID_RE,
+  firstHeader,
+} from "./openai.utils.js";
 
 export const openaiRouter = Router();
 
@@ -67,39 +72,6 @@ openaiRouter.get("/v1/models", async (_req, res) => {
     })),
   });
 });
-
-function generateChatId(): string {
-  return `chatcmpl-${randomUUID()}`;
-}
-
-function toModelMessages(messages: { role: string; content: string }[]): ModelMessage[] {
-  return messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
-}
-
-function toOpenAIFinishReason(reason: string | undefined): string {
-  switch (reason) {
-    case "stop":
-      return "stop";
-    case "length":
-      return "length";
-    case "tool-calls":
-      return "tool_calls";
-    default:
-      return "stop";
-  }
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Normalize Express header value (string | string[] | undefined) to a single string. */
-function firstHeader(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 // POST /v1/chat/completions
 openaiRouter.post("/v1/chat/completions", async (req, res) => {

@@ -17,7 +17,7 @@ const PROVIDERS: Record<string, (modelId: string) => LanguageModel> = {
   google: (id) => google(id),
 };
 
-function resolveModel(modelId: string): LanguageModel {
+export function resolveModel(modelId: string): LanguageModel {
   const [provider, ...rest] = modelId.split("/");
   const modelName = rest.join("/");
   const factory = PROVIDERS[provider];
