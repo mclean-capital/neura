@@ -48,9 +48,26 @@ Client
 - **Windows**: `winget install PostgreSQL.PostgreSQL` or use the [installer](https://www.postgresql.org/download/windows/)
 - **Docker** (alternative): `docker run -d --name postgres -e POSTGRES_PASSWORD=password -p 5432:5432 postgres:17` — you'll still need `psql` on the host for the agent's runtime queries
 
-#### psql client only (Windows + Docker)
+#### psql client only (Docker users)
 
 If PostgreSQL is running in Docker and you only need the `psql` client on the host:
+
+**macOS (Homebrew):**
+
+```bash
+brew install libpq
+
+# libpq is keg-only, so add it to your PATH
+echo 'export PATH="/usr/local/opt/libpq/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# Verify
+psql --version
+```
+
+> On Apple Silicon Macs the path is `/opt/homebrew/opt/libpq/bin` instead.
+
+**Windows (Git Bash / MSYS2):**
 
 ```bash
 # Download the binary zip (no installer)

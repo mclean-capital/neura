@@ -45,25 +45,31 @@ Neura is a self-configuring AI assistant that stores its own configuration, inst
 
 Requires Node >= 24. Environment validated with Zod in `src/env.ts`. Required: `DATABASE_URL`. At least one LLM API key needed (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). Default agent uses Anthropic.
 
-### Installing psql on Windows
+### Installing psql client only
 
-PostgreSQL runs in Docker, but `psql` must be available on the host PATH for the agent's `shell_execute` tool. On Windows (Git Bash / MSYS2), install the client binaries without a full PostgreSQL installer:
+PostgreSQL runs in Docker, but `psql` must be available on the host PATH for the agent's `shell_execute` tool.
+
+**macOS (Homebrew):**
 
 ```bash
-# Download PostgreSQL binaries (zip, no installer)
+brew install libpq
+# libpq is keg-only — add to PATH:
+# Intel Mac:  echo 'export PATH="/usr/local/opt/libpq/bin:$PATH"' >> ~/.zshrc
+# Apple Silicon: echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+psql --version
+```
+
+**Windows (Git Bash / MSYS2):**
+
+```bash
 curl -L -o /tmp/pgsql.zip \
   "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip"
-
-# Extract only psql and its DLL dependencies
 unzip -o /tmp/pgsql.zip \
   "pgsql/bin/psql.exe" "pgsql/bin/libpq.dll" "pgsql/bin/libintl-*.dll" \
   "pgsql/bin/libssl-*.dll" "pgsql/bin/libcrypto-*.dll" \
   "pgsql/bin/libiconv-*.dll" "pgsql/bin/zlib*.dll" -d /tmp
-
-# Copy to ~/bin (already on PATH in Git Bash)
 mkdir -p ~/bin && cp /tmp/pgsql/bin/* ~/bin/
-
-# Verify
 psql --version
 ```
 
