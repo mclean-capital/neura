@@ -236,11 +236,44 @@ curl -N -X POST http://localhost:3000/v1/chat/completions \
 
 When `API_KEY` is set, include `Authorization: Bearer <key>` in requests to `/v1/*` endpoints.
 
-#### Open WebUI configuration
+#### Open WebUI integration
 
-Connect via Settings → Connections → OpenAI API:
-- **URL**: `http://<host>:3000/v1`
+**Minimum version: v0.6.17+** (requires the `ENABLE_FORWARD_USER_INFO_HEADERS` feature, added in commit `671f577`).
+
+**Why:** Open WebUI sends the full message history on every turn but no conversation identifier by default. Without the header, Neura creates a duplicate conversation row on every request. Enabling `ENABLE_FORWARD_USER_INFO_HEADERS` makes Open WebUI forward an `X-OpenWebUI-Chat-Id` header containing the chat's UUID, which Neura uses to maintain a single conversation per chat.
+
+**Docker run command:**
+
+```bash
+docker run -d \
+  --name open-webui \
+  -p 8080:8080 \
+  -v open-webui:/app/backend/data \
+  -e OPENAI_API_BASE_URLS=http://host.docker.internal:3000/v1 \
+  -e OPENAI_API_KEYS=sk-unused \
+  -e ENABLE_FORWARD_USER_INFO_HEADERS=True \
+  --add-host=host.docker.internal:host-gateway \
+  ghcr.io/open-webui/open-webui:main
+```
+
+Then connect via Settings → Connections → OpenAI API:
+- **URL**: `http://host.docker.internal:3000/v1` (or `http://<host>:3000/v1`)
 - **API Key**: value of `API_KEY` env var (or any string if auth is disabled)
+
+#### Conversation ID resolution
+
+The `/v1/chat/completions` endpoint resolves a stable conversation ID using this precedence:
+
+| Priority | Source | Header / field | Use case |
+|----------|--------|----------------|----------|
+| 1 | `X-Conversation-Id` header | UUID | Direct API callers |
+| 2 | `X-OpenWebUI-Chat-Id` header | UUID | Open WebUI (auto-sent when `ENABLE_FORWARD_USER_INFO_HEADERS=True`) |
+| 3 | `chat_id` body field | UUID | Future clients |
+| 4 | New UUID | — | Fallback (new conversation) |
+
+All values are trimmed and validated as UUIDs before use. The resolved conversation ID is returned in the `X-Conversation-Id` response header.
+
+> **Proxy note:** If you run a reverse proxy (nginx, Caddy, etc.) in front of Neura, ensure it forwards `X-OpenWebUI-Chat-Id` and `X-Conversation-Id` headers. Most proxies pass custom headers by default, but restrictive configurations may strip them.
 
 ## Database schema
 

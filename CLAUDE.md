@@ -73,6 +73,18 @@ mkdir -p ~/bin && cp /tmp/pgsql/bin/* ~/bin/
 psql --version
 ```
 
+## Open WebUI integration
+
+Requires **Open WebUI v0.6.17+** with `ENABLE_FORWARD_USER_INFO_HEADERS=True` set in the container env. This makes Open WebUI send `X-OpenWebUI-Chat-Id` (a UUID) on every request, which Neura uses to avoid creating duplicate conversations.
+
+**Conversation ID precedence** in `src/server/routes/openai.ts`:
+1. `X-Conversation-Id` header (direct API callers)
+2. `X-OpenWebUI-Chat-Id` header (Open WebUI)
+3. `chat_id` body field (future clients)
+4. New UUID (fallback)
+
+All values are trimmed and UUID-validated. Mismatched headers produce a warning log. Missing IDs from all sources also log a warning.
+
 ## Lint rules
 
 ESLint 9 flat config with typescript-eslint type-checked rules. The `no-unsafe-*` and `no-explicit-any` rules are intentionally set to **warn** (not error) because the codebase has legitimate uses in error handlers, Express body parsing, and pg generics. Do not "fix" these warnings by adding suppression comments — they are expected.

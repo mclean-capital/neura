@@ -94,9 +94,16 @@ function toOpenAIFinishReason(reason: string | undefined): string {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Normalize Express header value (string | string[] | undefined) to a single string. */
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 // POST /v1/chat/completions
 openaiRouter.post("/v1/chat/completions", async (req, res) => {
-  const { model, messages, stream = false } = req.body;
+  const { model, messages, stream = false, chat_id } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({
@@ -114,8 +121,31 @@ openaiRouter.post("/v1/chat/completions", async (req, res) => {
   const chatId = generateChatId();
   const created = Math.floor(Date.now() / 1000);
 
-  // Conversation persistence — derive ID from header or create new
-  const incomingConvId = req.headers["x-conversation-id"] as string | undefined;
+  // Conversation persistence — resolve a stable conversation ID.
+  // Precedence: X-Conversation-Id header > X-OpenWebUI-Chat-Id header > chat_id body field > new UUID
+  const rawConvId = firstHeader(req.headers["x-conversation-id"])?.trim();
+  const rawChatId = firstHeader(req.headers["x-openwebui-chat-id"])?.trim();
+  const rawBodyId = typeof chat_id === "string" ? chat_id.trim() : undefined;
+  const headerConvId = rawConvId && UUID_RE.test(rawConvId) ? rawConvId : undefined;
+  const openWebUiChatId = rawChatId && UUID_RE.test(rawChatId) ? rawChatId : undefined;
+  const bodyConvId = rawBodyId && UUID_RE.test(rawBodyId) ? rawBodyId : undefined;
+  const incomingConvId = headerConvId ?? openWebUiChatId ?? bodyConvId;
+
+  if (rawConvId && !headerConvId) {
+    logger.warn("X-Conversation-Id header present but not a valid UUID — ignoring");
+  }
+  if (rawChatId && !openWebUiChatId) {
+    logger.warn("X-OpenWebUI-Chat-Id header present but not a valid UUID — ignoring");
+  }
+  if (rawBodyId && !bodyConvId) {
+    logger.warn("chat_id body field present but not a valid UUID — ignoring");
+  }
+  if (headerConvId && openWebUiChatId && headerConvId !== openWebUiChatId) {
+    logger.warn("X-Conversation-Id and X-OpenWebUI-Chat-Id both valid but differ — using X-Conversation-Id");
+  }
+  if (!incomingConvId) {
+    logger.warn("No conversation ID from headers or body — creating new conversation");
+  }
   const conversationId = await findOrCreateConversation({
     conversationId: incomingConvId,
     agentSlug: agentSlug ?? "neura",
