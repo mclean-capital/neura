@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import { type ModelMessage } from "ai";
 import { runAgent, runAgentStream } from "../../agent/core.js";
 import { query } from "../../db/connection.js";
+import {
+  findOrCreateConversation,
+  syncMessages,
+  saveAssistantMessages,
+} from "../../db/conversations.js";
 import { env } from "../../env.js";
 import { logger } from "../../lib/logger.js";
 
@@ -109,6 +114,16 @@ openaiRouter.post("/v1/chat/completions", async (req, res) => {
   const chatId = generateChatId();
   const created = Math.floor(Date.now() / 1000);
 
+  // Conversation persistence — derive ID from header or create new
+  const incomingConvId = req.headers["x-conversation-id"] as string | undefined;
+  const conversationId = await findOrCreateConversation({
+    conversationId: incomingConvId,
+    agentSlug: agentSlug ?? "neura",
+    metadata: { source: "openai" },
+  });
+  res.setHeader("X-Conversation-Id", conversationId);
+  await syncMessages(conversationId, messages);
+
   try {
     if (stream) {
       res.setHeader("Content-Type", "text/event-stream");
@@ -127,7 +142,15 @@ openaiRouter.post("/v1/chat/completions", async (req, res) => {
       };
       res.write(`data: ${JSON.stringify(initialChunk)}\n\n`);
 
-      const result = await runAgentStream({ messages: modelMessages, agentSlug });
+      const result = await runAgentStream({
+        messages: modelMessages,
+        agentSlug,
+        onFinish: (event) => {
+          saveAssistantMessages(conversationId, event.response.messages).catch((err) => {
+            logger.warn({ err }, "Failed to persist assistant messages after stream");
+          });
+        },
+      });
 
       for await (const textPart of result.textStream) {
         const chunk = {
@@ -153,6 +176,7 @@ openaiRouter.post("/v1/chat/completions", async (req, res) => {
       res.end();
     } else {
       const result = await runAgent({ messages: modelMessages, agentSlug });
+      await saveAssistantMessages(conversationId, result.response.messages);
 
       res.json({
         id: chatId,

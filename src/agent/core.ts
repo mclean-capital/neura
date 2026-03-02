@@ -6,6 +6,11 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { getTools } from "./tools/index.js";
 import { logger } from "../lib/logger.js";
 
+/** Subset of AI SDK's OnFinishEvent — only the fields callers need. */
+interface AgentOnFinishEvent {
+  response: { messages: { role: string; content: unknown }[] };
+}
+
 const PROVIDERS: Record<string, (modelId: string) => LanguageModel> = {
   anthropic: (id) => anthropic(id),
   openai: (id) => openai(id),
@@ -31,7 +36,11 @@ async function getAgentConfig(agentSlug?: string) {
   return { systemPrompt, agentConfig, model, tools };
 }
 
-export async function runAgentStream(opts: { messages: ModelMessage[]; agentSlug?: string }) {
+export async function runAgentStream(opts: {
+  messages: ModelMessage[];
+  agentSlug?: string;
+  onFinish?: (event: AgentOnFinishEvent) => void | Promise<void>;
+}) {
   const { systemPrompt, agentConfig, model, tools } = await getAgentConfig(opts.agentSlug);
 
   logger.debug(
@@ -47,6 +56,7 @@ export async function runAgentStream(opts: { messages: ModelMessage[]; agentSlug
     stopWhen: stepCountIs(10),
     temperature: Number(agentConfig.temperature),
     maxOutputTokens: Number(agentConfig.max_tokens),
+    onFinish: opts.onFinish,
     onError: ({ error }) => {
       logger.error({ error }, "Agent stream error");
     },
