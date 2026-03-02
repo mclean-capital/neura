@@ -45,6 +45,28 @@ Neura is a self-configuring AI assistant that stores its own configuration, inst
 
 Requires Node >= 24. Environment validated with Zod in `src/env.ts`. Required: `DATABASE_URL`. At least one LLM API key needed (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). Default agent uses Anthropic.
 
+### Installing psql on Windows
+
+PostgreSQL runs in Docker, but `psql` must be available on the host PATH for the agent's `shell_execute` tool. On Windows (Git Bash / MSYS2), install the client binaries without a full PostgreSQL installer:
+
+```bash
+# Download PostgreSQL binaries (zip, no installer)
+curl -L -o /tmp/pgsql.zip \
+  "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip"
+
+# Extract only psql and its DLL dependencies
+unzip -o /tmp/pgsql.zip \
+  "pgsql/bin/psql.exe" "pgsql/bin/libpq.dll" "pgsql/bin/libintl-*.dll" \
+  "pgsql/bin/libssl-*.dll" "pgsql/bin/libcrypto-*.dll" \
+  "pgsql/bin/libiconv-*.dll" "pgsql/bin/zlib*.dll" -d /tmp
+
+# Copy to ~/bin (already on PATH in Git Bash)
+mkdir -p ~/bin && cp /tmp/pgsql/bin/* ~/bin/
+
+# Verify
+psql --version
+```
+
 ## Lint rules
 
 ESLint 9 flat config with typescript-eslint type-checked rules. The `no-unsafe-*` and `no-explicit-any` rules are intentionally set to **warn** (not error) because the codebase has legitimate uses in error handlers, Express body parsing, and pg generics. Do not "fix" these warnings by adding suppression comments — they are expected.
