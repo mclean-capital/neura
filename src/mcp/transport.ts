@@ -6,8 +6,30 @@ import { randomUUID } from "crypto";
 
 export const mcpRouter = Router();
 
-// Store active MCP sessions
+// Store active MCP sessions and their last activity timestamps
 const sessions = new Map<string, StreamableHTTPServerTransport>();
+const lastActivity = new Map<string, number>();
+
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+// Evict idle sessions every 60 seconds
+const cleanupInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [sid, ts] of lastActivity) {
+    if (now - ts > SESSION_TTL_MS) {
+      const transport = sessions.get(sid);
+      if (transport) {
+        transport.close().catch((err) => {
+          logger.warn({ err, sessionId: sid }, "Error closing idle MCP session");
+        });
+      }
+      sessions.delete(sid);
+      lastActivity.delete(sid);
+      logger.debug({ sessionId: sid }, "MCP session evicted (idle timeout)");
+    }
+  }
+}, 60_000);
+cleanupInterval.unref();
 
 // POST /mcp — handle MCP JSON-RPC requests
 mcpRouter.post("/mcp", async (req, res) => {
@@ -15,6 +37,7 @@ mcpRouter.post("/mcp", async (req, res) => {
 
   // Existing session
   if (sessionId && sessions.has(sessionId)) {
+    lastActivity.set(sessionId, Date.now());
     const transport = sessions.get(sessionId)!;
     await transport.handleRequest(req, res, req.body);
     return;
@@ -32,6 +55,7 @@ mcpRouter.post("/mcp", async (req, res) => {
   const sid = transport.sessionId;
   if (sid) {
     sessions.set(sid, transport);
+    lastActivity.set(sid, Date.now());
     logger.debug({ sessionId: sid }, "MCP session created");
   }
 
@@ -47,6 +71,7 @@ mcpRouter.get("/mcp", async (req, res) => {
     return;
   }
 
+  lastActivity.set(sessionId, Date.now());
   const transport = sessions.get(sessionId)!;
   await transport.handleRequest(req, res);
 });
@@ -59,6 +84,7 @@ mcpRouter.delete("/mcp", async (req, res) => {
     const transport = sessions.get(sessionId)!;
     await transport.close();
     sessions.delete(sessionId);
+    lastActivity.delete(sessionId);
     logger.debug({ sessionId }, "MCP session closed");
   }
 

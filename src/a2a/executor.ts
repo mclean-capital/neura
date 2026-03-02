@@ -1,4 +1,3 @@
-import { type ModelMessage } from "ai";
 import { runAgent } from "../agent/core.js";
 // runAgent uses generateText (non-streaming) — returns full result after all tool steps
 import {
@@ -35,26 +34,30 @@ export async function executeTask(task: A2ATask): Promise<{
       metadata: { source: "a2a" },
     });
 
-    // Extract text from A2A message parts and save as user messages
-    const incomingMessages: ModelMessage[] = task.messages.map((m) => ({
-      role: m.role === "agent" ? ("assistant" as const) : ("user" as const),
-      content:
-        m.parts
-          .filter((p) => p.type === "text" && p.text)
-          .map((p) => p.text!)
-          .join("\n") || "",
-    }));
+    // Extract the latest user turn from A2A message parts.
+    // A2A is turn-based: each tasks/send contributes one new user message
+    // (the last user entry). Prior turns are already persisted from earlier requests,
+    // so we only save the current turn — this works for both full-history and
+    // incremental clients without the count-based dedup issues of syncMessages.
+    const lastUserParts = [...task.messages].reverse().find((m) => m.role === "user");
+    const lastUserContent =
+      lastUserParts?.parts
+        .filter((p) => p.type === "text" && p.text)
+        .map((p) => p.text!)
+        .join("\n") ?? "";
 
-    // Save new user messages
-    for (const msg of incomingMessages) {
-      if (msg.role === "user") {
-        await saveUserMessage(conversationId, msg.content as string);
-      }
+    if (!lastUserContent) {
+      return { text: "No user message provided", status: "failed" };
     }
 
-    // Load full history for multi-turn context
+    // Save the current turn and use the saved flag to guarantee it reaches the agent
+    const saved = await saveUserMessage(conversationId, lastUserContent);
     const history = await loadConversationMessages(conversationId);
-    const messages = history.length > 0 ? history : incomingMessages;
+    const messages = saved
+      ? history.length > 0
+        ? history
+        : [{ role: "user" as const, content: lastUserContent }]
+      : [...history, { role: "user" as const, content: lastUserContent }];
 
     const result = await runAgent({ messages });
     await saveAssistantMessages(conversationId, result.response.messages);
