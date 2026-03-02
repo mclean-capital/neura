@@ -48,6 +48,28 @@ Client
 - **Windows**: `winget install PostgreSQL.PostgreSQL` or use the [installer](https://www.postgresql.org/download/windows/)
 - **Docker** (alternative): `docker run -d --name postgres -e POSTGRES_PASSWORD=password -p 5432:5432 postgres:17` — you'll still need `psql` on the host for the agent's runtime queries
 
+#### psql client only (Windows + Docker)
+
+If PostgreSQL is running in Docker and you only need the `psql` client on the host:
+
+```bash
+# Download the binary zip (no installer)
+curl -L -o /tmp/pgsql.zip \
+  "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip"
+
+# Extract psql and its DLL dependencies
+unzip -o /tmp/pgsql.zip \
+  "pgsql/bin/psql.exe" "pgsql/bin/libpq.dll" "pgsql/bin/libintl-*.dll" \
+  "pgsql/bin/libssl-*.dll" "pgsql/bin/libcrypto-*.dll" \
+  "pgsql/bin/libiconv-*.dll" "pgsql/bin/zlib*.dll" -d /tmp
+
+# Copy to ~/bin (on PATH by default in Git Bash)
+mkdir -p ~/bin && cp /tmp/pgsql/bin/* ~/bin/
+
+# Verify
+psql --version
+```
+
 ### Setup
 
 ```bash
