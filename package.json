@@ -2,26 +2,61 @@
   "name": "neura",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "frontend",
-    "backend",
-    "agent"
-  ],
+  "type": "module",
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "frontend": "cd frontend && npm run dev",
-    "backend": "cd backend && npm run dev",
-    "agent": "cd agent && ./run.sh dev",
-    "frontend:preview": "cd frontend && npm run preview",
-    "backend:preview": "cd backend && npm run preview",
-    "agent:preview": "cd agent && ./run.sh",
-    "dev": "npx concurrently \"npm run frontend\" \"npm run backend\" \"npm run agent\"",
-    "preview": "npx concurrently \"npm run frontend:preview\" \"npm run backend:preview\" \"npm run agent:preview\""
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "start": "node --env-file=.env dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:create": "tsx --env-file=.env scripts/db-create.ts",
+    "db:init": "tsx --env-file=.env scripts/db-init.ts",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
   },
-  "devDependencies": {
-    "concurrently": "^8.2.2"
+  "lint-staged": {
+    "src/**/*.ts": [
+      "prettier --write",
+      "eslint --fix"
+    ]
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^0.3.0",
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/google": "^3.0.0",
+    "@ai-sdk/mcp": "^1.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "ai": "^6.0.0",
+    "express": "^5.0.0",
+    "pg": "^8.0.0",
+    "pino": "^10.0.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.0.0",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.1",
+    "prettier": "^3.8.1",
+    "supertest": "^7.2.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
   }
 }
