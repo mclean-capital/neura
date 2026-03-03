@@ -183,9 +183,7 @@ describe("saveAssistantMessages", () => {
   it("saves string content directly", async () => {
     mockQuery.mockResolvedValue({ rows: [] } as any);
 
-    await saveAssistantMessages("conv-1", [
-      { role: "assistant", content: "Plain text" },
-    ]);
+    await saveAssistantMessages("conv-1", [{ role: "assistant", content: "Plain text" }]);
 
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO messages"), [
       "conv-1",

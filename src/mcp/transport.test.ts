@@ -53,9 +53,7 @@ describe("MCP transport", () => {
     const app = createTestApp();
 
     // First request creates session
-    await request(app)
-      .post("/mcp")
-      .send({ jsonrpc: "2.0", method: "initialize", id: 1 });
+    await request(app).post("/mcp").send({ jsonrpc: "2.0", method: "initialize", id: 1 });
 
     // Second request reuses session
     await request(app)
@@ -71,14 +69,10 @@ describe("MCP transport", () => {
     const app = createTestApp();
 
     // Create session first
-    await request(app)
-      .post("/mcp")
-      .send({ jsonrpc: "2.0", method: "initialize", id: 1 });
+    await request(app).post("/mcp").send({ jsonrpc: "2.0", method: "initialize", id: 1 });
 
     // Delete session
-    const res = await request(app)
-      .delete("/mcp")
-      .set("mcp-session-id", mockSessionId);
+    const res = await request(app).delete("/mcp").set("mcp-session-id", mockSessionId);
 
     expect(res.status).toBe(204);
     expect(mockClose).toHaveBeenCalled();
@@ -94,9 +88,7 @@ describe("MCP transport", () => {
   });
 
   it("GET unknown session returns 404", async () => {
-    const res = await request(createTestApp())
-      .get("/mcp")
-      .set("mcp-session-id", "unknown-session");
+    const res = await request(createTestApp()).get("/mcp").set("mcp-session-id", "unknown-session");
 
     expect(res.status).toBe(404);
     expect(res.body.error).toContain("session not found");

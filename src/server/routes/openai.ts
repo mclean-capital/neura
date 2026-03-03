@@ -113,7 +113,9 @@ openaiRouter.post("/v1/chat/completions", async (req, res) => {
     logger.warn("chat_id body field present but not a valid UUID — ignoring");
   }
   if (headerConvId && openWebUiChatId && headerConvId !== openWebUiChatId) {
-    logger.warn("X-Conversation-Id and X-OpenWebUI-Chat-Id both valid but differ — using X-Conversation-Id");
+    logger.warn(
+      "X-Conversation-Id and X-OpenWebUI-Chat-Id both valid but differ — using X-Conversation-Id",
+    );
   }
   if (!incomingConvId) {
     logger.warn("No conversation ID from headers or body — creating new conversation");
