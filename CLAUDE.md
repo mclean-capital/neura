@@ -52,13 +52,13 @@ Best-of-both: Grok Eve voice + Gemini continuous vision watcher. Supports camera
 
 - **Server:** Express + WS, orchestrates Grok voice + Gemini watcher (`src/server.ts`)
 - **Grok session:** Eve voice, VAD, function calling (`src/grok-session.ts`)
-- **Gemini watcher:** Continuous Gemini Live session receiving video at 1 FPS, builds temporal visual context with sliding window compression (`src/gemini-watcher.ts`)
+- **Gemini watcher:** Continuous Gemini Live session receiving video every 2s, builds temporal visual context with sliding window compression (`src/gemini-watcher.ts`)
 - **Tools:** `describe_camera`, `describe_screen`, time, weather, dice (`src/tools.ts`)
 - **Client:** Camera + screen share + mic + transcript with watcher transparency (`public/`)
 
 Architecture:
 ```
-Camera/Screen (1 FPS) → Server → Gemini Live WS (watcher, 3-6 min visual memory)
+Camera/Screen (every 2s) → Server → Gemini Live WS (watcher, 3-6 min visual memory)
 Mic audio → Server → Grok WS (Eve voice)
                        └─ tool call → text query to watcher → Grok speaks result
 ```
