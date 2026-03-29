@@ -1,0 +1,373 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0a0a0a;
+  color: #e0e0e0;
+  height: 100vh;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Layout ─────────────────────────────────────── */
+
+.app-container {
+  height: 100%;
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+}
+
+.app-title {
+  font-size: 1.3rem;
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  color: #f0f0f0;
+}
+
+.previews {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+}
+
+/* ── Status badge ────────────────────────────────── */
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 2rem;
+  background: #111;
+  border: 1px solid #333;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #555;
+}
+
+.status-connected {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+.status-connected .status-dot {
+  background: #22c55e;
+}
+.status-connecting {
+  border-color: #facc15;
+  color: #facc15;
+}
+.status-connecting .status-dot {
+  background: #facc15;
+}
+.status-error {
+  border-color: #f87171;
+  color: #f87171;
+}
+.status-error .status-dot {
+  background: #f87171;
+}
+
+/* ── Cost indicator ──────────────────────────────── */
+
+.cost-indicator {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.7rem;
+  color: #777;
+  cursor: default;
+}
+
+.cost-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-amount {
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+/* ── Mic button ──────────────────────────────────── */
+
+.mic-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid #333;
+  background: #141414;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mic-btn:hover {
+  border-color: #f59e0b;
+  background: #1a1a1a;
+}
+
+.mic-btn.active {
+  border-color: #f59e0b;
+  background: #1a1408;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(245, 158, 11, 0);
+  }
+}
+
+/* ── Session buttons ─────────────────────────────── */
+
+.session-btn {
+  padding: 0.75rem 2rem;
+  border-radius: 2rem;
+  border: 2px solid #22c55e;
+  background: #0a1f0a;
+  color: #22c55e;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.session-btn:hover:not(:disabled) {
+  background: #0f2f0f;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+}
+
+.session-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.session-end-btn {
+  padding: 0.5rem 0.9rem;
+  border-radius: 2rem;
+  border: 1px solid #555;
+  background: #1a1a1a;
+  color: #999;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+
+.session-end-btn:hover {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+/* ── Toggle buttons ──────────────────────────────── */
+
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 2rem;
+  border: 1px solid #333;
+  background: #141414;
+  color: #e0e0e0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover:not(:disabled) {
+  border-color: #f59e0b;
+}
+.toggle-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toggle-btn.active {
+  border-color: #f59e0b;
+  background: #1a1408;
+  color: #f59e0b;
+}
+
+/* ── Preview containers ──────────────────────────── */
+
+.preview-container {
+  position: relative;
+  width: 220px;
+  height: 165px;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 2px solid #f59e0b;
+  background: #111;
+}
+
+.preview-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-label {
+  position: absolute;
+  bottom: 0.4rem;
+  left: 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  color: #f59e0b;
+}
+
+/* ── Transcript ──────────────────────────────────── */
+
+.transcript-panel {
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.transcript-empty {
+  color: #555;
+  text-align: center;
+  margin-top: 2rem;
+  font-size: 0.85rem;
+}
+
+.msg {
+  padding: 0.5rem 0.85rem;
+  border-radius: 0.85rem;
+  max-width: 85%;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  word-wrap: break-word;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.msg-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.5;
+}
+
+.msg-user {
+  background: #1e3a5f;
+  align-self: flex-end;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.msg-assistant {
+  background: #1a1a1a;
+  align-self: flex-start;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.msg-tool {
+  background: #1a1408;
+  align-self: flex-start;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  border-left: 3px solid #f59e0b;
+  border-radius: 0.4rem;
+}
+
+.msg-system {
+  background: transparent;
+  align-self: center;
+  color: #555;
+  font-size: 0.72rem;
+}
+
+/* ── Text input ──────────────────────────────────── */
+
+.text-input-container {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.text-input {
+  flex: 1;
+  padding: 0.55rem 1rem;
+  border-radius: 2rem;
+  border: 1px solid #333;
+  background: #141414;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+  outline: none;
+  font-family: inherit;
+}
+
+.text-input:focus {
+  border-color: #f59e0b;
+}
+.text-input:disabled {
+  opacity: 0.4;
+}
+
+.send-btn {
+  padding: 0.55rem 1rem;
+  border-radius: 2rem;
+  border: 1px solid #333;
+  background: #141414;
+  color: #e0e0e0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.send-btn:hover:not(:disabled) {
+  border-color: #f59e0b;
+}
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
