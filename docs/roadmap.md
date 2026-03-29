@@ -28,23 +28,111 @@ Mic audio → Server → Grok WS (Eve voice)
 
 ## Architecture: Monorepo Evolution
 
+### Core design principle: network boundary between core and UI
+
+The core is **always** a standalone server process. Clients connect to it via WebSocket. This single principle enables seamless transitions between local, cloud, and hybrid deployment — the UI only changes a URL.
+
+```
+UI knows one thing: a WebSocket URL
+  ├── Local mode:   ws://localhost:3002/ws
+  ├── Cloud mode:   wss://neura.example.com/ws
+  └── Hybrid mode:  ws://localhost:3002/ws → relay → cloud core
+```
+
+The core has zero knowledge of Electron, browsers, or mobile apps. Clients have zero knowledge of Grok, Gemini, or workers. The WebSocket protocol is the only contract.
+
 ### Package structure
 
 ```
 packages/
-├── core/              # Orchestrator — Grok session, Gemini watcher, tool system,
-│                      #   discovery loop, execution loop, worker management
+├── core/              # Standalone server — orchestrator, Grok session, Gemini watcher,
+│                      #   tool system, discovery/execution loops, worker management.
+│                      #   Runs the same whether spawned by Electron, Docker, or systemd.
+├── ui/                # React web UI — takes a WebSocket URL as config, nothing else.
+│                      #   Shared between desktop, web, and any embedded context.
+├── desktop/           # Electron launcher — spawns core as child process, wraps ui,
+│                      #   adds OS features (tray, hotkeys, auto-update, system audio).
+│                      #   This is the MVP distribution (downloadable app).
 ├── shared/            # Types, audio codecs, protocol definitions, state interfaces
 ├── workers/           # Worker runtime, built-in worker types, MCP integrations
-├── client-web/        # Web client (Vite/React)
-├── client-mobile/     # React Native (iOS + Android)
-├── client-desktop/    # Electron (Win/Mac/Linux)
-├── client-extension/  # Browser extension
-├── client-obs/        # OBS plugin/overlay
-└── client-vscode/     # VS Code extension
+├── relay/             # Optional local relay for hybrid mode (low-latency A/V proxy)
+├── mobile/            # React Native — reuses ui components, connects to core URL
+├── extension/         # Browser extension
+├── obs/               # OBS plugin/overlay
+└── vscode/            # VS Code extension
 prototypes/            # Experiments (keep for R&D)
 docs/                  # Roadmap, architecture, ADRs
 ```
+
+### How each package relates
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  desktop (Electron)                                             │
+│  ├── Spawns core as child_process.fork()                        │
+│  ├── Loads ui in BrowserWindow                                  │
+│  ├── Adds: tray icon, global hotkey, system audio, auto-update  │
+│  └── Settings UI: mode toggle (local / cloud / hybrid)          │
+│         │                              │                        │
+│         ▼                              ▼                        │
+│    core (localhost:3002)          ui (renderer)                  │
+│    ├── Grok WS (voice)           ├── Connects to ws://...       │
+│    ├── Gemini WS (watcher)       ├── Audio I/O                  │
+│    ├── Workers                   ├── Camera/screen capture      │
+│    ├── Discovery/Exec loops      └── Transcript + tool results  │
+│    └── SQLite                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Deployment mode transition
+
+The same packages deploy in different configurations. No code changes, just where processes run:
+
+| Mode | Core runs | UI connects to | Workers run | State layer |
+|---|---|---|---|---|
+| **Local (MVP)** | Electron spawns locally | `localhost:3002` | Child processes | SQLite |
+| **Cloud** | Cloud server | `wss://neura.example.com` | Cloud containers | Postgres |
+| **Hybrid** | Cloud server | Local relay → cloud | Cloud containers | Postgres |
+| **Self-hosted** | Docker on user's server | User's domain | Docker containers | Postgres |
+
+The user toggles modes in settings — no reinstall, no migration:
+
+```
+Settings → Mode:
+  ○ Local    (runs on this machine, your API keys)
+  ○ Cloud    (neura.ai — always on, multi-device, sign in)
+  ○ Hybrid   (cloud brain + local audio/video speed)
+```
+
+### MVP distribution (desktop app)
+
+The MVP ships as a downloadable desktop app, not a git repo:
+
+```
+Build pipeline:
+  packages/core + packages/ui + packages/desktop
+      ↓
+  electron-builder
+      ↓
+  Neura-Setup-1.0.0.exe  (Windows, ~80-120MB)
+  Neura-1.0.0.dmg        (Mac)
+  Neura-1.0.0.AppImage   (Linux)
+      ↓
+  Published to neura.ai/download + GitHub releases
+      ↓
+  Auto-update channel for future versions
+```
+
+User experience:
+```
+1. Download from neura.ai
+2. Install (like any app)
+3. First-run wizard: enter API keys, pick voice
+4. Click "Start" → tray icon appears
+5. Talk, share screen, share camera — it just works
+```
+
+No terminal. No git. No npm. No .env files. The open source repo exists for contributors, but users never touch it.
 
 ### Core server abstraction
 
@@ -432,37 +520,45 @@ Check pending work items
 
 ### Target user
 
-Power users and developers who want an AI assistant that sees, hears, and acts — not just chats. Early adopters comfortable with API keys and running a local server.
+Power users who want an AI assistant that sees, hears, and acts — not just chats. Early adopters comfortable with providing their own API keys, but who expect a real app experience, not a developer setup.
 
 ### MVP scope (what ships)
 
 | Feature | Included | Notes |
 |---|---|---|
+| **Desktop app** | Yes | Electron — download, install, run. Win/Mac/Linux |
 | **Voice conversation** | Yes | Grok Eve, natural conversation |
 | **Camera vision** | Yes | Continuous watcher with temporal context |
 | **Screen sharing** | Yes | Share screen, AI describes and discusses |
 | **Function calling** | Yes | describe_camera, describe_screen, time, weather, dice |
 | **Text input/output** | Yes | Fallback when voice isn't available |
 | **Transcript + transparency** | Yes | See what the watcher tells the voice agent |
-| **Web client** | Yes | Works in any browser |
-| **Local-first deployment** | Yes | `npm start` or Docker, bring your own API keys |
+| **First-run wizard** | Yes | API key setup, voice selection, guided onboarding |
+| **System tray** | Yes | Always-on, global hotkey to activate |
+| **Auto-updates** | Yes | Push updates without reinstall |
+| **Local-first** | Yes | Core runs on user's machine, bring your own API keys |
 | Workers | No | Phase 3 |
 | Discovery/Execution loops | No | Phase 3 |
 | Mobile client | No | Phase 4 |
-| Desktop client | No | Phase 4 |
+| Cloud mode | No | Phase 4 |
 | Real-time video mode | No | Phase 5 |
-| Cloud hosting | No | Post-MVP |
 
 ### MVP user experience
 
 ```
-1. Clone repo, npm install
-2. Add API keys (XAI_API_KEY, GOOGLE_API_KEY) to .env
-3. npm start → opens localhost:3002
-4. Click mic → start talking to Eve
-5. Share camera/screen → AI sees and discusses
-6. Ask anything → voice + vision working together
+1. Download Neura from neura.ai (or GitHub releases)
+2. Install like any app
+3. First-run wizard:
+   ├── Enter Grok API key (with link to get one)
+   ├── Enter Google API key (with link to get one)
+   └── Choose voice (Eve is default)
+4. Click "Start" → tray icon appears
+5. Talk → Eve responds naturally
+6. Share camera/screen → AI sees and discusses
+7. Ask anything → voice + vision working together
 ```
+
+No terminal. No git. No npm. No .env files.
 
 ### MVP success criteria
 
@@ -470,7 +566,8 @@ Power users and developers who want an AI assistant that sees, hears, and acts �
 - Session survives 10+ minutes without issues
 - Watcher provides accurate, temporally-aware descriptions
 - Latency feels conversational (< 3 second round-trip for vision queries)
-- Works on Windows, Mac, Linux (Node.js)
+- Install-to-first-conversation in under 3 minutes
+- Works on Windows, Mac, Linux
 
 ---
 
@@ -658,17 +755,18 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Comprehensive roadmap
 - [ ] Commit and stabilize prototypes
 
-### Phase 2 — MVP
-- [ ] Extract hybrid prototype into `packages/core`
-- [ ] Define WebSocket protocol spec
-- [ ] Add `packages/shared` types
+### Phase 2 — MVP (desktop app)
+- [ ] Extract hybrid prototype into `packages/core` (standalone server)
+- [ ] Build `packages/ui` (React, from current prototype `public/`)
+- [ ] Build `packages/desktop` (Electron launcher, spawns core, wraps ui)
+- [ ] Define WebSocket protocol spec (`packages/shared`)
+- [ ] First-run wizard (API key entry, voice selection)
+- [ ] System tray + global hotkey
 - [ ] State layer (SQLite for local-first)
-- [ ] Enable Grok's `web_search` and `x_search` tools
-- [ ] File/document upload
-- [ ] Persistent conversation memory
-- [ ] Docker deployment option
-- [ ] README + setup guide for open source launch
-- [ ] **Ship MVP: local-first, open source, bring-your-own API keys**
+- [ ] Auto-update via electron-updater
+- [ ] Build pipeline: electron-builder → .exe / .dmg / .AppImage
+- [ ] Landing page at neura.ai + GitHub releases
+- [ ] **Ship MVP: downloadable desktop app, open source, bring-your-own API keys**
 
 ### Phase 3 — Workers + Loops
 - [ ] Worker runtime and lifecycle management
@@ -677,13 +775,16 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] Built-in worker types: research, code, document, monitor
 - [ ] Voice interaction with worker status
 - [ ] Work item persistence and audit trail
+- [ ] Enable Grok's `web_search` and `x_search` tools
+- [ ] File/document upload
 
-### Phase 4 — Clients + Platform
-- [ ] Evolve web client (React, structured output, markdown rendering)
-- [ ] Electron desktop (clipboard, system audio, global hotkey)
-- [ ] React Native mobile (push notifications, background audio)
-- [ ] Browser extension (page context, overlay)
-- [ ] Cloud-hosted platform (managed deployment, auth, teams)
+### Phase 4 — Cloud + Clients
+- [ ] Cloud-hosted core (managed deployment, auth, teams)
+- [ ] Mode toggle: local / cloud / hybrid (in desktop app settings)
+- [ ] `packages/relay` for hybrid mode (local A/V proxy to cloud core)
+- [ ] React Native mobile (`packages/mobile`)
+- [ ] Browser extension (`packages/extension`)
+- [ ] Persistent conversation memory (cross-session)
 - [ ] Worker marketplace foundation
 
 ### Phase 5 — Real-time Video + Specialized
