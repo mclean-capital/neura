@@ -6,10 +6,7 @@
   "references": [
     { "path": "packages/shared" },
     { "path": "packages/core" },
-    { "path": "packages/ui" },
-    { "path": "prototypes/gemini-live" },
-    { "path": "prototypes/grok" },
-    { "path": "prototypes/hybrid" }
+    { "path": "packages/ui" }
   ],
   "include": []
 }

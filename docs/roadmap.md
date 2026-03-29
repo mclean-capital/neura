@@ -60,7 +60,7 @@ packages/
 ├── extension/         # Browser extension
 ├── obs/               # OBS plugin/overlay
 └── vscode/            # VS Code extension
-prototypes/            # Experiments (keep for R&D)
+                       # (prototypes/ removed — extracted to packages/core)
 docs/                  # Roadmap, architecture, ADRs
 ```
 
@@ -774,12 +774,12 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Screen sharing + camera support
 - [x] Watcher transparency in UI
 - [x] Comprehensive roadmap
-- [ ] Commit and stabilize prototypes
+- [x] Commit and stabilize prototypes
 
 ### Phase 2a — Alpha (core extraction + hardening)
 
-- [ ] Extract hybrid prototype into `packages/core` (standalone server)
-- [ ] Define WebSocket protocol spec with typed messages (`packages/shared`)
+- [x] Extract hybrid prototype into `packages/core` (standalone server)
+- [x] Define WebSocket protocol spec with typed messages (`packages/shared`)
 - [ ] Provider adapter layer (voice provider interface, vision provider interface)
 - [ ] Source-aware vision: tag frames with metadata (`camera` / `screen`) — not merged streams
 - [ ] Grok session recovery (reconnect on disconnect, context seeding from recent transcript)
@@ -789,7 +789,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] Session cost indicator in UI (active session badge)
 - [ ] Camera/screen/mic as independent opt-in toggles (not auto-start)
 - [ ] Remove mock tools (mock weather, dice) — replace with real or remove
-- [ ] Build `packages/ui` (React, from prototype `public/` — rebuild, don't port)
+- [x] Build `packages/ui` (React, from prototype `public/` — rebuild, don't port)
 - [ ] **Ship alpha: single OS, stable sessions, source-aware vision**
 
 ### Phase 2b — MVP (desktop app)

@@ -11,7 +11,7 @@ export default tseslint.config(
       '**/public/',
       '**/*.js',
       '**/*.mjs',
-      'vitest.config.ts',
+      '**/vitest.config.ts',
       '**/vite.config.ts',
     ],
   },
@@ -28,7 +28,7 @@ export default tseslint.config(
 
   // TypeScript source files
   {
-    files: ['prototypes/*/src/**/*.ts', 'packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
+    files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
     languageOptions: {
       parserOptions: {
         projectService: true,

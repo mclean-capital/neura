@@ -20,7 +20,7 @@ Mic audio → Grok (Eve voice)
 - A [Grok API key](https://console.x.ai/) (xAI)
 - A [Google API key](https://aistudio.google.com/apikey) (Gemini)
 
-### Run the hybrid prototype
+### Run Neura
 
 ```bash
 git clone https://github.com/mclean-capital/neura.git
@@ -28,31 +28,25 @@ cd neura
 npm install
 
 # Set up your API keys
-cp prototypes/hybrid/.env.example prototypes/hybrid/.env
+cp packages/core/.env.example packages/core/.env
 # Edit .env with your XAI_API_KEY and GOOGLE_API_KEY
 
-# Start the hybrid prototype
-npm run dev -w @neura/hybrid-live
+# Start core + UI (two terminals)
+npm run dev -w @neura/core    # Core server at http://localhost:3002
+npm run dev -w @neura/ui      # UI at http://localhost:5173
 ```
 
-Open [http://localhost:3002](http://localhost:3002), click the mic button, and start talking to Eve. Share your camera or screen and ask "what do you see?"
-
-### Other prototypes
-
-```bash
-npm run dev -w @neura/gemini-live    # Gemini voice only (localhost:3000)
-npm run dev -w @neura/grok-live      # Grok voice only (localhost:3001)
-```
+Open [http://localhost:5173](http://localhost:5173), click **Start Session**, then toggle the mic. Share your camera or screen and ask "what do you see?"
 
 ## Project Structure
 
 ```
-prototypes/
-├── gemini-live/     # Gemini 3.1 Flash Live API — voice + function calling
-├── grok/            # Grok Voice Agent API — Eve voice
-└── hybrid/          # Grok Eve voice + Gemini continuous vision watcher
+packages/
+├── shared/      # Protocol types, tool types, audio constants
+├── core/        # Voice session, vision watcher, tools, server
+└── ui/          # React 19 + Vite 6 + Tailwind v4 app
 docs/
-└── roadmap.md       # Full roadmap and architecture
+└── roadmap.md   # Full roadmap and architecture
 ```
 
 ## Development
