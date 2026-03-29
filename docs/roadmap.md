@@ -220,6 +220,17 @@ The hybrid runs two concurrent API sessions: Grok for voice (flat rate) and Gemi
 - Gemini watcher video input is very cheap (~$0.12/hr)
 - Gemini query responses cost audio output ($0.018/min) only for the seconds the watcher is actively responding — negligible
 - Grok has an observed ~30 min session limit (not officially documented as a hard cap), requiring reconnection for longer sessions
+- Gemini transcription (input/output) generates additional text output tokens on top of audio tokens — small but nonzero cost
+
+### Cost transparency UX
+
+The always-on Grok voice connection provides the best conversational experience but incurs wall-clock charges during silence. Rather than degrading UX with idle disconnects or push-to-talk modes, the product should be transparent:
+
+- **Session cost indicator** — while connected, show a small, non-intrusive badge in the UI indicating the session is active and charges may apply (e.g., "Session active" with a subtle indicator)
+- **Session summary** — when the user disconnects, optionally show estimated session cost based on duration
+- **Settings control** — let users configure auto-disconnect timeout if they prefer cost savings over always-on availability
+
+Future optimization: Gemini Live could serve as a cheaper always-on perception layer ($0.42/hr vs Grok's $3.00/hr for silence) since it charges per-token (silence = free). Grok would connect on-demand for voice responses only. This is architecturally viable but trades voice quality (Eve loses tone/emotion context from raw audio). Keeping full audio to Grok preserves the best experience.
 
 ---
 
@@ -755,16 +766,28 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Comprehensive roadmap
 - [ ] Commit and stabilize prototypes
 
-### Phase 2 — MVP (desktop app)
+### Phase 2a — Alpha (core extraction + hardening)
 - [ ] Extract hybrid prototype into `packages/core` (standalone server)
-- [ ] Build `packages/ui` (React, from current prototype `public/`)
+- [ ] Define WebSocket protocol spec with typed messages (`packages/shared`)
+- [ ] Provider adapter layer (voice provider interface, vision provider interface)
+- [ ] Source-aware vision: tag frames with metadata (`camera` / `screen`) — not merged streams
+- [ ] Grok session recovery (reconnect on disconnect, context seeding from recent transcript)
+- [ ] Watcher query queue (replace single `pendingQuery` with ID-based queue)
+- [ ] State layer (SQLite — session history, settings, permissions)
+- [ ] Structured event logging for debugging
+- [ ] Session cost indicator in UI (active session badge)
+- [ ] Camera/screen/mic as independent opt-in toggles (not auto-start)
+- [ ] Remove mock tools (mock weather, dice) — replace with real or remove
+- [ ] Build `packages/ui` (React, from prototype `public/` — rebuild, don't port)
+- [ ] **Ship alpha: single OS, stable sessions, source-aware vision**
+
+### Phase 2b — MVP (desktop app)
 - [ ] Build `packages/desktop` (Electron launcher, spawns core, wraps ui)
-- [ ] Define WebSocket protocol spec (`packages/shared`)
-- [ ] First-run wizard (API key entry, voice selection)
+- [ ] First-run wizard (secure API key storage, voice selection)
 - [ ] System tray + global hotkey
-- [ ] State layer (SQLite for local-first)
 - [ ] Auto-update via electron-updater
 - [ ] Build pipeline: electron-builder → .exe / .dmg / .AppImage
+- [ ] Cross-platform testing (Windows, Mac, Linux)
 - [ ] Landing page at neura.ai + GitHub releases
 - [ ] **Ship MVP: downloadable desktop app, open source, bring-your-own API keys**
 
