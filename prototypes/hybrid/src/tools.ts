@@ -9,8 +9,7 @@ export const toolDefs = [
       properties: {
         focus: {
           type: 'string',
-          description:
-            "Optional focus area (e.g., 'the object they're holding', 'the person')",
+          description: "Optional focus area (e.g., 'the object they're holding', 'the person')",
         },
         detail: {
           type: 'string',
@@ -30,8 +29,7 @@ export const toolDefs = [
       properties: {
         focus: {
           type: 'string',
-          description:
-            "Optional focus area (e.g., 'the code', 'the error message', 'the chart')",
+          description: "Optional focus area (e.g., 'the code', 'the error message', 'the chart')",
         },
         detail: {
           type: 'string',
@@ -76,7 +74,7 @@ export const toolDefs = [
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown>,
-  queryWatcher: (prompt: string) => Promise<string>,
+  queryWatcher: (prompt: string) => Promise<string>
 ): Promise<Record<string, unknown>> {
   console.log(`[tool] ${name}(${JSON.stringify(args)})`);
 
@@ -133,10 +131,7 @@ export async function handleToolCall(
     case 'roll_dice': {
       const count = Math.min((args.count as number) || 1, 100);
       const sides = Math.min((args.sides as number) || 6, 1000);
-      const rolls = Array.from(
-        { length: count },
-        () => Math.floor(Math.random() * sides) + 1,
-      );
+      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
       return { result: { rolls, total: rolls.reduce((a, b) => a + b, 0) } };
     }
 

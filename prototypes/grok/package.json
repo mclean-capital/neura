@@ -4,7 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run"
   },
   "dependencies": {
     "dotenv": "^16",
@@ -14,7 +19,6 @@
   "devDependencies": {
     "@types/express": "^5",
     "@types/ws": "^8",
-    "tsx": "^4",
-    "typescript": "^5"
+    "tsx": "^4"
   }
 }

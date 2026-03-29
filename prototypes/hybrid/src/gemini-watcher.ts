@@ -38,7 +38,7 @@ export function createGeminiWatcher() {
               {
                 text: [
                   'You are a visual observer receiving a continuous stream of video frames.',
-                  'Frames may come from the user\'s camera or their shared screen.',
+                  "Frames may come from the user's camera or their shared screen.",
                   'You have temporal context — you can describe changes and actions over time.',
                   'Match your response length to the query: short questions get 1-2 sentences,',
                   'detailed questions (explain, walk through, review, analyze) get thorough responses.',

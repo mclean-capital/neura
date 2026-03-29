@@ -10,11 +10,11 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 
 Three prototypes validated the core I/O architecture:
 
-| Prototype | What it proved |
-|---|---|
-| **gemini-live** | Gemini 3.1 Flash Live API works for real-time voice + function calling |
-| **grok** | Grok Eve voice is the benchmark for naturalness and quality |
-| **hybrid** | Grok Eve + Gemini watcher is the winning combo — voice + continuous vision with temporal context |
+| Prototype       | What it proved                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| **gemini-live** | Gemini 3.1 Flash Live API works for real-time voice + function calling                           |
+| **grok**        | Grok Eve voice is the benchmark for naturalness and quality                                      |
+| **hybrid**      | Grok Eve + Gemini watcher is the winning combo — voice + continuous vision with temporal context |
 
 ### Hybrid architecture (validated)
 
@@ -88,12 +88,12 @@ docs/                  # Roadmap, architecture, ADRs
 
 The same packages deploy in different configurations. No code changes, just where processes run:
 
-| Mode | Core runs | UI connects to | Workers run | State layer |
-|---|---|---|---|---|
-| **Local (MVP)** | Electron spawns locally | `localhost:3002` | Child processes | SQLite |
-| **Cloud** | Cloud server | `wss://neura.example.com` | Cloud containers | Postgres |
-| **Hybrid** | Cloud server | Local relay → cloud | Cloud containers | Postgres |
-| **Self-hosted** | Docker on user's server | User's domain | Docker containers | Postgres |
+| Mode            | Core runs               | UI connects to            | Workers run       | State layer |
+| --------------- | ----------------------- | ------------------------- | ----------------- | ----------- |
+| **Local (MVP)** | Electron spawns locally | `localhost:3002`          | Child processes   | SQLite      |
+| **Cloud**       | Cloud server            | `wss://neura.example.com` | Cloud containers  | Postgres    |
+| **Hybrid**      | Cloud server            | Local relay → cloud       | Cloud containers  | Postgres    |
+| **Self-hosted** | Docker on user's server | User's domain             | Docker containers | Postgres    |
 
 The user toggles modes in settings — no reinstall, no migration:
 
@@ -124,6 +124,7 @@ Build pipeline:
 ```
 
 User experience:
+
 ```
 1. Download from neura.ai
 2. Install (like any app)
@@ -151,11 +152,11 @@ Each client only implements: audio I/O, video capture (optional), and platform-s
 
 WebSocket is the right starting point — LLM API latency (1-3 seconds) dwarfs the ~30ms transport difference vs WebRTC. WebSocket is simpler to deploy (any server, any CDN) and already proven in the prototypes.
 
-| Phase | Transport | Why |
-|---|---|---|
-| **MVP** | WebSocket everywhere | Simple, works, ships fast |
-| **Clients (mobile)** | Evaluate WebRTC for media | UDP handles flaky mobile networks better |
-| **Real-time video** | WebRTC for high-FPS video | 30 FPS gaming/sports benefits from binary media transport |
+| Phase                | Transport                 | Why                                                       |
+| -------------------- | ------------------------- | --------------------------------------------------------- |
+| **MVP**              | WebSocket everywhere      | Simple, works, ships fast                                 |
+| **Clients (mobile)** | Evaluate WebRTC for media | UDP handles flaky mobile networks better                  |
+| **Real-time video**  | WebRTC for high-FPS video | 30 FPS gaming/sports benefits from binary media transport |
 
 When WebRTC is needed, adopt a hybrid approach: WebSocket for signaling/control/text, WebRTC for audio and video streams. The protocol layer stays the same — we just move heavy media to a faster pipe.
 
@@ -165,32 +166,32 @@ When WebRTC is needed, adopt a hybrid approach: WebSocket for signaling/control/
 
 ### Inputs
 
-| Capability | Status | Description |
-|---|---|---|
-| Voice (mic) | Done | PCM audio → Grok via WebSocket relay |
-| Camera video | Done | JPEG every 2s → Gemini watcher |
-| Screen share | Done | JPEG every 2s → Gemini watcher (browser getDisplayMedia) |
-| Text input | Done | Text box → Grok |
-| File/document upload | Planned | Drag & drop PDF, image, code files for analysis |
-| Clipboard | Planned | "Analyze what I just copied" — system clipboard access |
-| System audio | Planned | Desktop audio capture (game sounds, video playing, music) |
-| Web search | Planned | Enable Grok's native `web_search` and `x_search` tools |
-| Webhooks | Planned | External events triggering the discovery loop |
-| Scheduled triggers | Planned | Cron/timer-based discovery loop activation |
+| Capability           | Status  | Description                                               |
+| -------------------- | ------- | --------------------------------------------------------- |
+| Voice (mic)          | Done    | PCM audio → Grok via WebSocket relay                      |
+| Camera video         | Done    | JPEG every 2s → Gemini watcher                            |
+| Screen share         | Done    | JPEG every 2s → Gemini watcher (browser getDisplayMedia)  |
+| Text input           | Done    | Text box → Grok                                           |
+| File/document upload | Planned | Drag & drop PDF, image, code files for analysis           |
+| Clipboard            | Planned | "Analyze what I just copied" — system clipboard access    |
+| System audio         | Planned | Desktop audio capture (game sounds, video playing, music) |
+| Web search           | Planned | Enable Grok's native `web_search` and `x_search` tools    |
+| Webhooks             | Planned | External events triggering the discovery loop             |
+| Scheduled triggers   | Planned | Cron/timer-based discovery loop activation                |
 
 ### Outputs
 
-| Capability | Status | Description |
-|---|---|---|
-| Voice (Eve) | Done | Grok audio → speaker playback |
-| Transcripts | Done | Input/output transcription in UI |
-| Tool transparency | Done | Watcher responses visible in UI |
-| Structured text | Planned | Code blocks, markdown, links rendered properly |
-| Image generation | Planned | "Draw a diagram of this architecture" |
-| File export | Planned | Save transcripts, export conversation history |
-| Push notifications | Planned | Proactive alerts to connected clients |
-| SMS/messaging | Planned | Text the user when they're not connected |
-| Persistent memory | Planned | Conversation context across sessions |
+| Capability         | Status  | Description                                    |
+| ------------------ | ------- | ---------------------------------------------- |
+| Voice (Eve)        | Done    | Grok audio → speaker playback                  |
+| Transcripts        | Done    | Input/output transcription in UI               |
+| Tool transparency  | Done    | Watcher responses visible in UI                |
+| Structured text    | Planned | Code blocks, markdown, links rendered properly |
+| Image generation   | Planned | "Draw a diagram of this architecture"          |
+| File export        | Planned | Save transcripts, export conversation history  |
+| Push notifications | Planned | Proactive alerts to connected clients          |
+| SMS/messaging      | Planned | Text the user when they're not connected       |
+| Persistent memory  | Planned | Conversation context across sessions           |
 
 ---
 
@@ -198,24 +199,25 @@ When WebRTC is needed, adopt a hybrid approach: WebSocket for signaling/control/
 
 ### API pricing (as of March 2026)
 
-| Provider | Model | Pricing model | Rate |
-|---|---|---|---|
-| **Grok Voice Agent** | Grok (Eve) | Flat per-minute (wall-clock) | $0.05/min ($3.00/hr) |
-| **Gemini 3.1 Flash Live** | Watcher (vision) | Per-minute | Video in: $0.002/min, Audio in: $0.005/min, Audio out: $0.018/min |
-| **Gemini 2.5 Flash** | Vision REST (fallback) | Per-token | $3.00/1M input, $2.00/1M output |
+| Provider                  | Model                  | Pricing model                | Rate                                                              |
+| ------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------- |
+| **Grok Voice Agent**      | Grok (Eve)             | Flat per-minute (wall-clock) | $0.05/min ($3.00/hr)                                              |
+| **Gemini 3.1 Flash Live** | Watcher (vision)       | Per-minute                   | Video in: $0.002/min, Audio in: $0.005/min, Audio out: $0.018/min |
+| **Gemini 2.5 Flash**      | Vision REST (fallback) | Per-token                    | $3.00/1M input, $2.00/1M output                                   |
 
 ### Estimated session costs (hybrid prototype)
 
 The hybrid runs two concurrent API sessions: Grok for voice (flat rate) and Gemini watcher for vision (per-minute video input). Since Grok handles all voice output, the Gemini watcher only incurs video input + occasional audio output costs when queried.
 
-| Duration | Grok voice | Gemini watcher (video in) | Gemini query responses | **Total** |
-|---|---|---|---|---|
-| 5 min | $0.25 | $0.01 | ~$0.00 | **~$0.26** |
-| 15 min | $0.75 | $0.03 | ~$0.01 | **~$0.79** |
-| 30 min | $1.50 | $0.06 | ~$0.02 | **~$1.58** |
-| 1 hour | $3.00 | $0.12 | ~$0.04 | **~$3.16** |
+| Duration | Grok voice | Gemini watcher (video in) | Gemini query responses | **Total**  |
+| -------- | ---------- | ------------------------- | ---------------------- | ---------- |
+| 5 min    | $0.25      | $0.01                     | ~$0.00                 | **~$0.26** |
+| 15 min   | $0.75      | $0.03                     | ~$0.01                 | **~$0.79** |
+| 30 min   | $1.50      | $0.06                     | ~$0.02                 | **~$1.58** |
+| 1 hour   | $3.00      | $0.12                     | ~$0.04                 | **~$3.16** |
 
 **Key notes:**
+
 - Grok charges for wall-clock connection time (silence costs money)
 - Gemini watcher video input is very cheap (~$0.12/hr)
 - Gemini query responses cost audio output ($0.018/min) only for the seconds the watcher is actively responding — negligible
@@ -238,30 +240,30 @@ Future optimization: Gemini Live could serve as a cheaper always-on perception l
 
 ### Tier 1 — Build first
 
-| Client | Why | Key features |
-|---|---|---|
-| **Web** | Already built, universal access | Camera, screen share, full UI |
-| **Electron desktop** | System-level access | Clipboard, system audio, global hotkey, tray icon |
-| **React Native mobile** | Always-with-you assistant | Camera, push notifications, background audio |
+| Client                  | Why                             | Key features                                      |
+| ----------------------- | ------------------------------- | ------------------------------------------------- |
+| **Web**                 | Already built, universal access | Camera, screen share, full UI                     |
+| **Electron desktop**    | System-level access             | Clipboard, system audio, global hotkey, tray icon |
+| **React Native mobile** | Always-with-you assistant       | Camera, push notifications, background audio      |
 
 ### Tier 2 — High value
 
-| Client | Why | Key features |
-|---|---|---|
-| **Browser extension** | Vision on any webpage without screen share | "Explain this page," overlay UI, context from active tab |
-| **VS Code extension** | Coding assistant with voice + vision | Voice commands, sees your editor, explains errors, writes code |
-| **OBS plugin/overlay** | Streaming/gaming buddy (see below) | Scene awareness, chat interaction, on-stream AI |
+| Client                 | Why                                        | Key features                                                   |
+| ---------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| **Browser extension**  | Vision on any webpage without screen share | "Explain this page," overlay UI, context from active tab       |
+| **VS Code extension**  | Coding assistant with voice + vision       | Voice commands, sees your editor, explains errors, writes code |
+| **OBS plugin/overlay** | Streaming/gaming buddy (see below)         | Scene awareness, chat interaction, on-stream AI                |
 
 ### Tier 3 — Explore
 
-| Client | Why | Key features |
-|---|---|---|
-| **Discord bot** | Voice channel presence with vision | Screen share in calls, community interaction |
-| **Smart glasses** | Camera + mic on your face (see research items) | Hands-free, always-on vision |
-| **CLI/terminal** | Developer workflow | Voice in the terminal, pipe output to AI |
-| **Car mode** | Hands-free, audio only | Simplified UI, driving-safe interaction |
-| **Watch companion** | Quick voice queries | Tap to talk, status glances |
-| **Embedded/kiosk** | Physical spaces | Raspberry Pi + camera, reception desk, workshop |
+| Client              | Why                                            | Key features                                    |
+| ------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| **Discord bot**     | Voice channel presence with vision             | Screen share in calls, community interaction    |
+| **Smart glasses**   | Camera + mic on your face (see research items) | Hands-free, always-on vision                    |
+| **CLI/terminal**    | Developer workflow                             | Voice in the terminal, pipe output to AI        |
+| **Car mode**        | Hands-free, audio only                         | Simplified UI, driving-safe interaction         |
+| **Watch companion** | Quick voice queries                            | Tap to talk, status glances                     |
+| **Embedded/kiosk**  | Physical spaces                                | Raspberry Pi + camera, reception desk, workshop |
 
 ---
 
@@ -271,18 +273,19 @@ An enhanced video mode for any scenario where real-time visual understanding is 
 
 ### Requirements
 
-| Requirement | Details |
-|---|---|
-| **Adaptive frame rate** | 2-5 FPS baseline, with motion detection to burst higher during fast action. Configurable per use case |
-| **System audio capture** | Desktop audio alongside mic — AI hears what the user hears (game sounds, video dialogue, music) |
-| **Push-to-talk option** | When system audio is active, VAD may false-trigger. Hotkey or controller button as alternative |
-| **Non-intrusive responses** | Spatial audio or dedicated audio channel — don't talk over the content |
-| **Context priming** | Tell the watcher what it's looking at ("this is a D&D RPG", "we're watching a sci-fi film", "this is a live dashboard") |
-| **Low latency** | Watcher query + Grok response < 2-3 seconds |
+| Requirement                 | Details                                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Adaptive frame rate**     | 2-5 FPS baseline, with motion detection to burst higher during fast action. Configurable per use case                   |
+| **System audio capture**    | Desktop audio alongside mic — AI hears what the user hears (game sounds, video dialogue, music)                         |
+| **Push-to-talk option**     | When system audio is active, VAD may false-trigger. Hotkey or controller button as alternative                          |
+| **Non-intrusive responses** | Spatial audio or dedicated audio channel — don't talk over the content                                                  |
+| **Context priming**         | Tell the watcher what it's looking at ("this is a D&D RPG", "we're watching a sci-fi film", "this is a live dashboard") |
+| **Low latency**             | Watcher query + Grok response < 2-3 seconds                                                                             |
 
 ### Use cases
 
 **Gaming**
+
 - "What should I do here?" — AI sees the game state and advises
 - "Did you see that?" — temporal context means it actually saw it
 - AI reacts to game events proactively (boss fight, death, achievement)
@@ -290,29 +293,34 @@ An enhanced video mode for any scenario where real-time visual understanding is 
 - Stream integration — AI overlay on stream, reacts to chat, scene-aware (OBS)
 
 **Movie/TV watching**
+
 - "Who is that actor?" — AI identifies from the frame
 - "What just happened?" — AI has temporal context of the last few minutes
 - "Explain that reference" — AI understands the scene in context
 - Proactive trivia — AI shares relevant facts during slow moments
 
 **Sports viewing**
+
 - Real-time play analysis and stats
 - Rules explanation as situations arise
 - Historical context ("last time these teams met...")
 - Highlight detection — AI flags key moments
 
 **Education/lectures**
+
 - Live note-taking from video lectures
 - "Pause and explain that concept" — AI saw the slide/whiteboard
 - Auto-summarize at the end of a lecture segment
 
 **Work/productivity**
+
 - Live dashboard monitoring with AI commentary
 - Pair programming — AI watches your screen and offers suggestions
 - Meeting assistant — AI watches the shared screen in a video call
 - Remote assistance — technician shares camera, AI guides them
 
 **Creative**
+
 - Art/design review — "What do you think of this composition?"
 - Music production — AI sees the DAW, hears the audio, gives feedback
 - Video editing — AI watches the timeline and suggests cuts
@@ -344,6 +352,7 @@ Workers are autonomous agents spawned by the orchestrator to get real tasks done
 ### Worker capabilities
 
 Each worker is an autonomous agent with:
+
 - **Specific task** with clear objectives and success criteria
 - **Tool access** — web browsing, code execution, file system, APIs, MCP servers
 - **Progress reporting** — streams status back to the orchestrator
@@ -361,15 +370,15 @@ Spawn → Running → [Checkpoint] → [Waiting for input] → Complete
 
 ### Worker types (planned)
 
-| Type | Description |
-|---|---|
-| **Research** | Web search, document analysis, competitive intelligence |
-| **Code** | Write, test, and deploy code changes |
-| **Document** | Draft emails, reports, summaries, presentations |
-| **Monitor** | Watch deployments, dashboards, feeds — alert on changes |
-| **Data** | ETL, analysis, visualization, database queries |
-| **Communication** | Send emails, Slack messages, schedule meetings |
-| **Integration** | API calls, webhook management, third-party service interaction |
+| Type              | Description                                                    |
+| ----------------- | -------------------------------------------------------------- |
+| **Research**      | Web search, document analysis, competitive intelligence        |
+| **Code**          | Write, test, and deploy code changes                           |
+| **Document**      | Draft emails, reports, summaries, presentations                |
+| **Monitor**       | Watch deployments, dashboards, feeds — alert on changes        |
+| **Data**          | ETL, analysis, visualization, database queries                 |
+| **Communication** | Send emails, Slack messages, schedule meetings                 |
+| **Integration**   | API calls, webhook management, third-party service interaction |
 
 ### Voice interaction with workers
 
@@ -398,16 +407,16 @@ The discovery loop is what makes Neura proactive instead of reactive. It continu
 
 ### Trigger sources
 
-| Source | Example |
-|---|---|
-| **Timer** | Every 5 minutes, check if any monitored dashboards changed |
-| **Webhook** | GitHub push event → check if CI passed → notify user |
-| **Calendar** | Meeting in 15 min → prep briefing doc, remind user |
-| **Email/messages** | New urgent email → summarize and push audio notification |
-| **Worker completion** | Research worker finished → report results to user |
-| **Context change** | User opened a new app (vision) → offer relevant help |
-| **External APIs** | Stock price hit threshold → alert user |
-| **Scheduled** | Daily morning briefing, weekly summary |
+| Source                | Example                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| **Timer**             | Every 5 minutes, check if any monitored dashboards changed |
+| **Webhook**           | GitHub push event → check if CI passed → notify user       |
+| **Calendar**          | Meeting in 15 min → prep briefing doc, remind user         |
+| **Email/messages**    | New urgent email → summarize and push audio notification   |
+| **Worker completion** | Research worker finished → report results to user          |
+| **Context change**    | User opened a new app (vision) → offer relevant help       |
+| **External APIs**     | Stock price hit threshold → alert user                     |
+| **Scheduled**         | Daily morning briefing, weekly summary                     |
 
 ### Decision engine
 
@@ -448,13 +457,13 @@ The execution loop drives autonomous task completion. It ensures workers make pr
 
 ### Trigger sources
 
-| Source | Example |
-|---|---|
-| **Timer** | Poll worker status every N seconds |
-| **Worker event** | Worker reports progress, completion, or error |
-| **Dependency resolution** | Task A completed → unblock Task B |
-| **User input** | User approves/rejects worker output → next step |
-| **Retry schedule** | Failed task → exponential backoff retry |
+| Source                    | Example                                         |
+| ------------------------- | ----------------------------------------------- |
+| **Timer**                 | Poll worker status every N seconds              |
+| **Worker event**          | Worker reports progress, completion, or error   |
+| **Dependency resolution** | Task A completed → unblock Task B               |
+| **User input**            | User approves/rejects worker output → next step |
+| **Retry schedule**        | Failed task → exponential backoff retry         |
 
 ### Loop behavior
 
@@ -488,12 +497,12 @@ Check pending work items
 
 ### Architecture options
 
-| Model | Description | Pros | Cons |
-|---|---|---|---|
-| **Cloud-hosted SaaS** | Core runs in cloud, clients connect via internet | Scales, no user setup, always updated | Latency, ongoing server costs, data leaves device |
-| **Local-first** | Core runs on user's machine, connects to APIs directly | Lowest latency, privacy, no server costs | Requires setup, machine must be on, no mobile without LAN |
-| **Hybrid** | Core in cloud for orchestration + workers, local relay for low-latency audio/video | Best of both, workers run 24/7 even when user is offline | More complex, two runtimes |
-| **Edge/self-hosted** | User deploys their own instance (Docker, bare metal) | Full control, enterprise-friendly, air-gapped option | User manages infra |
+| Model                 | Description                                                                        | Pros                                                     | Cons                                                      |
+| --------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| **Cloud-hosted SaaS** | Core runs in cloud, clients connect via internet                                   | Scales, no user setup, always updated                    | Latency, ongoing server costs, data leaves device         |
+| **Local-first**       | Core runs on user's machine, connects to APIs directly                             | Lowest latency, privacy, no server costs                 | Requires setup, machine must be on, no mobile without LAN |
+| **Hybrid**            | Core in cloud for orchestration + workers, local relay for low-latency audio/video | Best of both, workers run 24/7 even when user is offline | More complex, two runtimes                                |
+| **Edge/self-hosted**  | User deploys their own instance (Docker, bare metal)                               | Full control, enterprise-friendly, air-gapped option     | User manages infra                                        |
 
 ### Recommended: Hybrid with local-first option
 
@@ -516,14 +525,14 @@ Check pending work items
 
 ### Infrastructure considerations
 
-| Component | Cloud option | Local option |
-|---|---|---|
-| **Core server** | Fly.io, Railway, AWS ECS | Node.js process on user machine |
-| **State layer** | Postgres (Supabase, Neon) | SQLite |
-| **Worker runtime** | Cloud containers, serverless functions | Local processes, Docker |
-| **File storage** | S3, R2 | Local filesystem |
-| **WebSocket** | Cloud core with sticky sessions | localhost or LAN |
-| **Auth** | OAuth, API keys | Local-only, no auth needed |
+| Component          | Cloud option                           | Local option                    |
+| ------------------ | -------------------------------------- | ------------------------------- |
+| **Core server**    | Fly.io, Railway, AWS ECS               | Node.js process on user machine |
+| **State layer**    | Postgres (Supabase, Neon)              | SQLite                          |
+| **Worker runtime** | Cloud containers, serverless functions | Local processes, Docker         |
+| **File storage**   | S3, R2                                 | Local filesystem                |
+| **WebSocket**      | Cloud core with sticky sessions        | localhost or LAN                |
+| **Auth**           | OAuth, API keys                        | Local-only, no auth needed      |
 
 ---
 
@@ -535,24 +544,24 @@ Power users who want an AI assistant that sees, hears, and acts — not just cha
 
 ### MVP scope (what ships)
 
-| Feature | Included | Notes |
-|---|---|---|
-| **Desktop app** | Yes | Electron — download, install, run. Win/Mac/Linux |
-| **Voice conversation** | Yes | Grok Eve, natural conversation |
-| **Camera vision** | Yes | Continuous watcher with temporal context |
-| **Screen sharing** | Yes | Share screen, AI describes and discusses |
-| **Function calling** | Yes | describe_camera, describe_screen, time, weather, dice |
-| **Text input/output** | Yes | Fallback when voice isn't available |
-| **Transcript + transparency** | Yes | See what the watcher tells the voice agent |
-| **First-run wizard** | Yes | API key setup, voice selection, guided onboarding |
-| **System tray** | Yes | Always-on, global hotkey to activate |
-| **Auto-updates** | Yes | Push updates without reinstall |
-| **Local-first** | Yes | Core runs on user's machine, bring your own API keys |
-| Workers | No | Phase 3 |
-| Discovery/Execution loops | No | Phase 3 |
-| Mobile client | No | Phase 4 |
-| Cloud mode | No | Phase 4 |
-| Real-time video mode | No | Phase 5 |
+| Feature                       | Included | Notes                                                 |
+| ----------------------------- | -------- | ----------------------------------------------------- |
+| **Desktop app**               | Yes      | Electron — download, install, run. Win/Mac/Linux      |
+| **Voice conversation**        | Yes      | Grok Eve, natural conversation                        |
+| **Camera vision**             | Yes      | Continuous watcher with temporal context              |
+| **Screen sharing**            | Yes      | Share screen, AI describes and discusses              |
+| **Function calling**          | Yes      | describe_camera, describe_screen, time, weather, dice |
+| **Text input/output**         | Yes      | Fallback when voice isn't available                   |
+| **Transcript + transparency** | Yes      | See what the watcher tells the voice agent            |
+| **First-run wizard**          | Yes      | API key setup, voice selection, guided onboarding     |
+| **System tray**               | Yes      | Always-on, global hotkey to activate                  |
+| **Auto-updates**              | Yes      | Push updates without reinstall                        |
+| **Local-first**               | Yes      | Core runs on user's machine, bring your own API keys  |
+| Workers                       | No       | Phase 3                                               |
+| Discovery/Execution loops     | No       | Phase 3                                               |
+| Mobile client                 | No       | Phase 4                                               |
+| Cloud mode                    | No       | Phase 4                                               |
+| Real-time video mode          | No       | Phase 5                                               |
 
 ### MVP user experience
 
@@ -586,13 +595,13 @@ No terminal. No git. No npm. No .env files.
 
 ### Recommendation: Open core
 
-| Layer | License | Rationale |
-|---|---|---|
-| **Core engine** | MIT or Apache 2.0 | Open — builds community, trust, contributions. The orchestrator, protocol, and client SDKs |
-| **Worker runtime** | MIT or Apache 2.0 | Open — community-built workers expand the ecosystem |
-| **Clients** | MIT or Apache 2.0 | Open — web, mobile, desktop, extensions |
-| **Cloud platform** | Proprietary | Closed — managed hosting, team features, enterprise features. This is the business model |
-| **Premium workers** | Proprietary or marketplace | Specialized workers, verified integrations, premium tool access |
+| Layer               | License                    | Rationale                                                                                  |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
+| **Core engine**     | MIT or Apache 2.0          | Open — builds community, trust, contributions. The orchestrator, protocol, and client SDKs |
+| **Worker runtime**  | MIT or Apache 2.0          | Open — community-built workers expand the ecosystem                                        |
+| **Clients**         | MIT or Apache 2.0          | Open — web, mobile, desktop, extensions                                                    |
+| **Cloud platform**  | Proprietary                | Closed — managed hosting, team features, enterprise features. This is the business model   |
+| **Premium workers** | Proprietary or marketplace | Specialized workers, verified integrations, premium tool access                            |
 
 ### Why open source
 
@@ -604,13 +613,13 @@ No terminal. No git. No npm. No .env files.
 
 ### Business model (post-MVP)
 
-| Revenue stream | Description |
-|---|---|
-| **Hosted platform** | Managed Neura in the cloud — no setup, scales automatically, team features |
-| **API metering** | Pass-through LLM costs + margin for managed users |
-| **Worker marketplace** | Premium and third-party workers, revenue share |
-| **Enterprise** | Self-hosted support, SSO, audit logs, compliance, SLA |
-| **Pro features** | Advanced discovery loop triggers, priority worker execution, longer session history |
+| Revenue stream         | Description                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| **Hosted platform**    | Managed Neura in the cloud — no setup, scales automatically, team features          |
+| **API metering**       | Pass-through LLM costs + margin for managed users                                   |
+| **Worker marketplace** | Premium and third-party workers, revenue share                                      |
+| **Enterprise**         | Self-hosted support, SSO, audit logs, compliance, SLA                               |
+| **Pro features**       | Advanced discovery loop triggers, priority worker execution, longer session history |
 
 ### Community building
 
@@ -627,17 +636,17 @@ No terminal. No git. No npm. No .env files.
 
 Neura is a standard, not a silo. Every layer is swappable:
 
-| Layer | Open/Closed | Why |
-|---|---|---|
-| **Protocol spec** | Open | Anyone can build compatible clients/servers |
-| **Core engine** | Open (MIT) | Trust, contributions, adoption |
-| **Provider adapters** | Open | Community adds voice/vision providers |
-| **Worker SDK** | Open | Community builds workers — the app store |
-| **Client SDK** | Open | Community builds clients for any platform |
-| **Official clients** | Open | Web, desktop, mobile — reference implementations |
-| **Hosted platform** | Closed | The business — managed infra, auth, teams |
-| **Worker marketplace** | Curated | Open to publish, curated for quality |
-| **Enterprise features** | Closed | SSO, audit logs, compliance, priority support |
+| Layer                   | Open/Closed | Why                                              |
+| ----------------------- | ----------- | ------------------------------------------------ |
+| **Protocol spec**       | Open        | Anyone can build compatible clients/servers      |
+| **Core engine**         | Open (MIT)  | Trust, contributions, adoption                   |
+| **Provider adapters**   | Open        | Community adds voice/vision providers            |
+| **Worker SDK**          | Open        | Community builds workers — the app store         |
+| **Client SDK**          | Open        | Community builds clients for any platform        |
+| **Official clients**    | Open        | Web, desktop, mobile — reference implementations |
+| **Hosted platform**     | Closed      | The business — managed infra, auth, teams        |
+| **Worker marketplace**  | Curated     | Open to publish, curated for quality             |
+| **Enterprise features** | Closed      | SSO, audit logs, compliance, priority support    |
 
 ### Pluggable providers
 
@@ -658,20 +667,20 @@ All user data is exportable: conversation history, worker results, memory, confi
 
 ### Key projects compared
 
-| Project | Stars | Voice | Continuous Vision | Workers | Proactive | Transport |
-|---|---|---|---|---|---|---|
-| **Neura** | — | Native (Grok) | **Yes (watcher)** | Planned | Planned | WebSocket |
-| OpenAI Realtime | — | Native | No | No | No | WebSocket/WebRTC |
-| LiveKit Agents | ~10k | Native | Partial | Yes | Yes | WebRTC |
-| Pipecat | ~11k | Native S2S | No | Limited | Possible | WebRTC |
-| OpenClaw | ~340k | Bolted on | No | Yes | Yes (cron) | Gateway WS |
-| CrewAI | ~47k | No | No | Yes | Limited | None |
-| AutoGen | ~56k | No | No | Yes | Limited | None |
-| AIOS | ~5k | No | No | Yes | No | None |
-| Open Interpreter/01 | ~63k | Push-to-talk | No | No | No | LiveKit |
-| Letta/MemGPT | ~22k | No | No | Subagents | No | REST |
-| Bolna | ~600 | Telephony | No | No | Outbound | WebSocket |
-| Agent Zero | ~17k | Whisper | Model-based | Hierarchical | Limited | None |
+| Project             | Stars | Voice         | Continuous Vision | Workers      | Proactive  | Transport        |
+| ------------------- | ----- | ------------- | ----------------- | ------------ | ---------- | ---------------- |
+| **Neura**           | —     | Native (Grok) | **Yes (watcher)** | Planned      | Planned    | WebSocket        |
+| OpenAI Realtime     | —     | Native        | No                | No           | No         | WebSocket/WebRTC |
+| LiveKit Agents      | ~10k  | Native        | Partial           | Yes          | Yes        | WebRTC           |
+| Pipecat             | ~11k  | Native S2S    | No                | Limited      | Possible   | WebRTC           |
+| OpenClaw            | ~340k | Bolted on     | No                | Yes          | Yes (cron) | Gateway WS       |
+| CrewAI              | ~47k  | No            | No                | Yes          | Limited    | None             |
+| AutoGen             | ~56k  | No            | No                | Yes          | Limited    | None             |
+| AIOS                | ~5k   | No            | No                | Yes          | No         | None             |
+| Open Interpreter/01 | ~63k  | Push-to-talk  | No                | No           | No         | LiveKit          |
+| Letta/MemGPT        | ~22k  | No            | No                | Subagents    | No         | REST             |
+| Bolna               | ~600  | Telephony     | No                | No           | Outbound   | WebSocket        |
+| Agent Zero          | ~17k  | Whisper       | Model-based       | Hierarchical | Limited    | None             |
 
 ### Neura's differentiators
 
@@ -683,14 +692,14 @@ All user data is exportable: conversation history, worker results, memory, confi
 
 ### What to learn from the landscape
 
-| From | Lesson |
-|---|---|
+| From               | Lesson                                                                      |
+| ------------------ | --------------------------------------------------------------------------- |
 | **LiveKit Agents** | Agent handoff patterns, proactive message generation, production multi-room |
-| **OpenClaw** | Cron/webhook triggers (validates discovery loop), skills marketplace model |
-| **Letta/MemGPT** | Cross-session persistent memory architecture |
-| **Agent Zero** | Hierarchical agent spawning, SKILL.md standard for tool/skill packaging |
-| **CrewAI** | YAML-based agent/task configuration, role-based delegation patterns |
-| **Pipecat** | Provider abstraction layer, pipeline composition model |
+| **OpenClaw**       | Cron/webhook triggers (validates discovery loop), skills marketplace model  |
+| **Letta/MemGPT**   | Cross-session persistent memory architecture                                |
+| **Agent Zero**     | Hierarchical agent spawning, SKILL.md standard for tool/skill packaging     |
+| **CrewAI**         | YAML-based agent/task configuration, role-based delegation patterns         |
+| **Pipecat**        | Provider abstraction layer, pipeline composition model                      |
 
 ---
 
@@ -708,13 +717,13 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 ### Considerations for each phase
 
-| Phase | Security concern | Mitigation |
-|---|---|---|
-| **MVP** | API keys in .env files | Document best practices, .gitignore enforcement |
-| **Cloud core** | Audio/video transiting the internet | TLS everywhere, no server-side media persistence |
-| **Workers** | Code execution, file system access | Docker sandboxing, resource limits, user approval gates |
-| **Multi-user** | Data isolation between users | Tenant isolation in DB, scoped API keys, session boundaries |
-| **Enterprise** | Compliance (SOC2, GDPR) | Audit logs, data residency options, self-hosted deployment |
+| Phase          | Security concern                    | Mitigation                                                  |
+| -------------- | ----------------------------------- | ----------------------------------------------------------- |
+| **MVP**        | API keys in .env files              | Document best practices, .gitignore enforcement             |
+| **Cloud core** | Audio/video transiting the internet | TLS everywhere, no server-side media persistence            |
+| **Workers**    | Code execution, file system access  | Docker sandboxing, resource limits, user approval gates     |
+| **Multi-user** | Data isolation between users        | Tenant isolation in DB, scoped API keys, session boundaries |
+| **Enterprise** | Compliance (SOC2, GDPR)             | Audit logs, data residency options, self-hosted deployment  |
 
 ### Privacy by design
 
@@ -727,38 +736,39 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 ## API Constraints & Known Limitations
 
-| Constraint | Details |
-|---|---|
-| **Grok session duration** | Observed ~30-minute limit (not officially documented as a hard cap). No session resumption mechanism |
-| **Grok concurrent sessions** | 100 per team (documented) |
-| **Gemini Live WS lifetime** | ~10 minutes, then server sends GoAway. Handled via session resumption (2-hour handle validity) |
-| **Gemini video session** | ~2 minutes without compression. Unlimited with sliding window compression enabled |
-| **Gemini response modality** | Native audio models (3.1 Flash Live) only support AUDIO output, not TEXT. Watcher uses outputAudioTranscription as workaround |
-| **Gemini video frame rate** | Max 1 FPS per API spec (current prototype sends every 2s) |
-| **Model identifiers** | `gemini-3.1-flash-live-preview` and Grok model names are preview identifiers — may change before GA |
-| **Frame source ambiguity** | Camera and screen frames are sent to the watcher without source metadata. Both appear as generic JPEGs. The watcher infers source from visual content, which may be unreliable when both are active |
+| Constraint                   | Details                                                                                                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Grok session duration**    | Observed ~30-minute limit (not officially documented as a hard cap). No session resumption mechanism                                                                                                |
+| **Grok concurrent sessions** | 100 per team (documented)                                                                                                                                                                           |
+| **Gemini Live WS lifetime**  | ~10 minutes, then server sends GoAway. Handled via session resumption (2-hour handle validity)                                                                                                      |
+| **Gemini video session**     | ~2 minutes without compression. Unlimited with sliding window compression enabled                                                                                                                   |
+| **Gemini response modality** | Native audio models (3.1 Flash Live) only support AUDIO output, not TEXT. Watcher uses outputAudioTranscription as workaround                                                                       |
+| **Gemini video frame rate**  | Max 1 FPS per API spec (current prototype sends every 2s)                                                                                                                                           |
+| **Model identifiers**        | `gemini-3.1-flash-live-preview` and Grok model names are preview identifiers — may change before GA                                                                                                 |
+| **Frame source ambiguity**   | Camera and screen frames are sent to the watcher without source metadata. Both appear as generic JPEGs. The watcher infers source from visual content, which may be unreliable when both are active |
 
 ---
 
 ## Research Items
 
-| Item | Question | Priority |
-|---|---|---|
-| **Smart glasses** | Does Meta Ray-Ban SDK allow custom AI endpoints? Alternative: phone companion app as relay. Also investigate Brilliant Frame and open hardware | Medium |
-| **System audio capture** | Best cross-platform approach (WASAPI on Windows, CoreAudio on Mac, PulseAudio on Linux) | High |
-| **Worker runtime** | Claude agents vs custom LLM agents vs plugin system? MCP server integration pattern? | High |
-| **State layer** | SQLite for local? Postgres for cloud? Event sourcing for audit trail? | High |
-| **Session resumption** | Grok's observed ~30-min session limit (not officially documented) — how to maintain conversation continuity across reconnects? | Medium |
-| **Proactive audio** | Gemini has experimental `proactiveAudio` — monitor for availability on 3.1 | Low |
-| **Deployment infra** | Evaluate Fly.io vs Railway vs AWS for cloud core. Docker compose for self-hosted | Medium |
-| **Auth/identity** | OAuth providers, API key management, team/org model for cloud platform | Medium |
-| **Adaptive frame rate** | Motion detection algorithms for intelligent FPS scaling (low for static, high for action) | Medium |
+| Item                     | Question                                                                                                                                       | Priority |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| **Smart glasses**        | Does Meta Ray-Ban SDK allow custom AI endpoints? Alternative: phone companion app as relay. Also investigate Brilliant Frame and open hardware | Medium   |
+| **System audio capture** | Best cross-platform approach (WASAPI on Windows, CoreAudio on Mac, PulseAudio on Linux)                                                        | High     |
+| **Worker runtime**       | Claude agents vs custom LLM agents vs plugin system? MCP server integration pattern?                                                           | High     |
+| **State layer**          | SQLite for local? Postgres for cloud? Event sourcing for audit trail?                                                                          | High     |
+| **Session resumption**   | Grok's observed ~30-min session limit (not officially documented) — how to maintain conversation continuity across reconnects?                 | Medium   |
+| **Proactive audio**      | Gemini has experimental `proactiveAudio` — monitor for availability on 3.1                                                                     | Low      |
+| **Deployment infra**     | Evaluate Fly.io vs Railway vs AWS for cloud core. Docker compose for self-hosted                                                               | Medium   |
+| **Auth/identity**        | OAuth providers, API key management, team/org model for cloud platform                                                                         | Medium   |
+| **Adaptive frame rate**  | Motion detection algorithms for intelligent FPS scaling (low for static, high for action)                                                      | Medium   |
 
 ---
 
 ## Phases
 
 ### Phase 1 — Foundation (current)
+
 - [x] Validate voice APIs (Gemini, Grok)
 - [x] Validate hybrid architecture (Grok voice + Gemini vision)
 - [x] Screen sharing + camera support
@@ -767,6 +777,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] Commit and stabilize prototypes
 
 ### Phase 2a — Alpha (core extraction + hardening)
+
 - [ ] Extract hybrid prototype into `packages/core` (standalone server)
 - [ ] Define WebSocket protocol spec with typed messages (`packages/shared`)
 - [ ] Provider adapter layer (voice provider interface, vision provider interface)
@@ -782,6 +793,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] **Ship alpha: single OS, stable sessions, source-aware vision**
 
 ### Phase 2b — MVP (desktop app)
+
 - [ ] Build `packages/desktop` (Electron launcher, spawns core, wraps ui)
 - [ ] First-run wizard (secure API key storage, voice selection)
 - [ ] System tray + global hotkey
@@ -792,6 +804,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] **Ship MVP: downloadable desktop app, open source, bring-your-own API keys**
 
 ### Phase 3 — Workers + Loops
+
 - [ ] Worker runtime and lifecycle management
 - [ ] Discovery loop (timer + webhook triggers)
 - [ ] Execution loop (autonomous task completion)
@@ -802,6 +815,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] File/document upload
 
 ### Phase 4 — Cloud + Clients
+
 - [ ] Cloud-hosted core (managed deployment, auth, teams)
 - [ ] Mode toggle: local / cloud / hybrid (in desktop app settings)
 - [ ] `packages/relay` for hybrid mode (local A/V proxy to cloud core)
@@ -811,6 +825,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] Worker marketplace foundation
 
 ### Phase 5 — Real-time Video + Specialized
+
 - [ ] Real-time video mode (adaptive FPS, system audio, push-to-talk)
 - [ ] VS Code extension (voice coding assistant)
 - [ ] OBS plugin (stream AI overlay)

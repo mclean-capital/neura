@@ -1,4 +1,22 @@
 node_modules/
 dist/
 .env
+.env.local
+.env.*.local
 *.log
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Coverage
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Claude
+.claude/settings.local.json

@@ -132,10 +132,12 @@ async function startMic() {
 
   workletNode.port.onmessage = (ev) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'audio',
-        data: arrayBufferToBase64(ev.data.pcm),
-      }));
+      ws.send(
+        JSON.stringify({
+          type: 'audio',
+          data: arrayBufferToBase64(ev.data.pcm),
+        })
+      );
     }
   };
 

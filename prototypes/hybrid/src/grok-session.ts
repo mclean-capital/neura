@@ -57,7 +57,7 @@ export function createHybridSession(cb: SessionCallbacks) {
             },
             tools: toolDefs,
           },
-        }),
+        })
       );
     });
 
@@ -143,16 +143,14 @@ export function createHybridSession(cb: SessionCallbacks) {
           call_id: msg.call_id,
           output: JSON.stringify(result),
         },
-      }),
+      })
     );
     ws?.send(JSON.stringify({ type: 'response.create' }));
   }
 
   function sendAudio(base64: string) {
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({ type: 'input_audio_buffer.append', audio: base64 }),
-      );
+      ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: base64 }));
     }
   }
 
@@ -166,7 +164,7 @@ export function createHybridSession(cb: SessionCallbacks) {
           role: 'user',
           content: [{ type: 'input_text', text }],
         },
-      }),
+      })
     );
     ws.send(JSON.stringify({ type: 'response.create' }));
   }

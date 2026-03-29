@@ -13,6 +13,20 @@ npm run dev -w @neura/grok-live      # run grok prototype
 npm run dev -w @neura/hybrid-live    # run hybrid prototype
 ```
 
+## Tooling
+
+```bash
+npm run typecheck                    # typecheck all packages (turbo)
+npm run lint                         # lint all packages (turbo)
+npm run lint:fix                     # lint + autofix (turbo)
+npm run format                       # format all files (prettier)
+npm run format:check                 # check formatting (prettier)
+npm run test                         # run tests (turbo + vitest)
+npm run build                        # build all packages (turbo)
+```
+
+Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) — enforced by commitlint via husky commit-msg hook. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+
 ## Prototypes
 
 ### gemini-live
@@ -57,6 +71,7 @@ Best-of-both: Grok Eve voice + Gemini continuous vision watcher. Supports camera
 - **Client:** Camera + screen share + mic + transcript with watcher transparency (`public/`)
 
 Architecture:
+
 ```
 Camera/Screen (every 2s) → Server → Gemini Live WS (watcher, 3-6 min visual memory)
 Mic audio → Server → Grok WS (Eve voice)

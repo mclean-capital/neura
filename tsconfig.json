@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "references": [
+    { "path": "prototypes/gemini-live" },
+    { "path": "prototypes/grok" },
+    { "path": "prototypes/hybrid" }
+  ],
+  "include": []
+}

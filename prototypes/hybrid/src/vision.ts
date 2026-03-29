@@ -8,10 +8,7 @@ if (!GOOGLE_API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
-export async function analyzeFrame(
-  base64Jpeg: string,
-  focus?: string,
-): Promise<string> {
+export async function analyzeFrame(base64Jpeg: string, focus?: string): Promise<string> {
   const prompt = focus
     ? `Describe what you see, focusing on: ${focus}. Be concise (1-2 sentences).`
     : 'Describe what you see concisely (1-2 sentences).';
@@ -21,10 +18,7 @@ export async function analyzeFrame(
     contents: [
       {
         role: 'user',
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } },
-          { text: prompt },
-        ],
+        parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } }, { text: prompt }],
       },
     ],
   });

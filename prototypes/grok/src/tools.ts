@@ -38,7 +38,7 @@ export const toolDefs = [
 
 export function handleToolCall(
   name: string,
-  args: Record<string, unknown>,
+  args: Record<string, unknown>
 ): Record<string, unknown> {
   console.log(`[tool] ${name}(${JSON.stringify(args)})`);
 
@@ -73,10 +73,7 @@ export function handleToolCall(
     case 'roll_dice': {
       const count = Math.min((args.count as number) || 1, 100);
       const sides = Math.min((args.sides as number) || 6, 1000);
-      const rolls = Array.from(
-        { length: count },
-        () => Math.floor(Math.random() * sides) + 1,
-      );
+      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
       return {
         result: { rolls, total: rolls.reduce((a, b) => a + b, 0) },
       };

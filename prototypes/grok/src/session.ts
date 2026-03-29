@@ -35,8 +35,7 @@ export function createGrokSession(cb: SessionCallbacks) {
           type: 'session.update',
           session: {
             voice: 'eve',
-            instructions:
-              'You are a helpful voice assistant. Be concise and conversational.',
+            instructions: 'You are a helpful voice assistant. Be concise and conversational.',
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
             input_audio_transcription: { model: 'whisper-1' },
@@ -48,7 +47,7 @@ export function createGrokSession(cb: SessionCallbacks) {
             },
             tools: toolDefs,
           },
-        }),
+        })
       );
     });
 
@@ -151,7 +150,7 @@ export function createGrokSession(cb: SessionCallbacks) {
           call_id: msg.call_id,
           output: JSON.stringify(result),
         },
-      }),
+      })
     );
 
     // Trigger model to respond with the result
@@ -174,7 +173,7 @@ export function createGrokSession(cb: SessionCallbacks) {
           role: 'user',
           content: [{ type: 'input_text', text }],
         },
-      }),
+      })
     );
     ws.send(JSON.stringify({ type: 'response.create' }));
   }

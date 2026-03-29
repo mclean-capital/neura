@@ -93,7 +93,5 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(
-    `\nHybrid prototype (Grok Eve + Gemini watcher) at http://localhost:${PORT}\n`,
-  );
+  console.log(`\nHybrid prototype (Grok Eve + Gemini watcher) at http://localhost:${PORT}\n`);
 });
