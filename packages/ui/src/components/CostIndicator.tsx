@@ -17,11 +17,11 @@ export function CostIndicator({ cost }: { cost: CostUpdateMessage | null }) {
 
   return (
     <div
-      className="cost-indicator"
+      className="flex gap-2 items-center text-[0.7rem] text-[#777] cursor-default"
       title={`Voice: ${formatCost(cost.breakdown.voice)} | Vision: ${formatCost(cost.breakdown.vision)}`}
     >
-      <span className="cost-duration">{formatDuration(cost.sessionDurationMs)}</span>
-      <span className="cost-amount">{formatCost(cost.estimatedCostUsd)}</span>
+      <span className="tabular-nums">{formatDuration(cost.sessionDurationMs)}</span>
+      <span className="text-accent font-medium">{formatCost(cost.estimatedCostUsd)}</span>
     </div>
   );
 }

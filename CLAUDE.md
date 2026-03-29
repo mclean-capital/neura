@@ -115,9 +115,9 @@ Standalone server extracted from the hybrid prototype. Provider-agnostic module 
 
 - `server.ts` — Express + WebSocket, typed message routing
 - `voice-session.ts` — Voice session (currently Grok Eve) with reconnect, transcript seeding, 28-min proactive reconnect
-- `vision-watcher.ts` — Vision watcher (currently Gemini Live) with source-aware frames and ID-based query queue
+- `vision-watcher.ts` — Vision watcher (currently Gemini Live), one session per source (camera/screen independent)
 - `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`
-- `cost-tracker.ts` — Per-connection cost estimator
+- `cost-tracker.ts` — Per-source cost estimator (voice + camera + screen tracked independently)
 
 ```bash
 cd packages/core
@@ -127,7 +127,7 @@ npm run dev             # http://localhost:3002
 
 ### ui
 
-React 19 + Vite 6 app. Independent media toggles (mic, camera, screen share can be toggled independently).
+React 19 + Vite 6 + Tailwind v4 app. Session is off by default (no auto-charge). Independent media toggles (mic, camera, screen share). Real-time cost indicator with voice/vision breakdown.
 
 ```bash
 npm run dev -w @neura/ui   # http://localhost:5173 (proxies /ws → :3002)

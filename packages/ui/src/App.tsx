@@ -154,15 +154,15 @@ export function App() {
   }, [isDisconnected, connect, disconnect, mic, camera, screen]);
 
   return (
-    <div className="app-container">
-      <div className="top-bar">
-        <span className="app-title">NEURA</span>
+    <div className="h-full w-full max-w-3xl flex flex-col p-4">
+      <div className="flex items-center justify-between pb-3">
+        <span className="text-xl font-light tracking-[0.15em] text-gray-100">NEURA</span>
         <CostIndicator cost={cost} />
         <StatusBadge status={status} />
       </div>
 
       {(camera.isActive || screen.isActive) && (
-        <div className="previews">
+        <div className="flex gap-3 mb-3">
           <CameraPreview isActive={camera.isActive} setVideoElement={camera.setVideoElement} />
           <ScreenPreview isActive={screen.isActive} setVideoElement={screen.setVideoElement} />
         </div>
@@ -170,7 +170,7 @@ export function App() {
 
       <TranscriptPanel entries={entries} />
 
-      <div className="controls">
+      <div className="flex items-center justify-center gap-4 py-3">
         {isConnected && (
           <CameraToggle
             isActive={camera.isActive}
@@ -192,7 +192,11 @@ export function App() {
             onToggle={() => (mic.isCapturing ? mic.stop() : void mic.start())}
           />
         ) : (
-          <button className="session-btn" onClick={handleSessionToggle} disabled={!isDisconnected}>
+          <button
+            className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer font-sans text-base font-medium transition-all duration-200 hover:bg-[#0f2f0f] hover:shadow-[0_0_0_4px_rgba(34,197,94,0.15)] disabled:opacity-40 disabled:cursor-default"
+            onClick={handleSessionToggle}
+            disabled={!isDisconnected}
+          >
             Start Session
           </button>
         )}
@@ -212,7 +216,10 @@ export function App() {
           />
         )}
         {isConnected && (
-          <button className="session-end-btn" onClick={handleSessionToggle}>
+          <button
+            className="px-3.5 py-2 rounded-full border border-dark-muted bg-dark-hover text-dark-muted-light cursor-pointer font-sans text-xs transition-all duration-200 hover:border-red-400 hover:text-red-400"
+            onClick={handleSessionToggle}
+          >
             End
           </button>
         )}

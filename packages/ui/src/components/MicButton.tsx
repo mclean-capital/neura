@@ -7,7 +7,11 @@ interface MicButtonProps {
 export function MicButton({ isCapturing, onToggle, disabled }: MicButtonProps) {
   return (
     <button
-      className={`mic-btn ${isCapturing ? 'active' : ''}`}
+      className={`w-18 h-18 rounded-full border-2 bg-dark-elevated text-dark-text cursor-pointer transition-all duration-300 flex items-center justify-center shrink-0 ${
+        isCapturing
+          ? 'border-accent bg-accent-bg animate-pulse-ring'
+          : 'border-dark-border hover:border-accent hover:bg-dark-hover'
+      }`}
       onClick={onToggle}
       disabled={disabled}
       aria-label={isCapturing ? 'Stop microphone' : 'Start microphone'}
