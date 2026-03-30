@@ -1,0 +1,70 @@
+appId: com.mclean-capital.neura
+productName: Neura
+copyright: Copyright (c) McLean Capital
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist-main/**/*
+  - dist-preload/**/*
+  - package.json
+
+extraResources:
+  - from: ../core/dist
+    to: core/dist
+    filter:
+      - '**/*'
+  # TODO: prune devDependencies before release builds — currently bundles full node_modules.
+  # Options: npm prune --production, or bundle core with esbuild to eliminate node_modules.
+  - from: ../core/node_modules
+    to: core/node_modules
+    filter:
+      - '**/*'
+  - from: ../core/package.json
+    to: core/package.json
+  - from: ../shared/dist
+    to: core/node_modules/@neura/shared/dist
+    filter:
+      - '**/*'
+  - from: ../shared/package.json
+    to: core/node_modules/@neura/shared/package.json
+  - from: dist-renderer
+    to: renderer
+    filter:
+      - '**/*'
+  - from: assets
+    to: assets
+    filter:
+      - '**/*'
+
+asar: true
+asarUnpack:
+  - '**/*.node'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Utility
+
+publish:
+  provider: github
+  owner: mclean-capital
+  repo: neura

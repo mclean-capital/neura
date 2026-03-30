@@ -38,13 +38,20 @@ npm run dev -w @neura/ui      # UI at http://localhost:5173
 
 Open [http://localhost:5173](http://localhost:5173), click **Start Session**, then toggle the mic. Share your camera or screen and ask "what do you see?"
 
+### Desktop App (Electron)
+
+```bash
+npm run dev -w @neura/desktop   # Starts core + renderer + Electron
+```
+
 ## Project Structure
 
 ```
 packages/
 ├── shared/      # Protocol types, tool types, audio constants
 ├── core/        # Voice session, vision watcher, tools, server
-└── ui/          # React 19 + Vite 6 + Tailwind v4 app
+├── ui/          # Web client — React 19 + Vite 6 + Tailwind v4
+└── desktop/     # Desktop client — Electron, spawns core, own React renderer
 docs/
 └── roadmap.md   # Full roadmap and architecture
 ```

@@ -18,5 +18,12 @@ coverage/
 *.swp
 .DS_Store
 
+# Electron
+release/
+dist-main/
+dist-preload/
+dist-renderer/
+dist-wizard/
+
 # Claude
 .claude/settings.local.json

@@ -4,12 +4,13 @@
 
 Monorepo with workspace root `packages/*`.
 
-Core and UI always communicate over a WebSocket boundary — core is a standalone server with zero knowledge of Electron/browser, UI takes a WebSocket URL as config. This enables local → cloud → hybrid deployment with zero code changes.
+Each client platform is a standalone app with its own UI. Clients share only the WebSocket protocol (`@neura/shared`) — no client depends on another client's code. Core is a standalone server with zero knowledge of any client.
 
 ```
 packages/shared     @neura/shared    — protocol types, tool types, config constants
 packages/core       @neura/core      — voice session, vision watcher, tools, server
-packages/ui         @neura/ui        — React app (Vite), independent media toggles
+packages/ui         @neura/ui        — web client (React + Vite)
+packages/desktop    @neura/desktop   — desktop client (Electron + React), spawns core
 ```
 
 ## Commands
@@ -18,6 +19,7 @@ packages/ui         @neura/ui        — React app (Vite), independent media tog
 npm install                          # install all workspace deps
 npm run dev -w @neura/core           # core server → http://localhost:3002
 npm run dev -w @neura/ui             # UI dev server → http://localhost:5173
+npm run dev -w @neura/desktop        # Electron app (starts core + UI + Electron)
 ```
 
 ## Tooling
@@ -53,7 +55,7 @@ Test files live alongside source (`src/*.test.ts`, `src/**/*.test.tsx`). UI test
 
 ### shared
 
-Pure types package — zero runtime dependencies. Defines the WebSocket protocol contract between core and UI.
+Pure types package — zero runtime dependencies. Defines the WebSocket protocol contract between core and all clients.
 
 - `protocol.ts` — `ClientMessage` / `ServerMessage` discriminated unions
 - `tools.ts` — `ToolDefinition`, `ToolCallResult`, `VisionToolArgs`
@@ -81,6 +83,20 @@ React 19 + Vite 6 + Tailwind v4 app. Session is off by default (no auto-charge).
 
 ```bash
 npm run dev -w @neura/ui   # http://localhost:5173 (proxies /ws → :3002)
+```
+
+### desktop
+
+Electron desktop client with its own React renderer. Spawns core as a child process. Has its own UI independent of `packages/ui` — each client platform owns its frontend. Depends only on `@neura/shared` for protocol types.
+
+- `src/main/` — Electron main process (core-manager, tray, hotkey, store, updater)
+- `src/renderer/` — React app (hooks, components, wizard, settings)
+- `src/preload/` — contextBridge for secure IPC
+
+```bash
+npm run dev -w @neura/desktop       # dev mode (starts core + Electron)
+npm run pack -w @neura/desktop      # build unpacked app
+npm run dist:win -w @neura/desktop  # build Windows installer
 ```
 
 ## Environment
