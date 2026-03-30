@@ -11,24 +11,11 @@ files:
   - package.json
 
 extraResources:
-  - from: ../core/dist
-    to: core/dist
-    filter:
-      - '**/*'
-  # TODO: prune devDependencies before release builds — currently bundles full node_modules.
-  # Options: npm prune --production, or bundle core with esbuild to eliminate node_modules.
-  - from: ../core/node_modules
-    to: core/node_modules
-    filter:
-      - '**/*'
-  - from: ../core/package.json
-    to: core/package.json
-  - from: ../shared/dist
-    to: core/node_modules/@neura/shared/dist
-    filter:
-      - '**/*'
-  - from: ../shared/package.json
-    to: core/node_modules/@neura/shared/package.json
+  # Core server — single esbuild bundle, no node_modules needed
+  - from: ../core/dist/server.bundled.mjs
+    to: core/server.bundled.mjs
+  - from: ../core/dist/server.bundled.mjs.map
+    to: core/server.bundled.mjs.map
   - from: dist-renderer
     to: renderer
     filter:
@@ -57,6 +44,8 @@ mac:
     - target: dmg
       arch: [x64, arm64]
   category: public.app-category.productivity
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.inherit.plist
   extendInfo:
     NSCameraUsageDescription: Neura uses your camera for real-time visual understanding.
     NSMicrophoneUsageDescription: Neura uses your microphone for voice conversation.

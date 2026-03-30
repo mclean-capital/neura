@@ -13,7 +13,7 @@ interface CoreManagerOptions {
 
 function getCoreEntryPath(): string {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'core', 'dist', 'server.js');
+    return path.join(process.resourcesPath, 'core', 'server.bundled.mjs');
   }
   return path.join(__dirname, '..', '..', 'core', 'src', 'server.ts');
 }
