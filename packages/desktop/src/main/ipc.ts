@@ -60,15 +60,34 @@ export function registerIpcHandlers() {
   );
 
   ipcMain.handle('desktop:get-sources', async () => {
-    const sources = await desktopCapturer.getSources({
-      types: ['screen', 'window'],
-      thumbnailSize: { width: 160, height: 90 },
-    });
-    return sources.map((s) => ({
-      id: s.id,
-      name: s.name,
-      thumbnail: s.thumbnail.toDataURL(),
-    }));
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 160, height: 90 },
+      });
+
+      if (sources.length === 0) {
+        // macOS returns empty when screen recording permission is missing or stale
+        const hint =
+          process.platform === 'darwin'
+            ? ' Go to System Settings > Privacy & Security > Screen Recording, toggle Neura off then on, then restart the app.'
+            : '';
+        throw new Error(`No screen sources available.${hint}`);
+      }
+
+      return sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        thumbnail: s.thumbnail.toDataURL(),
+      }));
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('No screen sources')) throw err;
+      const hint =
+        process.platform === 'darwin'
+          ? ' Check System Settings > Privacy & Security > Screen Recording and ensure Neura is enabled, then restart the app.'
+          : '';
+      throw new Error(`Failed to get screen sources.${hint}`, { cause: err });
+    }
   });
 
   ipcMain.handle('app:version', () => app.getVersion());

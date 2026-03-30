@@ -57,6 +57,11 @@ mac:
     - target: dmg
       arch: [x64, arm64]
   category: public.app-category.productivity
+  extendInfo:
+    NSCameraUsageDescription: Neura uses your camera for real-time visual understanding.
+    NSMicrophoneUsageDescription: Neura uses your microphone for voice conversation.
+    NSScreenCaptureUsageDescription: Neura can view your screen to help with what you're working on.
+    NSAudioCaptureUsageDescription: Neura can capture system audio while sharing your screen.
 
 linux:
   target:

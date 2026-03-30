@@ -63,47 +63,60 @@ app.on('ready', () => {
       return allowed.includes(permission);
     });
 
-    // Handle screen share — renderer sends selected source ID via IPC before calling getDisplayMedia
-    let pendingSourceId: string | null = null;
-    let pendingSourceTimeout: ReturnType<typeof setTimeout> | undefined;
-    ipcMain.handle(
-      'desktop:set-screen-source',
-      (_event: Electron.IpcMainInvokeEvent, sourceId: string | null) => {
-        clearTimeout(pendingSourceTimeout);
-        if (sourceId) {
-          pendingSourceId = sourceId;
-          // 30s timeout — generous for slow pickers, auto-clears if getDisplayMedia never fires
-          pendingSourceTimeout = setTimeout(() => {
-            pendingSourceId = null;
-          }, 30_000);
-        } else {
-          // null sourceId means picker was cancelled — clear immediately
-          pendingSourceId = null;
-        }
-      }
-    );
+    // Handle screen share
+    const isMacOS = process.platform === 'darwin';
 
-    session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-      if (pendingSourceId) {
-        void desktopCapturer
-          .getSources({ types: ['screen', 'window'] })
-          .then((sources) => {
-            const selected = sources.find((s) => s.id === pendingSourceId);
+    if (isMacOS) {
+      // macOS: use system picker — reliable on Sequoia, no desktopCapturer needed
+      session.defaultSession.setDisplayMediaRequestHandler(
+        (_request, callback) => {
+          // With useSystemPicker, the OS handles source selection.
+          // Pass empty object — Electron + system picker fills in the source.
+          callback({});
+        },
+        { useSystemPicker: true }
+      );
+    } else {
+      // Windows/Linux: use custom picker via IPC (useSystemPicker has issues on Windows)
+      let pendingSourceId: string | null = null;
+      let pendingSourceTimeout: ReturnType<typeof setTimeout> | undefined;
+      ipcMain.handle(
+        'desktop:set-screen-source',
+        (_event: Electron.IpcMainInvokeEvent, sourceId: string | null) => {
+          clearTimeout(pendingSourceTimeout);
+          if (sourceId) {
+            pendingSourceId = sourceId;
+            pendingSourceTimeout = setTimeout(() => {
+              pendingSourceId = null;
+            }, 30_000);
+          } else {
             pendingSourceId = null;
-            if (selected) {
-              callback({ video: selected, audio: 'loopback' });
-            } else {
+          }
+        }
+      );
+
+      session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+        if (pendingSourceId) {
+          void desktopCapturer
+            .getSources({ types: ['screen', 'window'] })
+            .then((sources) => {
+              const selected = sources.find((s) => s.id === pendingSourceId);
+              pendingSourceId = null;
+              if (selected) {
+                callback({ video: selected, audio: 'loopback' });
+              } else {
+                callback({});
+              }
+            })
+            .catch(() => {
+              pendingSourceId = null;
               callback({});
-            }
-          })
-          .catch(() => {
-            pendingSourceId = null;
-            callback({});
-          });
-      } else {
-        callback({});
-      }
-    });
+            });
+        } else {
+          callback({});
+        }
+      });
+    }
 
     const appStore = getStore();
 

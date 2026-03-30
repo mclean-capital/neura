@@ -85,11 +85,16 @@ export function useScreenShare({ onFrame, onStopped }: UseScreenShareOptions) {
   );
 
   const start = useCallback(async (): Promise<boolean> => {
-    if (window.neuraDesktop) {
+    const isMac = navigator.userAgent.includes('Macintosh');
+
+    // macOS Electron: use system picker via getDisplayMedia directly
+    // Windows/Linux Electron: use custom picker via IPC
+    if (window.neuraDesktop && !isMac) {
       setShowPicker(true);
       return true;
     }
-    // Web fallback
+
+    // macOS Electron + web fallback: getDisplayMedia triggers system/browser picker
     try {
       setError(null);
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });

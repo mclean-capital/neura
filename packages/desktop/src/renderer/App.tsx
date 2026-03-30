@@ -179,7 +179,9 @@ function Session() {
   return (
     <div className="h-full w-full max-w-3xl flex flex-col p-4 app-drag-region">
       <div className="flex items-center justify-between pb-3 pt-5">
-        <span className="text-xl font-light tracking-[0.15em] text-gray-100">NEURA</span>
+        <span className="text-xl font-medium tracking-[0.15em] text-dark-text font-display">
+          NEURA
+        </span>
         <CostIndicator cost={cost} />
         <StatusBadge status={status} />
       </div>
@@ -191,11 +193,11 @@ function Session() {
         </div>
       )}
 
-      <div className="app-no-drag flex-1 min-h-0">
+      <div className="app-no-drag flex-1 min-h-0 flex flex-col">
         <TranscriptPanel entries={entries} />
       </div>
 
-      <div className="flex items-center justify-center gap-4 py-3 app-no-drag">
+      <div className="flex items-center justify-center gap-4 py-3 shrink-0 app-no-drag">
         {isConnected && (
           <CameraToggle
             isActive={camera.isActive}
@@ -218,7 +220,7 @@ function Session() {
           />
         ) : (
           <button
-            className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer font-sans text-base font-medium transition-all duration-200 hover:bg-[#0f2f0f] hover:shadow-[0_0_0_4px_rgba(34,197,94,0.15)] disabled:opacity-40 disabled:cursor-default"
+            className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointertext-base font-medium transition-all duration-200 hover:bg-session-green-hover hover:shadow-[0_0_0_4px_rgba(42,212,104,0.15)] disabled:opacity-40 disabled:cursor-default"
             onClick={handleSessionToggle}
             disabled={!isDisconnected}
           >
@@ -233,14 +235,16 @@ function Session() {
                 screen.stop();
                 sendMessage({ type: 'sourceChanged', source: 'screen', active: false });
               } else {
-                void screen.start();
+                void screen.start().then((ok) => {
+                  if (ok) sendMessage({ type: 'sourceChanged', source: 'screen', active: true });
+                });
               }
             }}
           />
         )}
         {isConnected && (
           <button
-            className="px-3.5 py-2 rounded-full border border-dark-muted bg-dark-hover text-dark-muted-light cursor-pointer font-sans text-xs transition-all duration-200 hover:border-red-400 hover:text-red-400"
+            className="px-3.5 py-2 rounded-full border border-dark-muted bg-dark-hover text-dark-muted-light cursor-pointertext-xs transition-all duration-200 hover:border-signal-danger hover:text-signal-danger"
             onClick={handleSessionToggle}
           >
             End
@@ -248,7 +252,7 @@ function Session() {
         )}
       </div>
 
-      <div className="app-no-drag">
+      <div className="app-no-drag shrink-0">
         <TextInput onSend={handleSendText} disabled={!isConnected} />
       </div>
 

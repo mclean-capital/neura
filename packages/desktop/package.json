@@ -1,6 +1,8 @@
 {
   "name": "@neura/desktop",
   "version": "0.0.0",
+  "description": "Neura desktop client",
+  "author": "Mclean Capital",
   "private": true,
   "type": "module",
   "main": "dist-main/index.mjs",
@@ -36,7 +38,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
-    "electron": "^35",
+    "electron": "35.7.5",
     "electron-builder": "^26",
     "tsx": "^4",
     "vite": "^6"

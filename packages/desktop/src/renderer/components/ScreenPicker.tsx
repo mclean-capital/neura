@@ -48,7 +48,7 @@ export function ScreenPicker({ onSelect, onCancel }: ScreenPickerProps) {
             </span>
           )}
           {error && (
-            <span className="col-span-2 text-center text-red-400 text-sm py-8">{error}</span>
+            <span className="col-span-2 text-center text-signal-danger text-sm py-8">{error}</span>
           )}
           {sources.map((source) => (
             <button

@@ -17,7 +17,7 @@ export function CostIndicator({ cost }: { cost: CostUpdateMessage | null }) {
 
   return (
     <div
-      className="flex gap-2 items-center text-[0.7rem] text-[#777] cursor-default"
+      className="flex gap-2 items-center text-[0.7rem] text-dark-muted-light cursor-default"
       title={`Voice: ${formatCost(cost.breakdown.voice)} | Vision: ${formatCost(cost.breakdown.vision)}`}
     >
       <span className="tabular-nums">{formatDuration(cost.sessionDurationMs)}</span>

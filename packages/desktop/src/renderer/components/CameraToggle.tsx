@@ -7,7 +7,7 @@ interface CameraToggleProps {
 export function CameraToggle({ isActive, onToggle, disabled }: CameraToggleProps) {
   return (
     <button
-      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-sans text-[0.8rem] cursor-pointer transition-all duration-200 disabled:opacity-40 disabled:cursor-default ${
+      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full bordertext-[0.8rem] cursor-pointer transition-all duration-200 disabled:opacity-40 disabled:cursor-default ${
         isActive
           ? 'border-accent bg-accent-bg text-accent'
           : 'border-dark-border bg-dark-elevated text-dark-text hover:border-accent'

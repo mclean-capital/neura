@@ -26,7 +26,7 @@ export function TextInput({ onSend, disabled }: TextInputProps) {
     <div className="flex gap-2 py-2">
       <input
         type="text"
-        className="flex-1 px-4 py-2 rounded-full border border-dark-border bg-dark-elevated text-dark-text text-sm outline-none font-sans focus:border-accent disabled:opacity-40"
+        className="flex-1 px-4 py-2 rounded-full border border-dark-border bg-dark-elevated text-dark-text text-sm outline-nonefocus:border-accent disabled:opacity-40"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -35,7 +35,7 @@ export function TextInput({ onSend, disabled }: TextInputProps) {
       />
       {}
       <button
-        className="px-4 py-2 rounded-full border border-dark-border bg-dark-elevated text-dark-text cursor-pointer font-sans text-sm hover:border-accent disabled:opacity-40 disabled:cursor-default"
+        className="px-4 py-2 rounded-full border border-dark-border bg-dark-elevated text-dark-text cursor-pointertext-sm hover:border-accent disabled:opacity-40 disabled:cursor-default"
         onClick={handleSend}
         disabled={disabled || !value.trim()}
       >

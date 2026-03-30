@@ -1,6 +1,12 @@
 @import 'tailwindcss';
 
 @theme {
+  /* Fonts */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Geist', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-marketing: 'IBM Plex Sans', system-ui, sans-serif;
+
   /* Surfaces */
   --color-dark-bg: #0a0a0a;
   --color-dark-surface: #111;
@@ -23,11 +29,31 @@
   /* Semantic signals */
   --color-session-green: #2ad468;
   --color-session-green-bg: #0a1f0a;
+  --color-session-green-hover: #0f2f0f;
   --color-signal-vision: #3b82f6;
   --color-signal-vision-bg: #0a1428;
   --color-signal-danger: #e5484d;
   --color-signal-danger-bg: #1f0a0a;
   --color-user-bg: #1e3a5f;
+}
+
+/* Scrollbar — thin, dark, blends with surface */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-dark-hover) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-dark-hover);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-dark-border);
 }
 
 @keyframes pulse-ring {

@@ -11,9 +11,11 @@ export function useCamera(onFrame: (base64: string) => void) {
 
   const setVideoElement = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
-    if (el && streamRef.current && !el.srcObject) {
+    if (el && streamRef.current) {
       el.srcObject = streamRef.current;
-      void el.play();
+      void el.play().catch(() => {
+        /* autoplay blocked */
+      });
     }
   }, []);
 
@@ -50,6 +52,14 @@ export function useCamera(onFrame: (base64: string) => void) {
         video: { width: { ideal: 640 }, height: { ideal: 480 } },
       });
       streamRef.current = stream;
+
+      // Attach to video element if it already exists (re-render may not have happened yet)
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        void videoRef.current.play().catch(() => {
+          /* autoplay blocked */
+        });
+      }
 
       setIsActive(true);
       intervalRef.current = setInterval(captureFrame, FRAME_CAPTURE_INTERVAL_MS);

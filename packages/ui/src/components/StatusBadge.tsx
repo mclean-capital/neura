@@ -8,10 +8,10 @@ const STATUS_LABELS: Record<ConnectionStatus, string> = {
 };
 
 const STATUS_STYLES: Record<ConnectionStatus, { badge: string; dot: string }> = {
-  connecting: { badge: 'border-yellow-400 text-yellow-400', dot: 'bg-yellow-400' },
-  connected: { badge: 'border-green-500 text-green-500', dot: 'bg-green-500' },
-  disconnected: { badge: 'border-dark-border text-dark-muted', dot: 'bg-dark-muted' },
-  error: { badge: 'border-red-400 text-red-400', dot: 'bg-red-400' },
+  connecting: { badge: 'border-accent text-accent', dot: 'bg-accent' },
+  connected: { badge: 'border-session-green text-session-green', dot: 'bg-session-green' },
+  disconnected: { badge: 'border-dark-border text-dark-muted-light', dot: 'bg-dark-muted-light' },
+  error: { badge: 'border-signal-danger text-signal-danger', dot: 'bg-signal-danger' },
 };
 
 export function StatusBadge({ status }: { status: ConnectionStatus }) {

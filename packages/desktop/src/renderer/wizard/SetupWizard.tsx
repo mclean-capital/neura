@@ -67,7 +67,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         <span className="text-5xl">&#10003;</span>
         <p className="text-dark-muted-light">You're all set!</p>
         <button
-          className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer font-sans text-base font-medium transition-all duration-200 hover:bg-[#0f2f0f] disabled:opacity-40 disabled:cursor-default"
+          className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointertext-base font-medium transition-all duration-200 hover:bg-session-green-hover disabled:opacity-40 disabled:cursor-default"
           onClick={() => void handleLaunch()}
           disabled={loading}
         >
@@ -79,7 +79,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   return (
     <div className="h-full flex flex-col items-center justify-center gap-6 px-8">
-      <span className="text-3xl font-light tracking-[0.15em] text-gray-100">NEURA</span>
+      <span className="text-3xl font-medium tracking-[0.15em] text-dark-text font-display">
+        NEURA
+      </span>
       <p className="text-dark-muted-light text-sm">Let's get you set up</p>
 
       <div className="flex flex-col gap-4 w-full max-w-sm">
@@ -87,7 +89,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           <label className="text-[0.8rem] text-dark-muted-light">xAI API Key (for voice)</label>
           <input
             type="password"
-            className="w-full px-4 py-2.5 rounded-lg border border-dark-border bg-dark-elevated text-dark-text text-sm outline-none font-sans focus:border-accent"
+            className="w-full px-4 py-2.5 rounded-lg border border-dark-border bg-dark-elevated text-dark-text text-sm outline-nonefocus:border-accent"
             placeholder="xai-..."
             value={xaiKey}
             onChange={(e) => setXaiKey(e.target.value)}
@@ -107,7 +109,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           </span>
           {xaiStatus && (
             <span
-              className={`text-xs ${xaiStatus.ok === true ? 'text-green-500' : xaiStatus.ok === false ? 'text-red-400' : 'text-dark-muted'}`}
+              className={`text-xs ${xaiStatus.ok === true ? 'text-session-green' : xaiStatus.ok === false ? 'text-signal-danger' : 'text-dark-muted'}`}
             >
               {xaiStatus.text}
             </span>
@@ -118,7 +120,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           <label className="text-[0.8rem] text-dark-muted-light">Google API Key (for vision)</label>
           <input
             type="password"
-            className="w-full px-4 py-2.5 rounded-lg border border-dark-border bg-dark-elevated text-dark-text text-sm outline-none font-sans focus:border-accent"
+            className="w-full px-4 py-2.5 rounded-lg border border-dark-border bg-dark-elevated text-dark-text text-sm outline-nonefocus:border-accent"
             placeholder="AIza..."
             value={googleKey}
             onChange={(e) => setGoogleKey(e.target.value)}
@@ -138,7 +140,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           </span>
           {googleStatus && (
             <span
-              className={`text-xs ${googleStatus.ok === true ? 'text-green-500' : googleStatus.ok === false ? 'text-red-400' : 'text-dark-muted'}`}
+              className={`text-xs ${googleStatus.ok === true ? 'text-session-green' : googleStatus.ok === false ? 'text-signal-danger' : 'text-dark-muted'}`}
             >
               {googleStatus.text}
             </span>
@@ -146,7 +148,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         </div>
 
         <button
-          className="mt-2 px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer font-sans text-base font-medium transition-all duration-200 hover:bg-[#0f2f0f] disabled:opacity-40 disabled:cursor-default self-center"
+          className="mt-2 px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointertext-base font-medium transition-all duration-200 hover:bg-session-green-hover disabled:opacity-40 disabled:cursor-default self-center"
           onClick={() => void handleValidate()}
           disabled={loading}
         >
