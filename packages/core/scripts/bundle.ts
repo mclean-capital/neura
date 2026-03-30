@@ -1,3 +1,4 @@
+import { builtinModules } from 'module';
 import esbuild from 'esbuild';
 
 await esbuild.build({
@@ -13,32 +14,7 @@ await esbuild.build({
   banner: {
     js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
   },
-  // Externalize only Node built-ins — inline everything else
-  external: [
-    'node:*',
-    'crypto',
-    'fs',
-    'path',
-    'http',
-    'https',
-    'net',
-    'os',
-    'url',
-    'stream',
-    'events',
-    'util',
-    'zlib',
-    'tls',
-    'child_process',
-    'worker_threads',
-    'buffer',
-    'string_decoder',
-    'querystring',
-    'tty',
-    'assert',
-    'constants',
-    'dns',
-    'dgram',
-  ],
+  // Externalize all Node built-ins — inline everything else
+  external: ['node:*', ...builtinModules],
   logLevel: 'info',
 });

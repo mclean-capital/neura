@@ -14,6 +14,7 @@ extraResources:
   # Core server — single esbuild bundle, no node_modules needed
   - from: ../core/dist/server.bundled.mjs
     to: core/server.bundled.mjs
+  # Sourcemap for crash diagnostics — remove for smaller DMG if not needed
   - from: ../core/dist/server.bundled.mjs.map
     to: core/server.bundled.mjs.map
   - from: dist-renderer
