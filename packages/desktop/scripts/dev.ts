@@ -96,10 +96,21 @@ async function main() {
   });
   await new Promise<void>((resolve) => preloadBuild.on('exit', () => resolve()));
 
-  // 5. Start Electron
+  // 5. Start Electron (NEURA_DESKTOP_DEV tells main process not to spawn core)
   console.log('Starting Electron...\n');
   const electronBin = path.join(root, 'node_modules', '.bin', 'electron');
-  run(electronBin, [path.join(desktopDir, 'dist-main', 'index.mjs')], desktopDir, 'electron');
+  const electronChild = spawn(electronBin, [path.join(desktopDir, 'dist-main', 'index.mjs')], {
+    cwd: desktopDir,
+    stdio: 'pipe',
+    shell: true,
+    env: { ...process.env, NEURA_DESKTOP_DEV: 'true' },
+  });
+  electronChild.stdout?.on('data', (d: Buffer) => console.log(`[electron] ${d.toString().trim()}`));
+  electronChild.stderr?.on('data', (d: Buffer) =>
+    console.error(`[electron] ${d.toString().trim()}`)
+  );
+  electronChild.on('exit', (code) => console.log(`[electron] exited (${String(code)})`));
+  children.push(electronChild);
 }
 
 void main().catch((err) => {

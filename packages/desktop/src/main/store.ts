@@ -35,10 +35,9 @@ function store(): Store<StoredConfig> {
 
 function encrypt(plaintext: string): string {
   if (!safeStorage.isEncryptionAvailable()) {
-    console.warn(
-      '[store] OS encryption not available — API keys will be stored without encryption'
+    throw new Error(
+      'OS keychain encryption is not available. Neura requires secure storage for API keys.'
     );
-    return plaintext;
   }
   const buf = safeStorage.encryptString(plaintext);
   return buf.toString('base64');

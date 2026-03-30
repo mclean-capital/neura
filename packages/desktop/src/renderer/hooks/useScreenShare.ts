@@ -109,6 +109,10 @@ export function useScreenShare({ onFrame, onStopped }: UseScreenShareOptions) {
 
   const cancelPicker = useCallback(() => {
     setShowPicker(false);
+    // Clear pending source in main process so the timeout doesn't linger
+    if (window.neuraDesktop) {
+      void window.neuraDesktop.setScreenSource(null as unknown as string);
+    }
   }, []);
 
   useEffect(() => stop, [stop]);

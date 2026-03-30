@@ -68,12 +68,18 @@ app.on('ready', () => {
     let pendingSourceTimeout: ReturnType<typeof setTimeout> | undefined;
     ipcMain.handle(
       'desktop:set-screen-source',
-      (_event: Electron.IpcMainInvokeEvent, sourceId: string) => {
-        pendingSourceId = sourceId;
+      (_event: Electron.IpcMainInvokeEvent, sourceId: string | null) => {
         clearTimeout(pendingSourceTimeout);
-        pendingSourceTimeout = setTimeout(() => {
+        if (sourceId) {
+          pendingSourceId = sourceId;
+          // 30s timeout — generous for slow pickers, auto-clears if getDisplayMedia never fires
+          pendingSourceTimeout = setTimeout(() => {
+            pendingSourceId = null;
+          }, 30_000);
+        } else {
+          // null sourceId means picker was cancelled — clear immediately
           pendingSourceId = null;
-        }, 5_000);
+        }
       }
     );
 
@@ -101,7 +107,9 @@ app.on('ready', () => {
 
     const appStore = getStore();
 
-    const isDev = !app.isPackaged;
+    // NEURA_DESKTOP_DEV is set by scripts/dev.ts — more reliable than app.isPackaged
+    // which can misdetect when running `electron dist-main/index.mjs`
+    const isDev = process.env.NEURA_DESKTOP_DEV === 'true' || !app.isPackaged;
     let coreManager: ReturnType<typeof createCoreManager> | null = null;
     let uiServer: ReturnType<typeof createUIServer> | null = null;
     let rendererUrl: string;
@@ -114,11 +122,12 @@ app.on('ready', () => {
         port: corePort,
         env: apiKeys,
         onCrash: (code) => {
+          const logPath = path.join(app.getPath('userData'), 'logs', 'core.log');
           void dialog
             .showMessageBox({
               type: 'error',
               title: 'Core Server Crashed',
-              message: `The Neura core server exited unexpectedly (code ${String(code)}). Restart the app to try again.`,
+              message: `The Neura core server exited unexpectedly (code ${String(code)}).\n\nLogs: ${logPath}`,
               buttons: ['Quit'],
             })
             .then(() => app.quit());
@@ -129,6 +138,7 @@ app.on('ready', () => {
 
     // IPC: renderer calls this after wizard completes to start core
     ipcMain.handle('core:start', async () => {
+      if (isDev) return { success: true }; // dev.ts already manages core
       try {
         await startCore();
         return { success: true };

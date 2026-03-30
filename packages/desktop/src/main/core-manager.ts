@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import { fork, spawn, type ChildProcess } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import { app } from 'electron';
@@ -75,14 +76,27 @@ export function createCoreManager(opts: CoreManagerOptions) {
       });
     }
 
+    // Log core output to file for crash diagnosis
+    const logDir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const logPath = path.join(logDir, 'core.log');
+    const logStream = fs.createWriteStream(logPath, { flags: 'w' });
+    logStream.write(`[${new Date().toISOString()}] Core starting on port ${opts.port}\n`);
+
     child.stdout?.on('data', (data: Buffer) => {
-      console.log(`[core] ${data.toString().trim()}`);
+      const line = data.toString().trim();
+      console.log(`[core] ${line}`);
+      logStream.write(`[stdout] ${line}\n`);
     });
     child.stderr?.on('data', (data: Buffer) => {
-      console.error(`[core] ${data.toString().trim()}`);
+      const line = data.toString().trim();
+      console.error(`[core] ${line}`);
+      logStream.write(`[stderr] ${line}\n`);
     });
     child.on('exit', (code) => {
       console.log(`[core] exited with code ${String(code)}`);
+      logStream.write(`[${new Date().toISOString()}] Core exited with code ${String(code)}\n`);
+      logStream.end();
       const crashed = !intentionalStop && code !== 0 && code !== null;
       child = null;
       if (crashed && opts.onCrash) {
