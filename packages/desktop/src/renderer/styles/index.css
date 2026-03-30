@@ -43,3 +43,17 @@
 @utility animate-pulse-ring {
   animation: pulse-ring 2s ease-in-out infinite;
 }
+
+/* Electron window drag regions */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+.app-no-drag,
+.app-drag-region button,
+.app-drag-region a,
+.app-drag-region input,
+.app-drag-region select,
+.app-drag-region textarea,
+.app-drag-region [role='button'] {
+  -webkit-app-region: no-drag;
+}

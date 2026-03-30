@@ -44,6 +44,7 @@ export function App() {
   if (hasKeys === null) {
     return (
       <div className="h-full flex items-center justify-center">
+        <div className="app-drag-region fixed top-0 left-0 right-0 h-8" />
         <span className="text-dark-muted text-sm">Loading...</span>
       </div>
     );
@@ -51,7 +52,12 @@ export function App() {
 
   // Wizard
   if (!hasKeys) {
-    return <SetupWizard onComplete={() => setHasKeys(true)} />;
+    return (
+      <div className="h-full relative">
+        <div className="app-drag-region fixed top-0 left-0 right-0 h-8" />
+        <SetupWizard onComplete={() => setHasKeys(true)} />
+      </div>
+    );
   }
 
   // Main session
@@ -171,7 +177,7 @@ function Session() {
   }, [isDisconnected, connect, disconnect, mic, camera, screen]);
 
   return (
-    <div className="h-full w-full max-w-3xl flex flex-col p-4">
+    <div className="h-full w-full max-w-3xl flex flex-col p-4 app-drag-region">
       <div className="flex items-center justify-between pb-3">
         <span className="text-xl font-light tracking-[0.15em] text-gray-100">NEURA</span>
         <CostIndicator cost={cost} />
@@ -185,9 +191,11 @@ function Session() {
         </div>
       )}
 
-      <TranscriptPanel entries={entries} />
+      <div className="app-no-drag">
+        <TranscriptPanel entries={entries} />
+      </div>
 
-      <div className="flex items-center justify-center gap-4 py-3">
+      <div className="flex items-center justify-center gap-4 py-3 app-no-drag">
         {isConnected && (
           <CameraToggle
             isActive={camera.isActive}
@@ -240,7 +248,9 @@ function Session() {
         )}
       </div>
 
-      <TextInput onSend={handleSendText} disabled={!isConnected} />
+      <div className="app-no-drag">
+        <TextInput onSend={handleSendText} disabled={!isConnected} />
+      </div>
 
       {screen.showPicker && (
         <ScreenPicker
