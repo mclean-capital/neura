@@ -178,7 +178,7 @@ function Session() {
 
   return (
     <div className="h-full w-full max-w-3xl flex flex-col p-4 app-drag-region">
-      <div className="flex items-center justify-between pb-3">
+      <div className="flex items-center justify-between pb-3 pt-5">
         <span className="text-xl font-light tracking-[0.15em] text-gray-100">NEURA</span>
         <CostIndicator cost={cost} />
         <StatusBadge status={status} />
@@ -191,7 +191,7 @@ function Session() {
         </div>
       )}
 
-      <div className="app-no-drag">
+      <div className="app-no-drag flex-1 min-h-0">
         <TranscriptPanel entries={entries} />
       </div>
 

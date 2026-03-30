@@ -25,9 +25,9 @@ function getPreloadPath(): string {
 function createMainWindow(url: string): BrowserWindow {
   const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
-    width: 480,
-    height: 780,
-    minWidth: 380,
+    width: 1280,
+    height: 800,
+    minWidth: 480,
     minHeight: 600,
     show: false,
     backgroundColor: '#0a0a0a',
