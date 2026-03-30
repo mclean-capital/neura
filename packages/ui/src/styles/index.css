@@ -1,28 +1,42 @@
 @import 'tailwindcss';
 
 @theme {
+  /* Surfaces */
   --color-dark-bg: #0a0a0a;
   --color-dark-surface: #111;
   --color-dark-elevated: #141414;
   --color-dark-hover: #1a1a1a;
-  --color-dark-border: #333;
-  --color-dark-text: #e0e0e0;
-  --color-dark-muted: #555;
-  --color-dark-muted-light: #999;
-  --color-accent: #f59e0b;
+  --color-dark-border: #1a1a1a;
+  --color-dark-active: #242424;
+
+  /* Text — warm cream, not pure white */
+  --color-dark-text: #e8e4de;
+  --color-dark-muted: #3d3a36;
+  --color-dark-muted-light: #6b6560;
+
+  /* Accent — brass, not warning */
+  --color-accent: #d4940a;
+  --color-accent-bright: #f5b731;
+  --color-accent-dim: #7a5500;
   --color-accent-bg: #1a1408;
-  --color-user-bg: #1e3a5f;
-  --color-session-green: #22c55e;
+
+  /* Semantic signals */
+  --color-session-green: #2ad468;
   --color-session-green-bg: #0a1f0a;
+  --color-signal-vision: #3b82f6;
+  --color-signal-vision-bg: #0a1428;
+  --color-signal-danger: #e5484d;
+  --color-signal-danger-bg: #1f0a0a;
+  --color-user-bg: #1e3a5f;
 }
 
 @keyframes pulse-ring {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3);
+    box-shadow: 0 0 0 0 rgba(212, 148, 10, 0.3);
   }
   50% {
-    box-shadow: 0 0 0 14px rgba(245, 158, 11, 0);
+    box-shadow: 0 0 0 14px rgba(212, 148, 10, 0);
   }
 }
 

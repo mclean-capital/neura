@@ -33,7 +33,7 @@ function createMainWindow(url: string): BrowserWindow {
     backgroundColor: '#0a0a0a',
     ...(isMac
       ? { titleBarStyle: 'hiddenInset' as const }
-      : { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e0e0e0', height: 32 } }),
+      : { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e8e4de', height: 32 } }),
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
