@@ -15,6 +15,7 @@ export default tseslint.config(
       '**/vite.config.ts',
       '**/vite.*.config.ts',
       '**/scripts/**',
+      '**/.storybook/**',
     ],
   },
 

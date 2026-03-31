@@ -18,6 +18,9 @@ coverage/
 *.swp
 .DS_Store
 
+# Storybook
+dist-storybook/
+
 # Electron
 release/
 dist-main/
@@ -27,3 +30,4 @@ dist-wizard/
 
 # Claude
 .claude/settings.local.json
+.gstack/

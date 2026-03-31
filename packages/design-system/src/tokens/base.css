@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+@import './theme.css';
+
+/* Scrollbar — thin, dark, blends with surface */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-dark-hover) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-dark-hover);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-dark-border);
+}
+
+/* Light theme — warm paper tones, darkened accent for contrast */
+[data-theme='light'] {
+  --color-dark-bg: #f5f2e8;
+  --color-dark-surface: #ffffff;
+  --color-dark-elevated: #ebe8df;
+  --color-dark-hover: #d5d0c5;
+  --color-dark-border: #c8c3b8;
+  --color-dark-active: #bfb9ad;
+  --color-dark-text: #1a1714;
+  --color-dark-muted: #a09a90;
+  --color-dark-muted-light: #6b6560;
+  --color-accent: #b87a00;
+  --color-accent-bright: #d4940a;
+  --color-accent-dim: #e8d5a8;
+  --color-accent-bg: #f5edd8;
+  --color-session-green: #16803d;
+  --color-session-green-bg: #e8f5e8;
+  --color-session-green-hover: #d0ebd0;
+  --color-signal-vision: #2563eb;
+  --color-signal-vision-bg: #e8f0ff;
+  --color-signal-danger: #dc3545;
+  --color-signal-danger-bg: #fff0f0;
+  --color-user-bg: #d0e0f0;
+}
+
+@keyframes pulse-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 148, 10, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(212, 148, 10, 0);
+  }
+}
+
+@utility animate-pulse-ring {
+  animation: pulse-ring 2s ease-in-out infinite;
+}

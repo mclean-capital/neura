@@ -1,5 +1,6 @@
 {
   "name": "@neura/desktop",
+  "productName": "Neura",
   "version": "0.0.0",
   "description": "Neura desktop client",
   "author": "Mclean Capital",
@@ -23,6 +24,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@neura/design-system": "*",
     "@neura/shared": "*",
     "@tailwindcss/vite": "^4",
     "electron-store": "^10",

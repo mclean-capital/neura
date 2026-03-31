@@ -67,7 +67,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         <span className="text-5xl">&#10003;</span>
         <p className="text-dark-muted-light">You're all set!</p>
         <button
-          className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointertext-base font-medium transition-all duration-200 hover:bg-session-green-hover disabled:opacity-40 disabled:cursor-default"
+          className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer text-base font-medium transition-all duration-200 hover:bg-session-green-hover disabled:opacity-40 disabled:cursor-default"
           onClick={() => void handleLaunch()}
           disabled={loading}
         >
@@ -79,6 +79,15 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   return (
     <div className="h-full flex flex-col items-center justify-center gap-6 px-8">
+      <svg width="48" height="48" viewBox="0 0 72 72" fill="none">
+        <path
+          d="M18 56V16L54 56V16"
+          stroke="#D4940A"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
       <span className="text-3xl font-medium tracking-[0.15em] text-dark-text font-display">
         NEURA
       </span>
@@ -148,7 +157,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         </div>
 
         <button
-          className="mt-2 px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointertext-base font-medium transition-all duration-200 hover:bg-session-green-hover disabled:opacity-40 disabled:cursor-default self-center"
+          className="mt-2 px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer text-base font-medium transition-all duration-200 hover:bg-session-green-hover disabled:opacity-40 disabled:cursor-default self-center"
           onClick={() => void handleValidate()}
           disabled={loading}
         >

@@ -13,7 +13,16 @@ export function createTray(mainWindow: BrowserWindow): Tray {
     console.warn(`[tray] Icon not found at ${iconPath} — tray may be invisible`);
   }
 
-  const tray = new Tray(nativeImage.createFromPath(iconPath));
+  let icon = nativeImage.createFromPath(iconPath);
+
+  if (process.platform === 'darwin') {
+    // macOS menu bar: resize to 18x18pt (standard size) and mark as template
+    // so the system applies proper light/dark styling
+    icon = icon.resize({ width: 18, height: 18 });
+    icon.setTemplateImage(true);
+  }
+
+  const tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show Neura', click: () => mainWindow.show() },

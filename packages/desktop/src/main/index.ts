@@ -1,4 +1,12 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  ipcMain,
+  nativeImage,
+  session,
+} from 'electron';
 import path from 'path';
 import { createCoreManager } from './core-manager.js';
 import { createUIServer } from './ui-server.js';
@@ -8,6 +16,9 @@ import { initUpdater } from './updater.js';
 import { getStore } from './store.js';
 import { registerIpcHandlers } from './ipc.js';
 import { setQuitting } from './app-state.js';
+
+// Set app name (without this, dev mode shows "Electron" in dock/tooltips)
+app.name = 'Neura';
 
 // Suppress noisy Chromium WGC frame capture warnings
 app.commandLine.appendSwitch('log-level', '3');
@@ -22,6 +33,12 @@ function getPreloadPath(): string {
   return path.join(__dirname, '..', 'dist-preload', 'index.cjs');
 }
 
+function getAppIconPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets', 'icon.png')
+    : path.join(__dirname, '..', 'assets', 'icon.png');
+}
+
 function createMainWindow(url: string): BrowserWindow {
   const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
@@ -31,6 +48,7 @@ function createMainWindow(url: string): BrowserWindow {
     minHeight: 600,
     show: false,
     backgroundColor: '#0a0a0a',
+    icon: nativeImage.createFromPath(getAppIconPath()),
     ...(isMac
       ? { titleBarStyle: 'hiddenInset' as const }
       : { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e8e4de', height: 32 } }),
@@ -50,6 +68,15 @@ function createMainWindow(url: string): BrowserWindow {
 
 app.on('ready', () => {
   void (async () => {
+    // Set dock icon on macOS (without this, dev mode shows default Electron icon)
+    if (process.platform === 'darwin' && app.dock) {
+      const iconPath = getAppIconPath();
+      const iconImage = nativeImage.createFromPath(iconPath);
+      if (!iconImage.isEmpty()) {
+        app.dock.setIcon(iconImage);
+      }
+    }
+
     registerIpcHandlers();
 
     // Grant permissions for microphone, camera, and screen capture

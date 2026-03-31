@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerMessage } from '@neura/shared';
+import {
+  useWebSocket,
+  useAudioCapture,
+  useAudioPlayback,
+  useCamera,
+  useCostTracker,
+  StatusBadge,
+  CostIndicator,
+  MicButton,
+  CameraToggle,
+  ScreenShareToggle,
+  CameraPreview,
+  ScreenPreview,
+  TranscriptPanel,
+  TextInput,
+} from '@neura/design-system';
+import type { TranscriptEntry } from '@neura/design-system';
 import { config } from './config.js';
-import { useWebSocket } from './hooks/useWebSocket.js';
-import { useAudioCapture } from './hooks/useAudioCapture.js';
-import { useAudioPlayback } from './hooks/useAudioPlayback.js';
-import { useCamera } from './hooks/useCamera.js';
 import { useScreenShare } from './hooks/useScreenShare.js';
-import { useCostTracker } from './hooks/useCostTracker.js';
-import { StatusBadge } from './components/StatusBadge.js';
-import { CostIndicator } from './components/CostIndicator.js';
-import { MicButton } from './components/MicButton.js';
-import { CameraToggle } from './components/CameraToggle.js';
-import { ScreenShareToggle } from './components/ScreenShareToggle.js';
-import { CameraPreview } from './components/CameraPreview.js';
-import { ScreenPreview } from './components/ScreenPreview.js';
-import { TranscriptPanel } from './components/TranscriptPanel.js';
-import { TextInput } from './components/TextInput.js';
 import { ScreenPicker } from './components/ScreenPicker.js';
 import { SetupWizard } from './wizard/SetupWizard.js';
-import type { TranscriptEntry } from './components/TranscriptMessage.js';
 
 let msgIdCounter = 0;
 function nextId() {
@@ -183,7 +185,16 @@ function Session() {
           NEURA
         </span>
         <CostIndicator cost={cost} />
-        <StatusBadge status={status} />
+        {isConnected ? (
+          <button
+            className="px-4 py-1.5 rounded-full border-2 border-signal-danger text-signal-danger cursor-pointer text-xs font-medium transition-all duration-200 hover:bg-signal-danger-bg"
+            onClick={handleSessionToggle}
+          >
+            End Session
+          </button>
+        ) : (
+          <StatusBadge status={status} />
+        )}
       </div>
 
       {(camera.isActive || screen.isActive) && (
@@ -220,7 +231,7 @@ function Session() {
           />
         ) : (
           <button
-            className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointertext-base font-medium transition-all duration-200 hover:bg-session-green-hover hover:shadow-[0_0_0_4px_rgba(42,212,104,0.15)] disabled:opacity-40 disabled:cursor-default"
+            className="px-8 py-3 rounded-full border-2 border-session-green bg-session-green-bg text-session-green cursor-pointer text-base font-medium transition-all duration-200 hover:bg-session-green-hover hover:shadow-[0_0_0_4px_rgba(42,212,104,0.15)] disabled:opacity-40 disabled:cursor-default"
             onClick={handleSessionToggle}
             disabled={!isDisconnected}
           >
@@ -241,14 +252,6 @@ function Session() {
               }
             }}
           />
-        )}
-        {isConnected && (
-          <button
-            className="px-3.5 py-2 rounded-full border border-dark-muted bg-dark-hover text-dark-muted-light cursor-pointertext-xs transition-all duration-200 hover:border-signal-danger hover:text-signal-danger"
-            onClick={handleSessionToggle}
-          >
-            End
-          </button>
         )}
       </div>
 

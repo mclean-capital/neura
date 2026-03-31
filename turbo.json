@@ -3,7 +3,11 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", "dist-storybook/**"]
+    },
+    "storybook": {
+      "cache": false,
+      "persistent": true
     },
     "typecheck": {
       "dependsOn": ["^build"]

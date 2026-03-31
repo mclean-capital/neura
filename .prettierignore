@@ -4,3 +4,4 @@ package-lock.json
 *.html
 .turbo/
 coverage/
+dist-storybook/
