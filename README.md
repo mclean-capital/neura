@@ -20,7 +20,7 @@ Mic audio → Grok (Eve voice)
 - A [Grok API key](https://console.x.ai/) (xAI)
 - A [Google API key](https://aistudio.google.com/apikey) (Gemini)
 
-### Run Neura
+### Setup
 
 ```bash
 git clone https://github.com/mclean-capital/neura.git
@@ -30,15 +30,19 @@ npm install
 # Set up your API keys
 cp packages/core/.env.example packages/core/.env
 # Edit .env with your XAI_API_KEY and GOOGLE_API_KEY
-
-# Start core + UI (two terminals)
-npm run dev -w @neura/core    # Core server at http://localhost:3002
-npm run dev -w @neura/ui      # UI at http://localhost:5173
 ```
 
-Open [http://localhost:5173](http://localhost:5173), click **Start Session**, then toggle the mic. Share your camera or screen and ask "what do you see?"
+### Run the Web UI
 
-### Desktop App (Electron)
+```bash
+# Two terminals:
+npm run dev -w @neura/core    # Core server → http://localhost:3002
+npm run dev -w @neura/ui      # Web UI → http://localhost:5173
+```
+
+Open [http://localhost:5173](http://localhost:5173), click **Start Session**, toggle the mic. Share your camera or screen and ask "what do you see?"
+
+### Run the Desktop App
 
 ```bash
 npm run dev -w @neura/desktop   # Starts core + renderer + Electron
@@ -56,19 +60,61 @@ docs/
 └── roadmap.md   # Full roadmap and architecture
 ```
 
-## Development
+## Command Reference
 
-```bash
-npm run typecheck       # typecheck all packages (turbo)
-npm run lint            # lint all packages (turbo)
-npm run lint:fix        # lint + autofix (turbo)
-npm run format          # format all files (prettier)
-npm run format:check    # check formatting (prettier)
-npm run test            # run tests (turbo + vitest)
-npm run build           # build all packages (turbo)
-```
+### Development
 
-Commits follow [Conventional Commits](https://www.conventionalcommits.org/). Enforced by commitlint + husky.
+| Command                         | Description                                    |
+| ------------------------------- | ---------------------------------------------- |
+| `npm run dev -w @neura/core`    | Start core server (port 3002)                  |
+| `npm run dev -w @neura/ui`      | Start web UI dev server (port 5173)            |
+| `npm run dev -w @neura/desktop` | Start desktop app (core + renderer + Electron) |
+
+### Code Quality
+
+| Command                | Description                    |
+| ---------------------- | ------------------------------ |
+| `npm run typecheck`    | Typecheck all packages (turbo) |
+| `npm run lint`         | Lint all packages (turbo)      |
+| `npm run lint:fix`     | Lint + autofix (turbo)         |
+| `npm run format`       | Format all files (prettier)    |
+| `npm run format:check` | Check formatting (prettier)    |
+| `npm run test`         | Run all tests (turbo + vitest) |
+
+### Build
+
+| Command                           | Description                               |
+| --------------------------------- | ----------------------------------------- |
+| `npm run build`                   | Build all packages (turbo)                |
+| `npm run build -w @neura/shared`  | Build shared types                        |
+| `npm run build -w @neura/core`    | Build core (tsc + esbuild bundle)         |
+| `npm run build -w @neura/desktop` | Build desktop (renderer + main + preload) |
+
+### Release
+
+| Command                          | Description                              |
+| -------------------------------- | ---------------------------------------- |
+| `npm run release:win`            | Full build + Windows installer (.exe)    |
+| `npm run release:mac`            | Full build + macOS installer (.dmg)      |
+| `npm run release:linux`          | Full build + Linux installer (.AppImage) |
+| `npm run pack -w @neura/desktop` | Build unpacked app (for testing)         |
+
+Release outputs are written to `packages/desktop/release/`.
+
+### Single-Package Commands
+
+| Command                            | Description         |
+| ---------------------------------- | ------------------- |
+| `npm run test -w @neura/core`      | Run core tests only |
+| `npm run test -w @neura/ui`        | Run UI tests only   |
+| `npm run lint -w @neura/desktop`   | Lint desktop only   |
+| `npm run typecheck -w @neura/core` | Typecheck core only |
+
+## Conventions
+
+- Commits follow [Conventional Commits](https://www.conventionalcommits.org/) — enforced by commitlint + husky
+- All UI/visual decisions follow `DESIGN.md`
+- Each client platform owns its own UI — clients share only `@neura/shared`
 
 ## Roadmap
 
@@ -81,8 +127,6 @@ See [docs/roadmap.md](docs/roadmap.md) for the full roadmap covering:
 - Worker system (autonomous agents for research, code, documents)
 - Discovery and execution loops (proactive AI behavior)
 - Deployment strategy (local-first, cloud, hybrid, self-hosted)
-- Open source ecosystem model
-- Competitive landscape analysis
 
 ## License
 

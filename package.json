@@ -17,6 +17,9 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "build": "turbo run build",
+    "release:win": "npm run build && npm run dist:win -w @neura/desktop",
+    "release:mac": "npm run build && npm run dist:mac -w @neura/desktop",
+    "release:linux": "npm run build && npm run dist:linux -w @neura/desktop",
     "prepare": "husky"
   },
   "lint-staged": {
