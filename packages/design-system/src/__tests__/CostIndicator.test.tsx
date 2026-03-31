@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { CostIndicator } from '../components/CostIndicator.js';
-import type { CostUpdateMessage } from '@neura/shared';
+import type { CostUpdateMessage } from '@neura/types';
 
 afterEach(cleanup);
 

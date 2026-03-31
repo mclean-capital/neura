@@ -1,4 +1,4 @@
-import type { CostUpdateMessage } from '@neura/shared';
+import type { CostUpdateMessage } from '@neura/types';
 
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);

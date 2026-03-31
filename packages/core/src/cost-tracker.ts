@@ -1,10 +1,7 @@
-import type { CostUpdateMessage } from '@neura/shared';
+import type { CostUpdateMessage, ProviderPricing } from '@neura/types';
+import { SESSION_PRICING } from './providers/index.js';
 
-// Rates (as of March 2026)
-const VOICE_RATE_PER_MS = 0.05 / 60_000; // $0.05/min (Grok flat rate)
-const VISION_RATE_PER_MS = 0.002 / 60_000; // ~$0.002/min video input per stream (Gemini watcher)
-
-export function createCostTracker() {
+export function createCostTracker(pricing: ProviderPricing = SESSION_PRICING) {
   const startTime = Date.now();
   const visionSources = {
     camera: { startTime: null as number | null, activeMs: 0 },
@@ -38,8 +35,8 @@ export function createCostTracker() {
     const sessionDurationMs = now - startTime;
     const totalVisionMs = getVisionMs();
 
-    const voiceCost = sessionDurationMs * VOICE_RATE_PER_MS;
-    const visionCost = totalVisionMs * VISION_RATE_PER_MS;
+    const voiceCost = sessionDurationMs * pricing.voiceRatePerMs;
+    const visionCost = totalVisionMs * pricing.visionRatePerMs;
 
     return {
       type: 'costUpdate',

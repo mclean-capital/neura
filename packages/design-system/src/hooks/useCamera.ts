@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FRAME_CAPTURE_INTERVAL_MS } from '@neura/shared';
+import { FRAME_CAPTURE_INTERVAL_MS } from '@neura/utils';
 
 export function useCamera(onFrame: (base64: string) => void) {
   const [isActive, setIsActive] = useState(false);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ClientMessage, ServerMessage } from '@neura/shared';
+import type { ClientMessage, ServerMessage } from '@neura/types';
 import type { ConnectionStatus } from '../types/index.js';
 
 const MAX_RECONNECT_ATTEMPTS = 10;

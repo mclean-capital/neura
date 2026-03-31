@@ -1,0 +1,44 @@
+name: Desktop Build
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            command: dist:win
+          - os: macos-latest
+            command: dist:mac
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Build desktop installer
+        run: npm run ${{ matrix.command }} -w @neura/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.yml
+            packages/desktop/release/*.yaml

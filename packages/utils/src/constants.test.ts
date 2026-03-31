@@ -4,9 +4,9 @@ import {
   AUDIO_CHANNELS,
   AUDIO_FORMAT,
   FRAME_CAPTURE_INTERVAL_MS,
-} from './config.js';
+} from './constants.js';
 
-describe('shared/config constants', () => {
+describe('utils/constants', () => {
   it('AUDIO_SAMPLE_RATE is 24 kHz', () => {
     expect(AUDIO_SAMPLE_RATE).toBe(24_000);
   });

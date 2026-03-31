@@ -18,7 +18,8 @@
     "build-storybook": "storybook build -o dist-storybook"
   },
   "dependencies": {
-    "@neura/shared": "*"
+    "@neura/types": "*",
+    "@neura/utils": "*"
   },
   "peerDependencies": {
     "react": "^19",
@@ -38,7 +39,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
-    "jsdom": "^26",
+    "jsdom": "^26.1.0",
     "react": "^19",
     "react-dom": "^19",
     "storybook": "^8",

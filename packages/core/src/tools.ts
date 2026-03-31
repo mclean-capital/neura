@@ -1,4 +1,7 @@
-import type { ToolDefinition, VisionToolArgs } from '@neura/shared';
+import type { ToolDefinition, VisionToolArgs } from '@neura/types';
+import { Logger } from '@neura/utils';
+
+const log = new Logger('tool');
 
 export const toolDefs: ToolDefinition[] = [
   {
@@ -54,7 +57,7 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   queryWatcher: (prompt: string, source: 'camera' | 'screen') => Promise<string>
 ): Promise<Record<string, unknown>> {
-  console.log(`[tool] ${name}(${JSON.stringify(args)})`);
+  log.info(`${name}`, { args });
 
   switch (name) {
     case 'describe_camera': {

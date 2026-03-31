@@ -14,7 +14,7 @@ await esbuild.build({
   banner: {
     js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
   },
-  // Externalize all Node built-ins — inline everything else
-  external: ['node:*', ...builtinModules],
+  // Externalize Node built-ins, native addons, and dev-only dynamic imports
+  external: ['node:*', ...builtinModules, 'better-sqlite3', 'pino-pretty'],
   logLevel: 'info',
 });

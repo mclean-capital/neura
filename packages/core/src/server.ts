@@ -2,20 +2,31 @@ import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { ClientMessage, ServerMessage } from '@neura/shared';
+import type { ClientMessage, ServerMessage, DataStore } from '@neura/types';
+import { Logger } from '@neura/utils';
 import { createVoiceSession } from './voice-session.js';
 import { createVisionWatcher } from './vision-watcher.js';
 import { createCostTracker } from './cost-tracker.js';
+import { SqliteStore } from './stores/index.js';
+
+const log = new Logger('server');
 
 const PORT = parseInt(process.env.PORT ?? '3002', 10);
 const COST_UPDATE_INTERVAL_MS = 30_000;
+
+// Initialize data store if DB_PATH is set (optional — skip persistence if not configured)
+const dbPath = process.env.DB_PATH;
+const store: DataStore | null = dbPath ? new SqliteStore(dbPath) : null;
+if (store) log.info('database initialized', { path: dbPath });
 
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws: WebSocket) => {
-  console.log('[ws] client connected');
+  log.info('client connected');
+
+  const sessionId = store?.createSession('grok', 'gemini') ?? null;
 
   // One watcher per source — created on demand, destroyed on stop
   let cameraWatcher: ReturnType<typeof createVisionWatcher> | null = null;
@@ -46,12 +57,12 @@ wss.on('connection', (ws: WebSocket) => {
       cameraWatcher.close();
       cameraWatcher = null;
       costTracker.markVisionInactive('camera');
-      console.log('[ws] camera watcher closed');
+      log.info('camera watcher closed');
     } else if (source === 'screen' && screenWatcher) {
       screenWatcher.close();
       screenWatcher = null;
       costTracker.markVisionInactive('screen');
-      console.log('[ws] screen watcher closed');
+      log.info('screen watcher closed');
     }
   }
 
@@ -61,9 +72,13 @@ wss.on('connection', (ws: WebSocket) => {
     },
     onInputTranscript(text) {
       send({ type: 'inputTranscript', text });
+      if (sessionId && store) store.appendTranscript(sessionId, 'user', text);
     },
     onOutputTranscript(text) {
       send({ type: 'outputTranscript', text });
+    },
+    onOutputTranscriptComplete(text) {
+      if (sessionId && store) store.appendTranscript(sessionId, 'assistant', text);
     },
     onInterrupted() {
       send({ type: 'interrupted' });
@@ -141,13 +156,20 @@ wss.on('connection', (ws: WebSocket) => {
           break;
       }
     } catch (err) {
-      console.error('[ws] bad message:', err);
+      log.error('bad message', { err: String(err) });
     }
   });
 
   ws.on('close', () => {
-    console.log('[ws] client disconnected');
+    log.info('client disconnected');
     costTracker.stopInterval();
+
+    // Finalize session in store
+    if (sessionId && store) {
+      const cost = costTracker.getUpdate().estimatedCostUsd;
+      store.endSession(sessionId, cost);
+    }
+
     session.close();
     cameraWatcher?.close();
     screenWatcher?.close();
@@ -158,5 +180,15 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\nNeura core server at http://localhost:${PORT}\n`);
+  log.info(`Neura core server at http://localhost:${PORT}`);
 });
+
+function shutdown() {
+  log.info('shutting down');
+  store?.close();
+  server.close();
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

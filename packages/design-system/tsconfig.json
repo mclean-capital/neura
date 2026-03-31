@@ -10,5 +10,5 @@
     "types": ["vite/client"]
   },
   "include": ["src"],
-  "references": [{ "path": "../shared" }]
+  "references": [{ "path": "../types" }, { "path": "../utils" }]
 }

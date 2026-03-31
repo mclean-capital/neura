@@ -4,10 +4,11 @@
 
 Monorepo with workspace root `packages/*`.
 
-Each client platform is a standalone app with its own UI. Clients share only the WebSocket protocol (`@neura/shared`) — no client depends on another client's code. Core is a standalone server with zero knowledge of any client.
+Each client platform is a standalone app with its own UI. Clients share only the WebSocket protocol (`@neura/types`) — no client depends on another client's code. Core is a standalone server with zero knowledge of any client.
 
 ```
-packages/shared         @neura/shared         — protocol types, tool types, config constants
+packages/types          @neura/types          — protocol types, tool types, config interfaces (pure types, zero runtime deps)
+packages/utils          @neura/utils          — shared runtime utilities (Logger, audio/frame constants)
 packages/design-system  @neura/design-system  — shared React components, hooks, CSS tokens, Storybook
 packages/core           @neura/core           — voice session, vision watcher, tools, server
 packages/ui             @neura/ui             — web client (React + Vite)
@@ -47,35 +48,46 @@ npm run test                         # all packages (canonical)
 npm run test -w @neura/core          # single package
 ```
 
-- **shared** — node env, contract tests for audio constants
-- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`)
+- **utils** — node env, tests for audio constants and Logger
+- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), sqlite-store
 - **design-system** — jsdom env, hook tests (`useWebSocket`) and component tests (`StatusBadge`, `CostIndicator`)
 
 Test files live in `src/__tests__/` (design-system) or alongside source (`src/*.test.ts`). Component/hook tests use `@testing-library/react`.
 
 ## Packages
 
-### shared
+### types
 
-Pure types package — zero runtime dependencies. Defines the WebSocket protocol contract between core and all clients.
+Pure types package — zero runtime dependencies. Defines the WebSocket protocol contract between core and all clients, plus provider and store interfaces.
 
 - `protocol.ts` — `ClientMessage` / `ServerMessage` discriminated unions
 - `tools.ts` — `ToolDefinition`, `ToolCallResult`, `VisionToolArgs`
-- `config.ts` — `CoreConfig`, `UIConfig`, audio constants
+- `config.ts` — `CoreConfig`, `UIConfig` interfaces
+- `providers.ts` — `VoiceProvider`, `VisionProvider`, `DataStore`, `ProviderPricing`, `SessionRecord`, `TranscriptEntry`
+
+### utils
+
+Shared runtime utilities used by core and clients.
+
+- `logger.ts` — `Logger` class wrapping pino (structured logging with namespaces)
+- `constants.ts` — `AUDIO_SAMPLE_RATE`, `AUDIO_CHANNELS`, `AUDIO_FORMAT`, `FRAME_CAPTURE_INTERVAL_MS`
 
 ### core
 
-Standalone server extracted from the hybrid prototype. Provider-agnostic module names.
+Standalone server with provider adapter layer and pluggable storage.
 
-- `server.ts` — Express + WebSocket, typed message routing
-- `voice-session.ts` — Voice session (currently Grok Eve) with reconnect, transcript seeding, 28-min proactive reconnect
-- `vision-watcher.ts` — Vision watcher (currently Gemini Live), one session per source (camera/screen independent)
+- `server.ts` — Express + WebSocket, typed message routing, optional SQLite persistence
+- `voice-session.ts` — Factory wrapper, delegates to active voice provider
+- `vision-watcher.ts` — Factory wrapper, delegates to active vision provider
+- `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect
+- `providers/gemini-vision.ts` — Gemini Live vision provider, one session per source (camera/screen independent)
+- `stores/sqlite-store.ts` — `SqliteStore` implementing `DataStore` (sessions + transcripts)
 - `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`
-- `cost-tracker.ts` — Per-source cost estimator (voice + camera + screen tracked independently)
+- `cost-tracker.ts` — Per-source cost estimator, accepts `ProviderPricing`
 
 ```bash
 cd packages/core
-cp .env.example .env   # add XAI_API_KEY + GOOGLE_API_KEY
+# Set env vars: XAI_API_KEY, GOOGLE_API_KEY, optionally DB_PATH
 npm run dev             # http://localhost:3002
 ```
 
@@ -89,7 +101,7 @@ npm run dev -w @neura/ui   # http://localhost:5173 (proxies /ws → :3002)
 
 ### desktop
 
-Electron desktop client with its own React renderer. Spawns core as a child process. Has its own UI independent of `packages/ui` — each client platform owns its frontend. Depends only on `@neura/shared` for protocol types.
+Electron desktop client with its own React renderer. Spawns core as a child process. Has its own UI independent of `packages/ui` — each client platform owns its frontend. Depends on `@neura/types`, `@neura/utils`, and `@neura/design-system`.
 
 - `src/main/` — Electron main process (core-manager, tray, hotkey, store, updater)
 - `src/renderer/` — React app (hooks, components, wizard, settings)

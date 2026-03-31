@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { AUDIO_SAMPLE_RATE } from '@neura/shared';
+import { AUDIO_SAMPLE_RATE } from '@neura/utils';
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binary = atob(base64);

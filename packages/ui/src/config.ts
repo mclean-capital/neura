@@ -1,4 +1,4 @@
-import type { UIConfig } from '@neura/shared';
+import type { UIConfig } from '@neura/types';
 
 function defaultWsUrl(): string {
   if (typeof window === 'undefined') return 'ws://localhost:3002/ws';

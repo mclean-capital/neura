@@ -53,7 +53,8 @@ packages/
 ├── desktop/           # Electron launcher — spawns core as child process, wraps ui,
 │                      #   adds OS features (tray, hotkeys, auto-update, system audio).
 │                      #   This is the MVP distribution (downloadable app).
-├── shared/            # Types, audio codecs, protocol definitions, state interfaces
+├── types/             # Pure type definitions — protocol, tools, config, provider/store interfaces
+├── utils/             # Shared runtime utilities — Logger (pino), audio/frame constants
 ├── workers/           # Worker runtime, built-in worker types, MCP integrations
 ├── relay/             # Optional local relay for hybrid mode (low-latency A/V proxy)
 ├── mobile/            # React Native — reuses ui components, connects to core URL
@@ -779,29 +780,30 @@ Continuous audio and video capture demands deliberate security and privacy desig
 ### Phase 2a — Alpha (core extraction + hardening)
 
 - [x] Extract hybrid prototype into `packages/core` (standalone server)
-- [x] Define WebSocket protocol spec with typed messages (`packages/shared`)
-- [ ] Provider adapter layer (voice provider interface, vision provider interface)
-- [ ] Source-aware vision: tag frames with metadata (`camera` / `screen`) — not merged streams
-- [ ] Grok session recovery (reconnect on disconnect, context seeding from recent transcript)
-- [ ] Watcher query queue (replace single `pendingQuery` with ID-based queue)
-- [ ] State layer (SQLite — session history, settings, permissions)
-- [ ] Structured event logging for debugging
-- [ ] Session cost indicator in UI (active session badge)
-- [ ] Camera/screen/mic as independent opt-in toggles (not auto-start)
-- [ ] Remove mock tools (mock weather, dice) — replace with real or remove
+- [x] Define WebSocket protocol spec with typed messages (`@neura/types`)
+- [x] Provider adapter layer (voice provider interface, vision provider interface)
+- [x] Source-aware vision: tag frames with metadata (`camera` / `screen`) — not merged streams
+- [x] Grok session recovery (reconnect on disconnect, context seeding from recent transcript)
+- [x] Watcher query queue (replace single `pendingQuery` with ID-based queue)
+- [x] State layer (SQLite — session history, transcripts)
+- [x] Structured event logging (pino-based Logger class in `@neura/utils`)
+- [x] Session cost indicator in UI (active session badge)
+- [x] Camera/screen/mic as independent opt-in toggles (not auto-start)
+- [x] Remove mock tools (mock weather, dice) — replace with real or remove
 - [x] Build `packages/ui` (React, from prototype `public/` — rebuild, don't port)
-- [ ] **Ship alpha: single OS, stable sessions, source-aware vision**
+- [x] **Ship alpha: single OS, stable sessions, source-aware vision**
 
 ### Phase 2b — MVP (desktop app)
 
-- [ ] Build `packages/desktop` (Electron launcher, spawns core, wraps ui)
-- [ ] First-run wizard (secure API key storage, voice selection)
-- [ ] System tray + global hotkey
-- [ ] Auto-update via electron-updater
-- [ ] Build pipeline: electron-builder → .exe / .dmg / .AppImage
-- [ ] Cross-platform testing (Windows, Mac, Linux)
-- [ ] Landing page at neura.ai + GitHub releases
-- [ ] **Ship MVP: downloadable desktop app, open source, bring-your-own API keys**
+- [x] Build `packages/desktop` (Electron launcher, spawns core, wraps ui)
+- [x] First-run wizard (secure API key storage, voice selection)
+- [x] System tray + global hotkey
+- [x] Auto-update via electron-updater
+- [x] Build pipeline: electron-builder → .exe / .dmg / .AppImage
+- [x] Cross-platform testing (Windows + Mac validated; Linux deferred)
+- [x] CI/CD pipeline: GitHub Actions → auto-build .exe / .dmg on release
+- [ ] Landing page at neura.ai (separate repo) + GitHub releases
+- [x] **Ship MVP: downloadable desktop app, open source, bring-your-own API keys**
 
 ### Phase 3 — Workers + Loops
 

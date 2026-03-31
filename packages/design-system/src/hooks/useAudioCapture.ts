@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { AUDIO_SAMPLE_RATE } from '@neura/shared';
+import { AUDIO_SAMPLE_RATE } from '@neura/utils';
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ServerMessage } from '@neura/shared';
+import type { ServerMessage } from '@neura/types';
 import {
   useWebSocket,
   useAudioCapture,

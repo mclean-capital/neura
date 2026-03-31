@@ -53,12 +53,22 @@ export function createCoreManager(opts: CoreManagerOptions) {
 
   async function start(): Promise<void> {
     intentionalStop = false;
+    const dbPath = path.join(app.getPath('userData'), 'neura.db');
+
+    // In packaged mode, native addons (better-sqlite3) are unpacked from asar
+    // and need to be on NODE_PATH for the forked core process to find them
+    const nodeModulesPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
+      : '';
+
     const env: Record<string, string> = {
       ...process.env,
       PORT: String(opts.port),
       XAI_API_KEY: opts.env.xaiApiKey,
       GOOGLE_API_KEY: opts.env.googleApiKey,
+      DB_PATH: dbPath,
       NODE_ENV: app.isPackaged ? 'production' : 'development',
+      ...(nodeModulesPath ? { NODE_PATH: nodeModulesPath } : {}),
     };
 
     if (app.isPackaged) {

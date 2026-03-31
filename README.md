@@ -52,12 +52,14 @@ npm run dev -w @neura/desktop   # Starts core + renderer + Electron
 
 ```
 packages/
-├── shared/      # Protocol types, tool types, audio constants
-├── core/        # Voice session, vision watcher, tools, server
-├── ui/          # Web client — React 19 + Vite 6 + Tailwind v4
-└── desktop/     # Desktop client — Electron, spawns core, own React renderer
+├── types/          # Pure types — protocol, tools, config, provider/store interfaces
+├── utils/          # Shared runtime — Logger (pino), audio/frame constants
+├── design-system/  # Shared React components, hooks, CSS tokens, Storybook
+├── core/           # Voice providers, vision providers, stores, tools, server
+├── ui/             # Web client — React 19 + Vite 6 + Tailwind v4
+└── desktop/        # Desktop client — Electron, spawns core, own React renderer
 docs/
-└── roadmap.md   # Full roadmap and architecture
+└── roadmap.md      # Full roadmap and architecture
 ```
 
 ## Command Reference
@@ -86,7 +88,7 @@ docs/
 | Command                           | Description                               |
 | --------------------------------- | ----------------------------------------- |
 | `npm run build`                   | Build all packages (turbo)                |
-| `npm run build -w @neura/shared`  | Build shared types                        |
+| `npm run build -w @neura/types`   | Build types                               |
 | `npm run build -w @neura/core`    | Build core (tsc + esbuild bundle)         |
 | `npm run build -w @neura/desktop` | Build desktop (renderer + main + preload) |
 
@@ -114,7 +116,7 @@ Release outputs are written to `packages/desktop/release/`.
 
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/) — enforced by commitlint + husky
 - All UI/visual decisions follow `DESIGN.md`
-- Each client platform owns its own UI — clients share only `@neura/shared`
+- Each client platform owns its own UI — clients share only `@neura/types`
 
 ## Roadmap
 

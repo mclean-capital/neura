@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { CostIndicator } from './CostIndicator.js';
-import type { CostUpdateMessage } from '@neura/shared';
+import type { CostUpdateMessage } from '@neura/types';
 
 const meta: Meta<typeof CostIndicator> = {
   title: 'Components/CostIndicator',

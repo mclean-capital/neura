@@ -11,7 +11,7 @@ files:
   - package.json
 
 extraResources:
-  # Core server — single esbuild bundle, no node_modules needed
+  # Core server — single esbuild bundle
   - from: ../core/dist/server.bundled.mjs
     to: core/server.bundled.mjs
   # Sourcemap for crash diagnostics — remove for smaller DMG if not needed
@@ -29,6 +29,9 @@ extraResources:
 asar: true
 asarUnpack:
   - '**/*.node'
+  - '**/better-sqlite3/**'
+  - '**/bindings/**'
+  - '**/file-uri-to-path/**'
 
 win:
   target:

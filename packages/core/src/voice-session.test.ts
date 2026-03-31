@@ -34,6 +34,7 @@ function makeMockCallbacks(): SessionCallbacks {
     onAudio: vi.fn(),
     onInputTranscript: vi.fn(),
     onOutputTranscript: vi.fn(),
+    onOutputTranscriptComplete: vi.fn(),
     onInterrupted: vi.fn(),
     onTurnComplete: vi.fn(),
     onToolCall: vi.fn(),
