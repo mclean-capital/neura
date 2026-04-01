@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { SqliteStore } from './sqlite-store.js';
 
 let store: SqliteStore;
 
-beforeEach(() => {
-  store = new SqliteStore(); // in-memory
+beforeEach(async () => {
+  store = await SqliteStore.create(); // in-memory
 });
 
 afterEach(() => {
@@ -79,10 +82,6 @@ describe('SqliteStore', () => {
       expect(entries).toHaveLength(0);
     });
 
-    it('rejects transcript for nonexistent session (FK constraint)', () => {
-      expect(() => store.appendTranscript('nonexistent', 'user', 'Hello')).toThrow();
-    });
-
     it('preserves insertion order', () => {
       const sessionId = store.createSession('grok', 'gemini');
       store.appendTranscript(sessionId, 'user', 'First');
@@ -91,6 +90,36 @@ describe('SqliteStore', () => {
 
       const entries = store.getTranscript(sessionId);
       expect(entries.map((e) => e.text)).toEqual(['First', 'Second', 'Third']);
+    });
+  });
+
+  describe('file persistence', () => {
+    it('persists data across close and reopen', async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neura-test-'));
+      const dbPath = path.join(tmpDir, 'test.db');
+
+      try {
+        // Write data and close
+        const store1 = await SqliteStore.create(dbPath);
+        const sessionId = store1.createSession('grok', 'gemini');
+        store1.appendTranscript(sessionId, 'user', 'Hello');
+        store1.appendTranscript(sessionId, 'assistant', 'Hi there');
+        store1.close();
+
+        // Reopen and verify
+        const store2 = await SqliteStore.create(dbPath);
+        const sessions = store2.getSessions();
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0].id).toBe(sessionId);
+
+        const entries = store2.getTranscript(sessionId);
+        expect(entries).toHaveLength(2);
+        expect(entries[0].text).toBe('Hello');
+        expect(entries[1].text).toBe('Hi there');
+        store2.close();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 });

@@ -151,12 +151,12 @@ app.on('ready', () => {
     // which can misdetect when running `electron dist-main/index.mjs`
     const isDev = process.env.NEURA_DESKTOP_DEV === 'true' || !app.isPackaged;
     let coreManager: ReturnType<typeof createCoreManager> | null = null;
+    let corePort = appStore.getPort();
     let uiServer: ReturnType<typeof createUIServer> | null = null;
-    let rendererUrl: string;
+    let rendererUrl = `http://127.0.0.1:${corePort}`;
 
     async function startCore(): Promise<void> {
       if (coreManager?.isRunning()) return;
-      const corePort = appStore.getPort();
       const apiKeys = appStore.getApiKeys();
       coreManager = createCoreManager({
         port: corePort,
@@ -174,6 +174,14 @@ app.on('ready', () => {
         },
       });
       await coreManager.start();
+      corePort = coreManager.getPort();
+    }
+
+    async function startUIServer(): Promise<void> {
+      if (uiServer) return;
+      uiServer = createUIServer({ corePort });
+      const uiPort = await uiServer.start();
+      rendererUrl = `http://127.0.0.1:${uiPort}`;
     }
 
     // IPC: renderer calls this after wizard completes to start core
@@ -181,6 +189,7 @@ app.on('ready', () => {
       if (isDev) return { success: true }; // dev.ts already manages core
       try {
         await startCore();
+        await startUIServer();
         return { success: true };
       } catch (err) {
         return {
@@ -208,9 +217,16 @@ app.on('ready', () => {
         }
       }
 
-      uiServer = createUIServer({ corePort: appStore.getPort() });
-      const uiPort = await uiServer.start();
-      rendererUrl = `http://127.0.0.1:${uiPort}`;
+      try {
+        await startUIServer();
+      } catch (err) {
+        void dialog.showMessageBox({
+          type: 'error',
+          title: 'Failed to Start',
+          message: `UI server failed to start: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          buttons: ['OK'],
+        });
+      }
     }
 
     const mainWindow = createMainWindow(rendererUrl);

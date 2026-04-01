@@ -17,6 +17,22 @@ extraResources:
   # Sourcemap for crash diagnostics — remove for smaller DMG if not needed
   - from: ../core/dist/server.bundled.mjs.map
     to: core/server.bundled.mjs.map
+  # Core package.json needed so stores/*.js files are parsed as ESM
+  - from: ../core/package.json
+    to: core/package.json
+  # Stores module — dynamically imported so sql.js WASM only loads when DB_PATH is set
+  - from: ../core/dist/stores
+    to: core/stores
+    filter:
+      - '**/*.js'
+      - '**/*.js.map'
+  # sql.js (WASM SQLite) needed by stores at runtime — zero native deps
+  - from: ../../node_modules/sql.js
+    to: core/node_modules/sql.js
+    filter:
+      - 'package.json'
+      - 'dist/sql-wasm.js'
+      - 'dist/sql-wasm.wasm'
   - from: dist-renderer
     to: renderer
     filter:
@@ -29,9 +45,6 @@ extraResources:
 asar: true
 asarUnpack:
   - '**/*.node'
-  - '**/better-sqlite3/**'
-  - '**/bindings/**'
-  - '**/file-uri-to-path/**'
 
 win:
   target:

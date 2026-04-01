@@ -1,8 +1,6 @@
-import { execSync } from 'child_process';
-import { fork, spawn, type ChildProcess } from 'child_process';
+import { execSync, fork, spawn, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import net from 'net';
 import { app } from 'electron';
 
 interface CoreManagerOptions {
@@ -25,41 +23,16 @@ function getCoreCwd(): string {
   return path.join(__dirname, '..', '..', 'core');
 }
 
-function waitForPort(port: number, timeoutMs = 15_000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = () => {
-      const socket = net.createConnection({ port, host: '127.0.0.1' });
-      socket.on('connect', () => {
-        socket.destroy();
-        resolve();
-      });
-      socket.on('error', () => {
-        socket.destroy();
-        if (Date.now() - start > timeoutMs) {
-          reject(new Error(`Core server did not start within ${timeoutMs}ms`));
-        } else {
-          setTimeout(check, 200);
-        }
-      });
-    };
-    check();
-  });
-}
-
 export function createCoreManager(opts: CoreManagerOptions) {
   let child: ChildProcess | null = null;
   let intentionalStop = false;
+  let actualPort = opts.port;
+  let portResolved = false;
 
   async function start(): Promise<void> {
     intentionalStop = false;
+    portResolved = false;
     const dbPath = path.join(app.getPath('userData'), 'neura.db');
-
-    // In packaged mode, native addons (better-sqlite3) are unpacked from asar
-    // and need to be on NODE_PATH for the forked core process to find them
-    const nodeModulesPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
-      : '';
 
     const env: Record<string, string> = {
       ...process.env,
@@ -68,7 +41,6 @@ export function createCoreManager(opts: CoreManagerOptions) {
       GOOGLE_API_KEY: opts.env.googleApiKey,
       DB_PATH: dbPath,
       NODE_ENV: app.isPackaged ? 'production' : 'development',
-      ...(nodeModulesPath ? { NODE_PATH: nodeModulesPath } : {}),
     };
 
     if (app.isPackaged) {
@@ -93,29 +65,63 @@ export function createCoreManager(opts: CoreManagerOptions) {
     const logStream = fs.createWriteStream(logPath, { flags: 'w' });
     logStream.write(`[${new Date().toISOString()}] Core starting on port ${opts.port}\n`);
 
-    child.stdout?.on('data', (data: Buffer) => {
-      const line = data.toString().trim();
-      console.log(`[core] ${line}`);
-      logStream.write(`[stdout] ${line}\n`);
+    // Line-buffered stdout parsing for structured port marker
+    let stdoutBuffer = '';
+    const portReady = new Promise<number>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Core server did not report port within 15s'));
+      }, 15_000);
+
+      child!.stdout?.on('data', (data: Buffer) => {
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() ?? '';
+
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line) continue;
+          console.log(`[core] ${line}`);
+          logStream.write(`[stdout] ${line}\n`);
+
+          const portMatch = /NEURA_PORT=(\d+)/.exec(line);
+          if (portMatch && !portResolved) {
+            actualPort = parseInt(portMatch[1], 10);
+            portResolved = true;
+            clearTimeout(timeout);
+            resolve(actualPort);
+          }
+        }
+      });
+
+      child!.once('exit', (code) => {
+        if (!portResolved) {
+          clearTimeout(timeout);
+          reject(new Error(`Core exited before starting (code ${String(code)})`));
+        }
+      });
     });
+
     child.stderr?.on('data', (data: Buffer) => {
       const line = data.toString().trim();
       console.error(`[core] ${line}`);
       logStream.write(`[stderr] ${line}\n`);
     });
+
     child.on('exit', (code) => {
       console.log(`[core] exited with code ${String(code)}`);
       logStream.write(`[${new Date().toISOString()}] Core exited with code ${String(code)}\n`);
       logStream.end();
-      const crashed = !intentionalStop && code !== 0 && code !== null;
+      // Only fire onCrash if port discovery already succeeded (otherwise the
+      // portReady rejection path handles the error)
+      const crashed = portResolved && !intentionalStop && code !== 0 && code !== null;
       child = null;
       if (crashed && opts.onCrash) {
         opts.onCrash(code);
       }
     });
 
-    await waitForPort(opts.port);
-    console.log(`[core] ready on port ${opts.port}`);
+    const port = await portReady;
+    console.log(`[core] ready on port ${port}`);
   }
 
   function stop(): Promise<void> {
@@ -168,5 +174,9 @@ export function createCoreManager(opts: CoreManagerOptions) {
     return child !== null;
   }
 
-  return { start, stop, stopSync, isRunning };
+  function getPort() {
+    return actualPort;
+  }
+
+  return { start, stop, stopSync, isRunning, getPort };
 }

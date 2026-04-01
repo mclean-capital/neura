@@ -8,7 +8,7 @@
 
 import { GoogleGenAI, Modality } from '@google/genai';
 import crypto from 'crypto';
-import { Logger } from '@neura/utils';
+import { Logger } from '@neura/utils/logger';
 import type { VisionProvider } from '@neura/types';
 
 export const GEMINI_VISION_RATE_PER_MS = 0.002 / 60_000; // ~$0.002/min per stream

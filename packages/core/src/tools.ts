@@ -1,5 +1,5 @@
 import type { ToolDefinition, VisionToolArgs } from '@neura/types';
-import { Logger } from '@neura/utils';
+import { Logger } from '@neura/utils/logger';
 
 const log = new Logger('tool');
 

@@ -14,7 +14,8 @@ await esbuild.build({
   banner: {
     js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
   },
-  // Externalize Node built-ins, native addons, and dev-only dynamic imports
-  external: ['node:*', ...builtinModules, 'better-sqlite3', 'pino-pretty'],
+  // Externalize Node built-ins, dev-only modules, and the stores module
+  // (dynamically imported so sql.js WASM only loads when DB_PATH is set)
+  external: ['node:*', ...builtinModules, 'pino-pretty', './stores/index.js'],
   logLevel: 'info',
 });

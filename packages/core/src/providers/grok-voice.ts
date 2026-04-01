@@ -6,7 +6,7 @@
  */
 
 import WebSocket from 'ws';
-import { Logger } from '@neura/utils';
+import { Logger } from '@neura/utils/logger';
 import type { VoiceProvider, VoiceProviderCallbacks } from '@neura/types';
 import { toolDefs, handleToolCall } from '../tools.js';
 
