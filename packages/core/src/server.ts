@@ -191,10 +191,13 @@ function attachWebSocket() {
 }
 
 function startServer(port: number, maxRetries = 10) {
-  server.listen(port, () => {
-    // Attach WebSocket server only after HTTP server is listening
+  // Remove stale listeners from previous retry — server.listen() registers
+  // a once('listening') handler each call, and they all fire when one succeeds
+  server.removeAllListeners('listening');
+  server.removeAllListeners('error');
+
+  server.once('listening', () => {
     attachWebSocket();
-    // Structured marker for core-manager to parse the actual port
     process.stdout.write(`NEURA_PORT=${port}\n`);
     log.info(`Neura core server at http://localhost:${port}`);
   });
@@ -208,12 +211,18 @@ function startServer(port: number, maxRetries = 10) {
       process.exit(1);
     }
   });
+
+  server.listen(port);
 }
 
 startServer(PORT);
 
 function shutdown() {
   log.info('shutting down');
+  // Force exit if graceful shutdown hangs (e.g. client doesn't disconnect)
+  const forceExit = setTimeout(() => process.exit(1), 5000);
+  forceExit.unref();
+
   // Close WSS first — triggers ws 'close' handlers which finalize sessions in store
   if (wss) {
     wss.close(() => {
