@@ -80,10 +80,8 @@ Requires Node.js >= 22. The `neura install` command downloads the core binary fr
 │   ├── neura-core.xml       # Windows: winsw config
 │   ├── com.neura.core.plist # macOS: launchd plist
 │   └── neura-core.service   # Linux: systemd unit
-└── memory/                  # Future: persistent agent memory
-    ├── MEMORY.md
-    ├── SOUL.md
-    └── ...
+└── pgdata/                  # PGlite data directory (WASM Postgres + pgvector)
+                             # Stores sessions, transcripts, memory, facts, preferences
 ```
 
 ---

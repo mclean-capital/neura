@@ -183,15 +183,11 @@ Download from neura.ai or GitHub releases. The desktop app connects to a running
 ├── ui/                      # Pre-built web UI (optional)
 │   ├── index.html
 │   └── assets/
-├── neura.db                 # SQLite persistence
+├── pgdata/                  # PGlite data directory (WASM Postgres + pgvector)
 ├── logs/
 │   ├── core.log
 │   └── core.error.log
-├── service/                 # Platform-specific service config
-└── memory/                  # Persistent agent memory (planned)
-    ├── MEMORY.md
-    ├── SOUL.md
-    └── ...
+└── service/                 # Platform-specific service config
 ```
 
 ---
@@ -325,35 +321,40 @@ Persistent memory that survives across sessions, restarts, and client reconnecti
 
 ### Memory architecture
 
-| Layer             | Storage                | What goes here                                                |
-| ----------------- | ---------------------- | ------------------------------------------------------------- |
-| **Identity**      | `SOUL.md`              | Personality, behavioral boundaries, tone                      |
-| **Long-term**     | `MEMORY.md`            | Durable facts, preferences, decisions — loaded every session  |
-| **Daily context** | `memory/YYYY-MM-DD.md` | Daily observations, learnings — today + yesterday auto-loaded |
-| **User profile**  | `USER.md`              | Operator role, goals, responsibilities                        |
-| **Sessions**      | SQLite                 | Session records, transcripts, cost data — structured queries  |
-| **Tasks/workers** | SQLite                 | Active tasks, worker state, schedules                         |
+| Layer             | Storage                    | What goes here                                                   |
+| ----------------- | -------------------------- | ---------------------------------------------------------------- |
+| **Identity**      | `identity` table           | Personality, behavioral boundaries, tone — learned from feedback |
+| **Long-term**     | `facts` table + pgvector   | Durable knowledge with vector embeddings — semantic recall       |
+| **Preferences**   | `preferences` table        | Behavioral corrections and confirmations — high-weight rules     |
+| **User profile**  | `user_profile` table       | Operator role, goals, expertise — learned from conversation      |
+| **Sessions**      | `sessions` + `transcripts` | Session records, transcripts, cost data — structured queries     |
+| **Summaries**     | `session_summaries` table  | Auto-generated end-of-session summaries for continuity           |
+| **Tasks/workers** | DB tables (planned)        | Active tasks, worker state, schedules                            |
 
 ### Memory flow
 
 ```
-Session starts → Load SOUL.md + MEMORY.md + today's daily notes
+Session starts → Load identity + user profile + preferences + recent facts + summaries
                     ↓
-              Inject into system prompt
+              Inject into system prompt (token-budgeted, priority-ordered)
                     ↓
               AI has full context: who it is, who you are,
-              what it's been working on, what happened today
+              what it's been working on, what happened recently
                     ↓
-Session ends → Auto-flush important context to daily notes
-              Agent saves key learnings to MEMORY.md
+Conversation ends → Extraction pipeline (Gemini 2.5 Flash)
+  (idle timeout)     extracts facts, preferences, profile updates
+                     generates embeddings (Gemini Embedding)
+                     stores everything in DB for next session
 ```
 
 ### Design principles
 
-- **Markdown for LLM-native context** — the AI reads markdown natively, users can inspect/edit with any text editor
-- **SQLite for structured data** — sessions, tasks, costs need querying, not prose
-- **Git-trackable** — memory directory can be version-controlled
-- **Inspectable** — no hidden state; everything is a file the user can read
+- **Voice-first** — users never edit files. Everything learned through conversation
+- **DB-first** — all memory in PGlite (local) or Postgres (cloud). Queryable, portable, vector-searchable
+- **Automatic** — AI manages its own memory via extraction pipeline and memory tools
+- **Portable** — same SQL dialect local and cloud. Migration is `pg_dump` / `pg_restore`
+
+See [Phase 3 architecture document](phase3-memory.md) for detailed design.
 
 ---
 
@@ -392,18 +393,17 @@ Trigger received
 
 ### Configuration
 
-Discovery loop behavior is configured via a `HEARTBEAT.md` checklist in `~/.neura/memory/`:
+Discovery loop behavior is configured via a heartbeat checklist stored in the DB (editable via CLI or voice):
 
-```markdown
-# Heartbeat — checked every 30 minutes
-
-- [ ] Check email for urgent items
-- [ ] Review calendar for upcoming meetings (15 min window)
-- [ ] Check monitored GitHub repos for new issues/PRs
-- [ ] Scan screen context for relevant changes (if connected)
+```
+Default heartbeat tasks (every 30 minutes):
+- Check email for urgent items
+- Review calendar for upcoming meetings (15 min window)
+- Check monitored GitHub repos for new issues/PRs
+- Scan screen context for relevant changes (if connected)
 ```
 
-Cost-optimized: heartbeat runs in an isolated session (~2-5K tokens) with only `HEARTBEAT.md` loaded, not full conversation history.
+Cost-optimized: heartbeat runs in an isolated session (~2-5K tokens) with only the checklist and minimal memory context loaded.
 
 ---
 
@@ -638,21 +638,24 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 ### Upcoming
 
-#### Phase 3 — Memory & Identity
+#### Phase 3 — Memory & Identity ([detailed architecture](phase3-memory.md))
 
-- [ ] `SOUL.md` — Agent personality, behavioral boundaries
-- [ ] `MEMORY.md` — Long-term durable facts, loaded every session
-- [ ] `USER.md` — Operator profile (role, goals, preferences)
-- [ ] `memory/YYYY-MM-DD.md` — Daily context notes, auto-loaded
-- [ ] Memory injection into voice provider system prompt
-- [ ] Auto-flush important context at session end
-- [ ] Memory search (hybrid vector + keyword)
+- [ ] Migrate sql.js → PGlite (WASM PostgreSQL 17 + pgvector)
+- [ ] DataStore async migration (all methods → Promise-based)
+- [ ] Auto-migrate existing `neura.db` SQLite data to PGlite
+- [ ] Memory schema: identity, user_profile, facts, preferences, session_summaries
+- [ ] Memory manager service layer (injection, extraction, recall)
+- [ ] System prompt construction with token budget management
+- [ ] Conversation boundary (idle timeout, not raw WS disconnect)
+- [ ] Extraction pipeline (Gemini 2.5 Flash, ~$0.002/session)
+- [ ] Vector embeddings (Gemini Embedding → pgvector `vector(768)`)
+- [ ] Memory tools: `remember_fact`, `recall_memory`, `update_preference`
 - [ ] Persistent conversation context across sessions
 
 #### Phase 4 — Discovery Loop
 
 - [ ] Heartbeat scheduler (configurable interval, default 30min)
-- [ ] `HEARTBEAT.md` checklist for proactive behavior
+- [ ] Heartbeat checklist (DB-stored, configurable via CLI or voice)
 - [ ] Timer-based triggers
 - [ ] Calendar integration (meeting prep, reminders)
 - [ ] Webhook triggers (GitHub, email, external APIs)
