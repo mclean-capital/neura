@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -7,20 +9,26 @@ import { Logger } from '@neura/utils/logger';
 import { createVoiceSession } from './voice-session.js';
 import { createVisionWatcher } from './vision-watcher.js';
 import { createCostTracker } from './cost-tracker.js';
+import { loadConfig } from './config.js';
 
 const log = new Logger('server');
+const config = loadConfig();
 
-const PORT = parseInt(process.env.PORT ?? '3002', 10);
+const PORT = config.port;
 const COST_UPDATE_INTERVAL_MS = 30_000;
 
-// Initialize data store if DB_PATH is set (optional — skip persistence if not configured)
+// Make API keys available to providers that read process.env directly
+if (config.xaiApiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = config.xaiApiKey;
+if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
+  process.env.GOOGLE_API_KEY = config.googleApiKey;
+
+// Initialize data store if DB path is available (optional — skip persistence if not configured)
 let store: DataStore | null = null;
-const dbPath = process.env.DB_PATH;
-if (dbPath) {
+if (config.dbPath) {
   try {
     const { SqliteStore } = await import('./stores/index.js');
-    store = await SqliteStore.create(dbPath);
-    log.info('database initialized', { path: dbPath });
+    store = await SqliteStore.create(config.dbPath);
+    log.info('database initialized', { path: config.dbPath });
   } catch (err) {
     log.warn('database unavailable, persistence disabled', { err: String(err) });
   }
@@ -29,6 +37,39 @@ if (dbPath) {
 const app = express();
 const server = createServer(app);
 let wss: WebSocketServer | null = null;
+let actualPort = PORT;
+
+app.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    port: actualPort,
+  });
+});
+
+// Serve web UI from ~/.neura/ui/ if it exists (optional static mount)
+const uiDir = join(config.neuraHome, 'ui');
+const uiAvailable = existsSync(join(uiDir, 'index.html'));
+if (uiAvailable) {
+  app.use(express.static(uiDir));
+  log.info('web UI mounted', { path: uiDir });
+}
+
+// IMPORTANT: This catch-all MUST be the last route registered.
+// Any GET route added after this will be shadowed.
+app.get('*', (_req, res) => {
+  if (uiAvailable) {
+    res.sendFile(join(uiDir, 'index.html'));
+  } else {
+    res.json({
+      name: 'Neura Core',
+      status: 'running',
+      ws: `ws://localhost:${actualPort}/ws`,
+      health: '/health',
+      ui: 'not installed — run `neura update` then `neura restart`',
+    });
+  }
+});
 
 function attachWebSocket() {
   wss = new WebSocketServer({ server, path: '/ws' });
@@ -197,6 +238,7 @@ function startServer(port: number, maxRetries = 10) {
   server.removeAllListeners('error');
 
   server.once('listening', () => {
+    actualPort = port;
     attachWebSocket();
     process.stdout.write(`NEURA_PORT=${port}\n`);
     log.info(`Neura core server at http://localhost:${port}`);

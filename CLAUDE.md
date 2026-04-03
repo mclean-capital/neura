@@ -11,6 +11,7 @@ packages/types          @neura/types          — protocol types, tool types, co
 packages/utils          @neura/utils          — shared runtime utilities (Logger, audio/frame constants)
 packages/design-system  @neura/design-system  — shared React components, hooks, CSS tokens, Storybook
 packages/core           @neura/core           — voice session, vision watcher, tools, server
+packages/cli            @neura/cli            — CLI for installing/managing core as OS service
 packages/ui             @neura/ui             — web client (React + Vite)
 packages/desktop        @neura/desktop        — desktop client (Electron + React), spawns core
 ```
@@ -23,6 +24,7 @@ npm run dev -w @neura/core           # core server → http://localhost:3002
 npm run dev -w @neura/ui             # UI dev server → http://localhost:5173
 npm run dev -w @neura/desktop        # Electron app (starts core + UI + Electron)
 npm run dev -w @neura/design-system  # Storybook → http://localhost:6006
+npm run dev -w @neura/cli            # CLI dev mode (via tsx)
 ```
 
 ## Tooling
@@ -50,6 +52,7 @@ npm run test -w @neura/core          # single package
 
 - **utils** — node env, tests for audio constants and Logger
 - **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), sqlite-store
+- **cli** — node env, tests for config, health, port, service detection, download, commands
 - **design-system** — jsdom env, hook tests (`useWebSocket`) and component tests (`StatusBadge`, `CostIndicator`)
 
 Test files live in `src/__tests__/` (design-system) or alongside source (`src/*.test.ts`). Component/hook tests use `@testing-library/react`.
@@ -90,6 +93,20 @@ cd packages/core
 # Set env vars: XAI_API_KEY, GOOGLE_API_KEY, optionally DB_PATH
 npm run dev             # http://localhost:3002
 ```
+
+### cli
+
+CLI tool for installing and managing Neura Core as a persistent OS background service.
+
+- `src/index.ts` — Commander.js entry point, 11 commands
+- `src/config.ts` — Load/save `~/.neura/config.json`
+- `src/health.ts` — HTTP health check client for `/health` endpoint
+- `src/port.ts` — Auto-assign free port in 18000-19000 range
+- `src/download.ts` — GitHub release asset downloader (placeholder until release pipeline)
+- `src/service/` — Platform-specific service managers (Windows, macOS, Linux)
+- `src/commands/` — install, uninstall, start, stop, restart, status, config, logs, open, update, version
+
+Config lives at `~/.neura/config.json`. Port priority: `PORT` env var > config.json > default (0 = not yet assigned). See `docs/cli-service-architecture.md` for full spec.
 
 ### ui
 

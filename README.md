@@ -56,13 +56,33 @@ packages/
 ├── utils/          # Shared runtime — Logger (pino), audio/frame constants
 ├── design-system/  # Shared React components, hooks, CSS tokens, Storybook
 ├── core/           # Voice providers, vision providers, stores, tools, server
+├── cli/            # CLI for installing/managing core as persistent OS service
 ├── ui/             # Web client — React 19 + Vite 6 + Tailwind v4
 └── desktop/        # Desktop client — Electron, spawns core, own React renderer
 docs/
-└── roadmap.md      # Full roadmap and architecture
+├── roadmap.md                  # Full roadmap and architecture
+└── cli-service-architecture.md # CLI & persistent core service spec
 ```
 
 ## Command Reference
+
+### Neura CLI (Service Management)
+
+| Command                        | Description                                |
+| ------------------------------ | ------------------------------------------ |
+| `neura install`                | Interactive setup wizard + service install |
+| `neura start`                  | Start the core service                     |
+| `neura stop`                   | Stop the core service                      |
+| `neura restart`                | Restart the core service                   |
+| `neura status`                 | Show service status, port, uptime, health  |
+| `neura config list`            | Show all configuration                     |
+| `neura config set <key> <val>` | Set a config value                         |
+| `neura logs`                   | Tail core service logs                     |
+| `neura open`                   | Open web UI in browser                     |
+| `neura update`                 | Download latest core binary                |
+| `neura uninstall`              | Remove service and optionally clean data   |
+
+See [docs/cli-service-architecture.md](docs/cli-service-architecture.md) for the full CLI spec.
 
 ### Development
 
