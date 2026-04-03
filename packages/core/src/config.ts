@@ -8,7 +8,7 @@ export interface ResolvedCoreConfig {
   xaiApiKey: string;
   googleApiKey: string;
   voice: string;
-  dbPath: string | undefined;
+  pgDataPath: string | undefined;
   neuraHome: string;
 }
 
@@ -38,14 +38,15 @@ export function loadConfig(): ResolvedCoreConfig {
     }
   }
 
-  const dbPathDefault = existsSync(neuraHome) ? join(neuraHome, 'neura.db') : undefined;
+  const pgDataPathDefault = existsSync(neuraHome) ? join(neuraHome, 'pgdata') : undefined;
 
   return {
     port: tryParseInt(process.env.PORT) ?? file.port ?? 3002,
     xaiApiKey: process.env.XAI_API_KEY ?? file.apiKeys?.xai ?? '',
     googleApiKey: process.env.GOOGLE_API_KEY ?? file.apiKeys?.google ?? '',
     voice: process.env.NEURA_VOICE ?? file.voice ?? 'eve',
-    dbPath: process.env.DB_PATH ?? file.dbPath ?? dbPathDefault,
+    pgDataPath:
+      process.env.PG_DATA_PATH ?? process.env.DB_PATH ?? file.pgDataPath ?? pgDataPathDefault,
     neuraHome,
   };
 }

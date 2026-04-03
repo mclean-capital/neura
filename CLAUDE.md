@@ -51,7 +51,7 @@ npm run test -w @neura/core          # single package
 ```
 
 - **utils** — node env, tests for audio constants and Logger
-- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), sqlite-store
+- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), pglite-store
 - **cli** — node env, tests for config, health, port, service detection, download, commands
 - **design-system** — jsdom env, hook tests (`useWebSocket`) and component tests (`StatusBadge`, `CostIndicator`)
 
@@ -66,7 +66,8 @@ Pure types package — zero runtime dependencies. Defines the WebSocket protocol
 - `protocol.ts` — `ClientMessage` / `ServerMessage` discriminated unions
 - `tools.ts` — `ToolDefinition`, `ToolCallResult`, `VisionToolArgs`
 - `config.ts` — `CoreConfig`, `UIConfig` interfaces
-- `providers.ts` — `VoiceProvider`, `VisionProvider`, `DataStore`, `ProviderPricing`, `SessionRecord`, `TranscriptEntry`
+- `providers.ts` — `VoiceProvider`, `VisionProvider`, `DataStore` (session + memory methods), `ProviderPricing`, `SessionRecord`, `TranscriptEntry`
+- `memory.ts` — Memory types: `IdentityEntry`, `UserProfileEntry`, `FactEntry`, `PreferenceEntry`, `SessionSummaryEntry`, `MemoryContext`, `ExtractionResult`
 
 ### utils
 
@@ -79,18 +80,18 @@ Shared runtime utilities used by core and clients.
 
 Standalone server with provider adapter layer and pluggable storage.
 
-- `server.ts` — Express + WebSocket, typed message routing, optional SQLite persistence
+- `server.ts` — Express + WebSocket, typed message routing, optional PGlite persistence
 - `voice-session.ts` — Factory wrapper, delegates to active voice provider
 - `vision-watcher.ts` — Factory wrapper, delegates to active vision provider
 - `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect
 - `providers/gemini-vision.ts` — Gemini Live vision provider, one session per source (camera/screen independent)
-- `stores/sqlite-store.ts` — `SqliteStore` implementing `DataStore` (sessions + transcripts)
+- `stores/pglite-store.ts` — `PgliteStore` implementing `DataStore` (WASM PostgreSQL 17 + pgvector: sessions, transcripts, memory tables)
 - `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`
 - `cost-tracker.ts` — Per-source cost estimator, accepts `ProviderPricing`
 
 ```bash
 cd packages/core
-# Set env vars: XAI_API_KEY, GOOGLE_API_KEY, optionally DB_PATH
+# Set env vars: XAI_API_KEY, GOOGLE_API_KEY, optionally PG_DATA_PATH
 npm run dev             # http://localhost:3002
 ```
 

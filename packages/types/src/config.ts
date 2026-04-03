@@ -32,5 +32,5 @@ export interface NeuraConfigFile {
     autoStart: boolean;
     logLevel: string;
   };
-  dbPath?: string;
+  pgDataPath?: string;
 }

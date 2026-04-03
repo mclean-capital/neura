@@ -1,1 +1,1 @@
-export { SqliteStore } from './sqlite-store.js';
+export { PgliteStore } from './pglite-store.js';

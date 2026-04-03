@@ -19,7 +19,7 @@ Phase 2a (alpha) and Phase 2b (MVP) are complete. The platform is a fully functi
 - **Web UI** — React 19 + Vite 6 + Tailwind v4, connects to core via WebSocket
 - **Design system** — 11 shared React components, 6 hooks, Storybook, industrial precision aesthetic
 - **Provider adapter layer** — Pluggable voice/vision providers behind typed interfaces
-- **SQLite persistence** — Sessions, transcripts, cost tracking
+- **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
 
 ### Architecture (validated)
@@ -100,7 +100,7 @@ docs/
 │  ├── Grok WS (voice)           GET /health           │
 │  ├── Gemini WS (watcher)       GET / (web UI)        │
 │  ├── Tools (describe_camera, describe_screen, time)  │
-│  ├── Cost tracker              SQLite persistence    │
+│  ├── Cost tracker              PGlite persistence    │
 │  └── Future: discovery loop, workers, skills         │
 └──────────────────────┬──────────────────────────────┘
                        │ any client connects
@@ -131,8 +131,8 @@ The same packages deploy in different configurations. No code changes, just wher
 
 | Mode                | Core runs                                 | UI connects to            | Workers run       | State layer |
 | ------------------- | ----------------------------------------- | ------------------------- | ----------------- | ----------- |
-| **Local (CLI)**     | OS service on user's machine              | `localhost:{port}`        | Local processes   | SQLite      |
-| **Local (Desktop)** | Spawned by Electron (planned: OS service) | `localhost:{port}`        | Local processes   | SQLite      |
+| **Local (CLI)**     | OS service on user's machine              | `localhost:{port}`        | Local processes   | PGlite      |
+| **Local (Desktop)** | Spawned by Electron (planned: OS service) | `localhost:{port}`        | Local processes   | PGlite      |
 | **Cloud**           | Cloud server (Docker)                     | `wss://neura.example.com` | Cloud containers  | Postgres    |
 | **Hybrid**          | Cloud server                              | Local relay → cloud       | Cloud containers  | Postgres    |
 | **Self-hosted**     | Docker on user's server                   | User's domain             | Docker containers | Postgres    |
@@ -612,7 +612,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Source-aware vision: tag frames with metadata (camera / screen)
 - [x] Grok session recovery (reconnect, transcript seeding, 28-min proactive reconnect)
 - [x] Watcher query queue (ID-based queue, sequential processing)
-- [x] State layer (SQLite — session history, transcripts)
+- [x] State layer (PGlite — session history, transcripts, memory)
 - [x] Structured logging (pino-based Logger in `@neura/utils`)
 - [x] Session cost indicator in UI
 - [x] Camera/screen/mic as independent opt-in toggles
@@ -640,10 +640,9 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 #### Phase 3 — Memory & Identity ([detailed architecture](phase3-memory.md))
 
-- [ ] Migrate sql.js → PGlite (WASM PostgreSQL 17 + pgvector)
-- [ ] DataStore async migration (all methods → Promise-based)
-- [ ] Auto-migrate existing `neura.db` SQLite data to PGlite
-- [ ] Memory schema: identity, user_profile, facts, preferences, session_summaries
+- [x] PGlite (WASM PostgreSQL 17 + pgvector) replaces sql.js
+- [x] DataStore async migration (all methods → Promise-based)
+- [x] Memory schema: identity, user_profile, facts, preferences, session_summaries, memory_extractions
 - [ ] Memory manager service layer (injection, extraction, recall)
 - [ ] System prompt construction with token budget management
 - [ ] Conversation boundary (idle timeout, not raw WS disconnect)
@@ -735,7 +734,7 @@ Neura is a standard, not a silo. Every layer is swappable:
 Voice:    Grok (default) | OpenAI Realtime | ElevenLabs | local
 Vision:   Gemini (default) | Claude | GPT-4V | local
 Workers:  Built-in | MCP servers | Docker containers | HTTP webhooks
-Storage:  SQLite (local) | Postgres (cloud) | Turso (edge)
+Storage:  PGlite (local) | Postgres (cloud) | Turso (edge)
 ```
 
 All user data is exportable. Users bring their own API keys in local mode. Even on the hosted platform, they can export everything and self-host at any time.

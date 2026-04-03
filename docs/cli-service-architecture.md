@@ -72,7 +72,7 @@ Requires Node.js >= 22. The `neura install` command downloads the core binary fr
 │   └── assets/
 ├── bin/
 │   └── neura(.exe)          # CLI binary (shell script install only)
-├── neura.db                 # SQLite persistence
+├── pgdata/                  # PGlite data directory (WASM Postgres + pgvector)
 ├── logs/
 │   ├── core.log             # Core stdout (rolling)
 │   └── core.error.log       # Core stderr
@@ -207,7 +207,7 @@ export function loadConfig() {
       google: process.env.GOOGLE_API_KEY ?? file.apiKeys?.google ?? '',
     },
     voice: process.env.NEURA_VOICE ?? file.voice ?? 'eve',
-    dbPath: process.env.DB_PATH ?? file.dbPath ?? join(neuraHome, 'neura.db'),
+    pgDataPath: process.env.PG_DATA_PATH ?? file.pgDataPath ?? join(neuraHome, 'pgdata'),
     neuraHome,
   };
 }
@@ -562,7 +562,7 @@ services:
     environment:
       - XAI_API_KEY=${XAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - DB_PATH=/data/neura.db
+      - PG_DATA_PATH=/data/pgdata
       - NEURA_HOME=/data
 
 volumes:

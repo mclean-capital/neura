@@ -1,3 +1,13 @@
+import type {
+  IdentityEntry,
+  UserProfileEntry,
+  FactEntry,
+  PreferenceEntry,
+  SessionSummaryEntry,
+  MemoryExtractionRecord,
+  MemoryContext,
+} from './memory.js';
+
 /** Voice provider interface — any voice backend must implement this. */
 export interface VoiceProvider {
   connect(): void;
@@ -38,14 +48,78 @@ export interface ProviderPricing {
   visionRatePerMs: number;
 }
 
-/** Abstract data store interface for session persistence. */
+/** Abstract data store interface for session persistence and memory. */
 export interface DataStore {
-  createSession(voiceProvider: string, visionProvider: string): string;
-  endSession(sessionId: string, costUsd: number): void;
-  appendTranscript(sessionId: string, role: 'user' | 'assistant', text: string): void;
-  getSessions(limit?: number): SessionRecord[];
-  getTranscript(sessionId: string): TranscriptEntry[];
-  close(): void;
+  // Session management
+  createSession(voiceProvider: string, visionProvider: string): Promise<string>;
+  endSession(sessionId: string, costUsd: number): Promise<void>;
+  appendTranscript(sessionId: string, role: 'user' | 'assistant', text: string): Promise<void>;
+  getSessions(limit?: number): Promise<SessionRecord[]>;
+  getTranscript(sessionId: string): Promise<TranscriptEntry[]>;
+
+  // Identity
+  getIdentity(): Promise<IdentityEntry[]>;
+  upsertIdentity(
+    attribute: string,
+    value: string,
+    source: 'default' | 'user_feedback',
+    sourceSessionId?: string
+  ): Promise<void>;
+
+  // User profile
+  getUserProfile(): Promise<UserProfileEntry[]>;
+  upsertUserProfile(
+    field: string,
+    value: string,
+    confidence: number,
+    sourceSessionId?: string
+  ): Promise<void>;
+
+  // Facts
+  getFacts(options?: {
+    category?: string;
+    limit?: number;
+    minConfidence?: number;
+  }): Promise<FactEntry[]>;
+  searchFacts(query: string, embedding?: number[], limit?: number): Promise<FactEntry[]>;
+  upsertFact(
+    content: string,
+    category: string,
+    tags: string[],
+    sourceSessionId?: string,
+    confidence?: number,
+    embedding?: number[]
+  ): Promise<string>;
+  touchFact(id: string): Promise<void>;
+  deleteFact(id: string): Promise<void>;
+
+  // Preferences
+  getPreferences(options?: { category?: string; minStrength?: number }): Promise<PreferenceEntry[]>;
+  upsertPreference(preference: string, category: string, sourceSessionId?: string): Promise<void>;
+  reinforcePreference(id: string): Promise<void>;
+
+  // Session summaries
+  getSessionSummary(sessionId: string): Promise<SessionSummaryEntry | null>;
+  getRecentSummaries(limit?: number): Promise<SessionSummaryEntry[]>;
+  createSessionSummary(
+    sessionId: string,
+    summary: Omit<SessionSummaryEntry, 'id' | 'sessionId' | 'createdAt'>
+  ): Promise<void>;
+
+  // Extraction tracking
+  createExtraction(sessionId: string): Promise<string>;
+  updateExtraction(
+    id: string,
+    status: 'pending' | 'processing' | 'completed' | 'failed',
+    memoriesCreated?: number,
+    error?: string
+  ): Promise<void>;
+  getPendingExtractions(): Promise<MemoryExtractionRecord[]>;
+
+  // Composite context for system prompt injection
+  getMemoryContext(options?: { maxTokens?: number }): Promise<MemoryContext>;
+
+  close(): Promise<void>;
 }
 
 export interface SessionRecord {

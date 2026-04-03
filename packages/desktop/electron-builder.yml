@@ -20,19 +20,18 @@ extraResources:
   # Core package.json needed so stores/*.js files are parsed as ESM
   - from: ../core/package.json
     to: core/package.json
-  # Stores module — dynamically imported so sql.js WASM only loads when DB_PATH is set
+  # Stores module — dynamically imported so PGlite WASM only loads when PG_DATA_PATH is set
   - from: ../core/dist/stores
     to: core/stores
     filter:
       - '**/*.js'
       - '**/*.js.map'
-  # sql.js (WASM SQLite) needed by stores at runtime — zero native deps
-  - from: ../../node_modules/sql.js
-    to: core/node_modules/sql.js
+  # PGlite (WASM PostgreSQL 17 + pgvector) needed by stores at runtime
+  - from: ../../node_modules/@electric-sql/pglite
+    to: core/node_modules/@electric-sql/pglite
     filter:
       - 'package.json'
-      - 'dist/sql-wasm.js'
-      - 'dist/sql-wasm.wasm'
+      - 'dist/**/*'
   - from: dist-renderer
     to: renderer
     filter:

@@ -81,7 +81,7 @@ describe('loadConfig', () => {
         voice: 'custom',
         apiKeys: { xai: 'xai-key-123', google: 'goog-key-456' },
         service: { autoStart: false, logLevel: 'debug' },
-        dbPath: '/data/neura.db',
+        pgDataPath: '/data/pgdata',
       })
     );
 
@@ -93,7 +93,7 @@ describe('loadConfig', () => {
     expect(config.apiKeys.google).toBe('goog-key-456');
     expect(config.service.autoStart).toBe(false);
     expect(config.service.logLevel).toBe('debug');
-    expect(config.dbPath).toBe('/data/neura.db');
+    expect(config.pgDataPath).toBe('/data/pgdata');
   });
 
   it('fills missing fields with defaults', () => {

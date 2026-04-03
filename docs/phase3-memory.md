@@ -14,12 +14,12 @@ Four principles govern the memory system:
 
 ---
 
-## Database Migration: sql.js → PGlite
+## Database: PGlite
 
-Phase 2 uses sql.js (WASM SQLite). Phase 3 migrates to PGlite (WASM PostgreSQL 17) for:
+PGlite (WASM PostgreSQL 17) is the persistence layer. Key advantages:
 
 - **pgvector** — Native vector similarity search for memory recall
-- **Automatic persistence** — WAL-based, crash-safe. Eliminates manual save/export/atomic-rename
+- **Automatic persistence** — WAL-based, crash-safe. No manual save needed
 - **One SQL dialect** — Same queries run locally (PGlite) and in cloud (Postgres)
 - **Richer SQL** — JSONB, window functions, CTEs, `tsvector` full-text search
 - **Streamlined cloud migration** — Same SQL dialect. Moving local → cloud requires data export/import (via `pg_dump` / CLI) plus connection config change, but zero query translation
@@ -46,7 +46,7 @@ const results = await db.query('SELECT content FROM facts ORDER BY embedding <=>
 await db.close();
 ```
 
-- Bundle size: ~3.7 MB gzipped (vs ~1.2 MB for sql.js)
+- Bundle size: ~3.7 MB gzipped
 - Persistence: automatic WAL (data directory at the specified path)
 - API: fully async (natural for Node.js)
 - Extensions: pgvector ships built-in (46 KB)
@@ -57,7 +57,7 @@ await db.close();
 
 Existing tables (`sessions`, `transcripts`) migrate to Postgres syntax. Six new tables for the memory system.
 
-### Existing tables (migrated from SQLite)
+### Session tables
 
 ```sql
 CREATE TABLE IF NOT EXISTS sessions (
@@ -589,23 +589,9 @@ Facts with `expires_at` trigger proactive reminders:
 
 ---
 
-## Migration: Existing neura.db Installs
-
-Users running Phase 2 have a SQLite `neura.db` with session and transcript data. Migration path:
-
-1. On first startup after the Phase 3 upgrade, core detects whether `DB_PATH` points to a SQLite file (by checking the file header magic bytes: `SQLite format 3`).
-2. If SQLite is detected, core reads all `sessions` and `transcripts` rows using sql.js (kept as an optional dependency for migration only).
-3. Core inserts the data into the new PGlite database.
-4. The old `neura.db` is renamed to `neura.db.migrated` (preserved, not deleted).
-5. Subsequent startups skip migration (PGlite data directory already exists).
-
-This is a one-time, automatic, non-destructive migration. No user action required.
-
----
-
 ## Packaging & Distribution
 
-PGlite is WASM — no native compilation, no ABI issues (unlike the better-sqlite3 problems in Phase 2). Validation required across all distribution paths:
+PGlite is WASM — no native compilation, no ABI issues. Validation required across all distribution paths:
 
 ### Distribution matrix
 
@@ -620,7 +606,7 @@ PGlite is WASM — no native compilation, no ABI issues (unlike the better-sqlit
 
 PGlite uses a WASM binary (`pglite.wasm`) that must be available at runtime. Options:
 
-1. **Externalize PGlite from esbuild** (like we did with sql.js stores) — copy the package to `extraResources`. Simplest, most reliable.
+1. **Externalize PGlite from esbuild** (like the stores module externalization) — copy the package to `extraResources`. Simplest, most reliable.
 2. **Bundle inline** — esbuild can handle WASM with the right loader config, but PGlite's dynamic WASM loading may need special handling.
 
 Recommended: Option 1 (externalize), same pattern as the current `./stores/index.js` externalization. The stores module and PGlite package are copied to `extraResources/core/` alongside the bundle.
@@ -647,43 +633,31 @@ extraResources:
 
 ## Implementation Sequence
 
-### Step 1: DataStore async migration
+### Step 1: DataStore async + PGlite + memory schema ✅
 
-Make the existing `DataStore` interface fully async (all methods return `Promise`). Update `SqliteStore`, `server.ts`, and all call sites to use `await`. This is a cross-package refactor (types, core, tests) but changes zero behavior — pure mechanical migration.
+Make DataStore fully async. Replace sql.js with PGlite (WASM PostgreSQL 17 + pgvector). Create `PgliteStore` with session, transcript, and all 6 memory tables. Create `memory.ts` types. Extend DataStore with memory methods. Add tests.
 
-### Step 2: PGlite backend swap
-
-Replace `sql.js` with `@electric-sql/pglite`. Create `PgliteStore` implementing the async `DataStore` interface. Migrate `sessions` and `transcripts` tables to Postgres syntax. Add auto-migration from existing `neura.db`. Update esbuild externals, electron-builder extraResources, and packaging. Validate across all distribution paths.
-
-### Step 3: Memory types
-
-Create `packages/types/src/memory.ts` with all memory interfaces. Export from index. Extend `DataStore` interface with memory methods.
-
-### Step 4: Memory schema + store methods
-
-Add the 6 new memory tables to `PgliteStore` migration. Implement all memory `DataStore` methods. Add tests.
-
-### Step 5: Memory prompt builder
+### Step 2: Memory prompt builder
 
 Create `packages/core/src/memory-prompt-builder.ts`. Implement `buildMemoryPrompt()` with token budget management. Add tests.
 
-### Step 6: Memory manager + conversation boundary
+### Step 3: Memory manager + conversation boundary
 
 Create `packages/core/src/memory-manager.ts`. Implement idle timeout conversation boundary. Wire `buildSystemPrompt()`, `storeFact()`, `recall()`, `storePreference()`, `queueExtraction()`. Add tests.
 
-### Step 7: Extraction pipeline
+### Step 4: Extraction pipeline
 
 Create `packages/core/src/memory-extractor.ts`. Implement Gemini 2.5 Flash extraction + Gemini Embedding generation. Add tests.
 
-### Step 8: Voice integration
+### Step 5: Voice integration
 
 Add `systemPromptPrefix` to `GrokVoiceConfig`. Modify `buildInstructions()`. Wire memory manager into `server.ts` session lifecycle with conversation boundary.
 
-### Step 9: Memory tools
+### Step 6: Memory tools
 
 Add `remember_fact`, `recall_memory`, `update_preference` to tools. Wire `memoryManager` through `handleToolCall`. Add tests.
 
-### Step 10: Docs + roadmap
+### Step 7: Docs + roadmap
 
 Update CLAUDE.md, roadmap, and README to reflect the memory system. Remove all references to markdown-based memory (SOUL.md, MEMORY.md, USER.md).
 
@@ -694,9 +668,8 @@ Update CLAUDE.md, roadmap, and README to reflect the memory system. Remove all r
 ### New files
 
 ```
-packages/types/src/memory.ts                 — Memory type definitions
-packages/core/src/stores/pglite-store.ts     — PGlite DataStore implementation
-packages/core/src/stores/migrate-sqlite.ts   — One-time SQLite → PGlite data migration
+packages/types/src/memory.ts                 — Memory type definitions (done)
+packages/core/src/stores/pglite-store.ts     — PGlite DataStore implementation (done)
 packages/core/src/memory-manager.ts          — MemoryManager service layer
 packages/core/src/memory-extractor.ts        — Extraction pipeline (Gemini Flash + Embedding)
 packages/core/src/memory-prompt-builder.ts   — System prompt construction from memory
@@ -705,24 +678,26 @@ packages/core/src/memory-prompt-builder.ts   — System prompt construction from
 ### Modified files
 
 ```
-packages/types/src/providers.ts              — DataStore methods → async, add memory methods
-packages/types/src/config.ts                 — Add extraction config fields
-packages/types/src/index.ts                  — Export memory types
-packages/core/package.json                   — Replace sql.js with @electric-sql/pglite (keep sql.js as optional for migration)
-packages/core/src/stores/index.ts            — Export PgliteStore instead of SqliteStore
-packages/core/src/config.ts                  — Load extraction config, PGlite data path
-packages/core/src/server.ts                  — Async store calls, memory manager lifecycle, conversation idle timeout
+packages/types/src/providers.ts              — DataStore methods → async, add memory methods (done)
+packages/types/src/config.ts                 — pgDataPath replaces dbPath (done)
+packages/types/src/index.ts                  — Export memory types (done)
+packages/core/package.json                   — Replace sql.js with @electric-sql/pglite (done)
+packages/core/src/stores/index.ts            — Export PgliteStore (done)
+packages/core/src/config.ts                  — PG_DATA_PATH, pgDataPath (done)
+packages/core/src/server.ts                  — Async store calls (done), memory manager lifecycle, conversation idle timeout
 packages/core/src/voice-session.ts           — Pass systemPromptPrefix through
 packages/core/src/providers/grok-voice.ts    — Accept systemPromptPrefix, modify buildInstructions()
 packages/core/src/tools.ts                   — Add memory tools
-packages/core/scripts/bundle.ts              — Update externals for PGlite
-packages/desktop/electron-builder.yml        — Update extraResources for PGlite
-docs/roadmap.md                              — Phase 3 updated to DB-first approach
+packages/core/scripts/bundle.ts              — Updated externals comment (done)
+packages/desktop/electron-builder.yml        — Updated extraResources for PGlite (done)
+packages/desktop/src/main/core-manager.ts    — PG_DATA_PATH env var (done)
+packages/cli/src/config.ts                   — pgDataPath replaces dbPath (done)
+docs/roadmap.md                              — Updated to PGlite, marked completed items (done)
 ```
 
 ### Removed files
 
 ```
-packages/core/src/stores/sqlite-store.ts     — Replaced by pglite-store.ts
-packages/core/src/stores/sqlite-store.test.ts — Replaced by pglite-store.test.ts
+packages/core/src/stores/sqlite-store.ts     — Replaced by pglite-store.ts (done)
+packages/core/src/stores/sqlite-store.test.ts — Replaced by pglite-store.test.ts (done)
 ```

@@ -14,17 +14,16 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.4.3",
     "@google/genai": "^1",
     "@neura/types": "*",
     "@neura/utils": "*",
     "dotenv": "^16",
     "express": "^4",
-    "sql.js": "^1.14.1",
     "ws": "^8"
   },
   "devDependencies": {
     "@types/express": "^5",
-    "@types/sql.js": "^1.4.11",
     "@types/ws": "^8",
     "esbuild": "^0.25.12",
     "tsx": "^4"

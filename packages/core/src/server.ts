@@ -24,11 +24,11 @@ if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
 
 // Initialize data store if DB path is available (optional — skip persistence if not configured)
 let store: DataStore | null = null;
-if (config.dbPath) {
+if (config.pgDataPath) {
   try {
-    const { SqliteStore } = await import('./stores/index.js');
-    store = await SqliteStore.create(config.dbPath);
-    log.info('database initialized', { path: config.dbPath });
+    const { PgliteStore } = await import('./stores/index.js');
+    store = await PgliteStore.create(config.pgDataPath);
+    log.info('database initialized', { path: config.pgDataPath });
   } catch (err) {
     log.warn('database unavailable, persistence disabled', { err: String(err) });
   }
@@ -71,13 +71,30 @@ app.get('*', (_req, res) => {
   }
 });
 
+// Track in-flight session finalization promises so shutdown can await them
+const pendingCleanups = new Set<Promise<void>>();
+
 function attachWebSocket() {
   wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', (ws: WebSocket) => {
     log.info('client connected');
 
-    const sessionId = store?.createSession('grok', 'gemini') ?? null;
+    // Create DB session in the background — handlers are registered synchronously
+    // so no messages or close events are missed while the insert runs.
+    const sessionIdPromise: Promise<string | null> = store
+      ? store.createSession('grok', 'gemini').catch((err) => {
+          log.warn('session creation failed', { err: String(err) });
+          return null;
+        })
+      : Promise.resolve(null);
+
+    // Track in-flight store writes so the close handler can drain them
+    const pendingWrites = new Set<Promise<void>>();
+    function trackWrite(p: Promise<void>) {
+      pendingWrites.add(p);
+      void p.finally(() => pendingWrites.delete(p));
+    }
 
     // One watcher per source — created on demand, destroyed on stop
     let cameraWatcher: ReturnType<typeof createVisionWatcher> | null = null;
@@ -123,13 +140,33 @@ function attachWebSocket() {
       },
       onInputTranscript(text) {
         send({ type: 'inputTranscript', text });
-        if (sessionId && store) store.appendTranscript(sessionId, 'user', text);
+        if (store) {
+          trackWrite(
+            sessionIdPromise
+              .then(async (sid) => {
+                if (sid) await store.appendTranscript(sid, 'user', text);
+              })
+              .catch((err) => {
+                log.warn('transcript write failed', { err: String(err) });
+              })
+          );
+        }
       },
       onOutputTranscript(text) {
         send({ type: 'outputTranscript', text });
       },
       onOutputTranscriptComplete(text) {
-        if (sessionId && store) store.appendTranscript(sessionId, 'assistant', text);
+        if (store) {
+          trackWrite(
+            sessionIdPromise
+              .then(async (sid) => {
+                if (sid) await store.appendTranscript(sid, 'assistant', text);
+              })
+              .catch((err) => {
+                log.warn('transcript write failed', { err: String(err) });
+              })
+          );
+        }
       },
       onInterrupted() {
         send({ type: 'interrupted' });
@@ -215,11 +252,19 @@ function attachWebSocket() {
       log.info('client disconnected');
       costTracker.stopInterval();
 
-      // Finalize session in store
-      if (sessionId && store) {
-        const cost = costTracker.getUpdate().estimatedCostUsd;
-        store.endSession(sessionId, cost);
-      }
+      const cleanup = (async () => {
+        // Drain in-flight transcript writes before finalizing
+        await Promise.allSettled([...pendingWrites]);
+        // Finalize session in store
+        const sessionId = await sessionIdPromise;
+        if (sessionId && store) {
+          const cost = costTracker.getUpdate().estimatedCostUsd;
+          await store.endSession(sessionId, cost);
+        }
+      })();
+
+      pendingCleanups.add(cleanup);
+      void cleanup.finally(() => pendingCleanups.delete(cleanup));
 
       session.close();
       cameraWatcher?.close();
@@ -259,23 +304,27 @@ function startServer(port: number, maxRetries = 10) {
 
 startServer(PORT);
 
-function shutdown() {
+async function shutdown() {
   log.info('shutting down');
   // Force exit if graceful shutdown hangs (e.g. client doesn't disconnect)
   const forceExit = setTimeout(() => process.exit(1), 5000);
   forceExit.unref();
 
-  // Close WSS first — triggers ws 'close' handlers which finalize sessions in store
+  // Close WSS first — triggers ws 'close' handlers which finalize sessions in store.
+  // Then await all in-flight session cleanups before closing the store.
   if (wss) {
     wss.close(() => {
-      store?.close();
-      server.close(() => process.exit(0));
+      void (async () => {
+        await Promise.allSettled([...pendingCleanups]);
+        await store?.close();
+        server.close(() => process.exit(0));
+      })();
     });
   } else {
-    store?.close();
+    await store?.close();
     server.close(() => process.exit(0));
   }
 }
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', () => void shutdown());
+process.on('SIGINT', () => void shutdown());

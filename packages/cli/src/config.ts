@@ -27,7 +27,7 @@ export function ensureNeuraHome(): void {
     join(home, 'core'),
     join(home, 'logs'),
     join(home, 'service'),
-    join(home, 'memory'),
+    join(home, 'pgdata'),
   ]) {
     mkdirSync(dir, { recursive: true });
   }
@@ -50,7 +50,7 @@ export function loadConfig(): NeuraConfigFile {
         autoStart: raw.service?.autoStart ?? true,
         logLevel: raw.service?.logLevel ?? 'info',
       },
-      dbPath: raw.dbPath,
+      pgDataPath: raw.pgDataPath,
     };
   } catch {
     return { ...DEFAULT_CONFIG };

@@ -32,14 +32,14 @@ export function createCoreManager(opts: CoreManagerOptions) {
   async function start(): Promise<void> {
     intentionalStop = false;
     portResolved = false;
-    const dbPath = path.join(app.getPath('userData'), 'neura.db');
+    const pgDataPath = path.join(app.getPath('userData'), 'pgdata');
 
     const env: Record<string, string> = {
       ...process.env,
       PORT: String(opts.port),
       XAI_API_KEY: opts.env.xaiApiKey,
       GOOGLE_API_KEY: opts.env.googleApiKey,
-      DB_PATH: dbPath,
+      PG_DATA_PATH: pgDataPath,
       NODE_ENV: app.isPackaged ? 'production' : 'development',
     };
 
