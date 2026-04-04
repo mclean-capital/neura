@@ -8,7 +8,7 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 
 ## Current State
 
-Phase 2a (alpha) and Phase 2b (MVP) are complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, and 98+ unit tests.
+Phase 3 (Memory & Identity) is complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, and 100+ unit tests.
 
 ### What's built
 
@@ -20,6 +20,7 @@ Phase 2a (alpha) and Phase 2b (MVP) are complete. The platform is a fully functi
 - **Design system** — 11 shared React components, 6 hooks, Storybook, industrial precision aesthetic
 - **Provider adapter layer** — Pluggable voice/vision providers behind typed interfaces
 - **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
+- **Memory & Identity** — Cross-session memory via extraction pipeline (Gemini 2.5 Flash), semantic recall (Gemini Embedding 2, 3072-dim vectors), voice-callable memory tools, token-budgeted system prompt injection
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
 
 ### Architecture (validated)
@@ -643,13 +644,13 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] PGlite (WASM PostgreSQL 17 + pgvector) replaces sql.js
 - [x] DataStore async migration (all methods → Promise-based)
 - [x] Memory schema: identity, user_profile, facts, preferences, session_summaries, memory_extractions
-- [ ] Memory manager service layer (injection, extraction, recall)
-- [ ] System prompt construction with token budget management
-- [ ] Conversation boundary (idle timeout, not raw WS disconnect)
-- [ ] Extraction pipeline (Gemini 2.5 Flash, ~$0.002/session)
-- [ ] Vector embeddings (Gemini Embedding → pgvector `vector(768)`)
-- [ ] Memory tools: `remember_fact`, `recall_memory`, `update_preference`
-- [ ] Persistent conversation context across sessions
+- [x] Memory manager service layer (injection, extraction, recall)
+- [x] System prompt construction with token budget management
+- [x] Conversation boundary (idle timeout, not raw WS disconnect)
+- [x] Extraction pipeline (Gemini 2.5 Flash, ~$0.002/session)
+- [x] Vector embeddings (Gemini Embedding 2 → pgvector `vector(3072)`)
+- [x] Memory tools: `remember_fact`, `recall_memory`, `update_preference`
+- [x] Persistent conversation context across sessions
 
 #### Phase 4 — Discovery Loop
 

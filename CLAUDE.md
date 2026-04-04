@@ -80,13 +80,16 @@ Shared runtime utilities used by core and clients.
 
 Standalone server with provider adapter layer and pluggable storage.
 
-- `server.ts` — Express + WebSocket, typed message routing, optional PGlite persistence
+- `server.ts` — Express + WebSocket, typed message routing, optional PGlite persistence, memory manager lifecycle, idle timer
 - `voice-session.ts` — Factory wrapper, delegates to active voice provider
 - `vision-watcher.ts` — Factory wrapper, delegates to active vision provider
-- `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect
+- `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect, memory-driven system prompt
 - `providers/gemini-vision.ts` — Gemini Live vision provider, one session per source (camera/screen independent)
 - `stores/pglite-store.ts` — `PgliteStore` implementing `DataStore` (WASM PostgreSQL 17 + pgvector: sessions, transcripts, memory tables)
-- `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`
+- `memory-manager.ts` — Singleton orchestrator: system prompt building, extraction queuing, fact recall/storage
+- `memory-extractor.ts` — Gemini 2.5 Flash transcript extraction + Gemini Embedding 2 (3072-dim vectors)
+- `memory-prompt-builder.ts` — Formats `MemoryContext` into priority-ordered system prompt
+- `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`, `remember_fact`, `recall_memory`, `update_preference`
 - `cost-tracker.ts` — Per-source cost estimator, accepts `ProviderPricing`
 
 ```bash
