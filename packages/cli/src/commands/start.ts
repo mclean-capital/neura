@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { loadConfig } from '../config.js';
 import { getServiceManager } from '../service/manager.js';
 import { waitForHealthy } from '../health.js';
+import { checkForUpdateInBackground } from '../update-check.js';
 
 export async function startCommand(): Promise<void> {
   const svc = await getServiceManager();
@@ -26,4 +27,6 @@ export async function startCommand(): Promise<void> {
   } else {
     console.log(chalk.yellow('Core did not respond within 15s. Check: neura logs'));
   }
+
+  checkForUpdateInBackground();
 }

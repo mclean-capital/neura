@@ -51,6 +51,7 @@ export function loadConfig(): NeuraConfigFile {
         logLevel: raw.service?.logLevel ?? 'info',
       },
       pgDataPath: raw.pgDataPath,
+      autoUpdate: raw.autoUpdate,
     };
   } catch {
     return { ...DEFAULT_CONFIG };

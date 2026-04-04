@@ -3,6 +3,7 @@ import { loadConfig, getNeuraHome } from '../config.js';
 import { checkHealth } from '../health.js';
 import { getServiceManager } from '../service/manager.js';
 import { getPlatformLabel } from '../service/detect.js';
+import { checkForUpdateInBackground } from '../update-check.js';
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -34,4 +35,6 @@ export async function statusCommand(): Promise<void> {
     `  Service:   ${getPlatformLabel()} (installed: ${svc.isInstalled() ? 'yes' : 'no'})`
   );
   console.log();
+
+  checkForUpdateInBackground();
 }

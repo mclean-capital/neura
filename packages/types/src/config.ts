@@ -33,4 +33,5 @@ export interface NeuraConfigFile {
     logLevel: string;
   };
   pgDataPath?: string;
+  autoUpdate?: boolean;
 }

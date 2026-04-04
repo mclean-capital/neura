@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import express from 'express';
 import { createServer } from 'http';
@@ -18,6 +18,16 @@ const config = loadConfig();
 
 const PORT = config.port;
 const COST_UPDATE_INTERVAL_MS = 30_000;
+function resolveVersion(): string {
+  if (process.env.NEURA_VERSION) return process.env.NEURA_VERSION;
+  try {
+    const versionPath = join(config.neuraHome, 'core', 'version.txt');
+    return readFileSync(versionPath, 'utf-8').trim();
+  } catch {
+    return '0.0.0-dev';
+  }
+}
+const CORE_VERSION = resolveVersion();
 
 // Make API keys available to providers that read process.env directly
 if (config.xaiApiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = config.xaiApiKey;
@@ -55,6 +65,7 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     port: actualPort,
+    version: CORE_VERSION,
   });
 });
 

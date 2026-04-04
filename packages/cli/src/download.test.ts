@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  createWriteStream: vi.fn(() => ({ on: vi.fn(), write: vi.fn(), end: vi.fn() })),
+  chmodSync: vi.fn(),
 }));
 
 vi.mock('os', () => ({
@@ -16,21 +21,25 @@ vi.mock('./config.js', () => ({
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { platform, arch } from 'os';
-import { getNeuraHome } from './config.js';
-import { getLatestVersion, downloadCore, hasCoreBinary, getCoreBinaryPath } from './download.js';
+import {
+  getLatestVersion,
+  getPlatformTarget,
+  hasCoreBinary,
+  getCoreBinaryPath,
+  getInstalledCoreVersion,
+} from './download.js';
 
 const mockedExistsSync = vi.mocked(existsSync);
+const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedPlatform = vi.mocked(platform);
 const mockedArch = vi.mocked(arch);
-const mockedGetNeuraHome = vi.mocked(getNeuraHome);
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockedPlatform.mockReturnValue('linux');
   mockedArch.mockReturnValue('x64');
-  mockedGetNeuraHome.mockReturnValue('/home/testuser/.neura');
 });
 
 describe('getLatestVersion', () => {
@@ -61,68 +70,59 @@ describe('getLatestVersion', () => {
   });
 });
 
-describe('downloadCore', () => {
-  it('throws with a clear error (placeholder)', () => {
-    expect(() => downloadCore('v1.0.0')).toThrow('Core binary download is not yet available');
+describe('getPlatformTarget', () => {
+  it('detects linux x64', () => {
+    mockedPlatform.mockReturnValue('linux');
+    mockedArch.mockReturnValue('x64');
+    expect(getPlatformTarget()).toEqual({ os: 'linux', arch: 'x64', ext: '' });
   });
 
-  it('error message includes build-from-source instructions', () => {
-    expect(() => downloadCore('v1.0.0')).toThrow('run core directly from source');
+  it('detects darwin arm64', () => {
+    mockedPlatform.mockReturnValue('darwin');
+    mockedArch.mockReturnValue('arm64');
+    expect(getPlatformTarget()).toEqual({ os: 'darwin', arch: 'arm64', ext: '' });
+  });
+
+  it('detects windows with .exe extension', () => {
+    mockedPlatform.mockReturnValue('win32');
+    mockedArch.mockReturnValue('x64');
+    expect(getPlatformTarget()).toEqual({ os: 'windows', arch: 'x64', ext: '.exe' });
   });
 });
 
 describe('hasCoreBinary', () => {
-  it('checks the correct path on Linux', () => {
-    mockedPlatform.mockReturnValue('linux');
+  it('checks for server.bundled.mjs', () => {
     mockedExistsSync.mockReturnValue(true);
 
     expect(hasCoreBinary()).toBe(true);
     expect(mockedExistsSync).toHaveBeenCalledWith(
-      expect.stringMatching(/\.neura[/\\]core[/\\]neura-core$/)
+      expect.stringMatching(/\.neura[/\\]core[/\\]server\.bundled\.mjs$/)
     );
   });
 
-  it('checks for .exe on Windows', () => {
-    mockedPlatform.mockReturnValue('win32');
+  it('returns false when bundle does not exist', () => {
     mockedExistsSync.mockReturnValue(false);
-
-    expect(hasCoreBinary()).toBe(false);
-    expect(mockedExistsSync).toHaveBeenCalledWith(
-      expect.stringMatching(/\.neura[/\\]core[/\\]neura-core\.exe$/)
-    );
-  });
-
-  it('returns false when binary does not exist', () => {
-    mockedExistsSync.mockReturnValue(false);
-
     expect(hasCoreBinary()).toBe(false);
   });
 });
 
 describe('getCoreBinaryPath', () => {
-  it('returns path without extension on Linux', () => {
-    mockedPlatform.mockReturnValue('linux');
-
+  it('returns path to server.bundled.mjs', () => {
     const path = getCoreBinaryPath();
+    expect(path).toMatch(/\.neura[/\\]core[/\\]server\.bundled\.mjs$/);
+  });
+});
 
-    expect(path).toMatch(/\.neura[/\\]core[/\\]neura-core$/);
-    expect(path).not.toMatch(/\.exe$/);
+describe('getInstalledCoreVersion', () => {
+  it('reads version from version.txt', () => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReadFileSync.mockReturnValue('1.0.0\n');
+
+    expect(getInstalledCoreVersion()).toBe('1.0.0');
   });
 
-  it('returns path with .exe on Windows', () => {
-    mockedPlatform.mockReturnValue('win32');
-
-    const path = getCoreBinaryPath();
-
-    expect(path).toMatch(/\.neura[/\\]core[/\\]neura-core\.exe$/);
-  });
-
-  it('returns path without extension on macOS', () => {
-    mockedPlatform.mockReturnValue('darwin');
-
-    const path = getCoreBinaryPath();
-
-    expect(path).toMatch(/\.neura[/\\]core[/\\]neura-core$/);
-    expect(path).not.toMatch(/\.exe$/);
+  it('returns null when version.txt does not exist', () => {
+    mockedExistsSync.mockReturnValue(false);
+    expect(getInstalledCoreVersion()).toBeNull();
   });
 });

@@ -12,10 +12,11 @@ await esbuild.build({
   minify: false,
   // CJS interop: express/ws use require() internally
   banner: {
-    js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+    js: "#!/usr/bin/env node\nimport { createRequire } from 'module'; const require = createRequire(import.meta.url);",
   },
-  // Externalize Node built-ins, dev-only modules, and the stores module
-  // (dynamically imported so PGlite WASM only loads when PG_DATA_PATH is set)
+  // Externalize Node built-ins, dev-only modules, and the stores module.
+  // Stores are dynamically imported so PGlite (with its WASM/worker files) loads at runtime.
+  // For Bun compile, the stores + PGlite package ship alongside the binary.
   external: ['node:*', ...builtinModules, 'pino-pretty', './stores/index.js'],
   logLevel: 'info',
 });

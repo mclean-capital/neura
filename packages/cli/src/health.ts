@@ -2,6 +2,7 @@ export interface HealthResponse {
   status: string;
   uptime: number;
   port: number;
+  version?: string;
 }
 
 /**
