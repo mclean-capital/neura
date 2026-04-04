@@ -21,6 +21,8 @@ Phase 3 (Memory & Identity) is complete. The platform is a fully functional mono
 - **Provider adapter layer** — Pluggable voice/vision providers behind typed interfaces
 - **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
 - **Memory & Identity** — Cross-session memory via extraction pipeline (Gemini 2.5 Flash), semantic recall (Gemini Embedding 2, 3072-dim vectors), voice-callable memory tools, token-budgeted system prompt injection
+- **`neura update`** — Downloads core bundles from GitHub releases, atomic extraction, background auto-update check with local cache
+- **CI/CD** — Semantic release, desktop builds (Electron), core bundle builds for 5 platforms, auto-changelog
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
 
 ### Architecture (validated)
@@ -651,6 +653,50 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Vector embeddings (Gemini Embedding 2 → pgvector `vector(3072)`)
 - [x] Memory tools: `remember_fact`, `recall_memory`, `update_preference`
 - [x] Persistent conversation context across sessions
+
+#### Phase 3b — Presence & Wake (Active/Passive Modes)
+
+Neura transitions from reactive (wait for user to connect and speak) to ambient (always-listening, context-aware activation). This is the "Jarvis, you up?" experience.
+
+**Problem statement:**
+
+The current architecture is session-based: a client connects, starts a session, speaks, and disconnects. Between sessions, Neura is completely inactive. There's no concept of presence — the AI doesn't know if the user is in the room, doesn't listen passively, and can't initiate interaction. For a truly ambient AI assistant, we need:
+
+1. **Wake detection** — Always-listening for a wake signal (voice keyword, hotkey, or explicit activation). Must be lightweight and local (not streaming everything to the cloud). When the user says "Hey Neura" or "Neura, you up?", the system activates.
+
+2. **Active/Passive state machine** — The AI needs distinct modes:
+   - **Idle** — No audio processing. Waiting for wake signal only.
+   - **Active** — Full bidirectional conversation. Grok voice session is live. The AI listens, responds, and follows up naturally.
+   - **Passive** — The AI hears ambient audio but does NOT respond unless directly addressed. After a conversation ends naturally, the AI doesn't hang up — it goes passive. If the user says "Hey Alicia, how's it going?", Neura recognizes it's not being addressed and stays quiet. If the user then says "Neura, what do you think?", it re-activates.
+
+3. **Conversation context awareness** — The AI must understand conversational cues:
+   - "Thanks, that's all" → transition to Passive
+   - Addressing someone else by name → stay Passive
+   - Long silence → transition from Active to Passive to Idle
+   - "Neura" or wake word → transition to Active from any state
+
+4. **Cost management** — Active mode costs ~$3/hr (Grok voice). Passive mode should cost far less (local VAD + wake detection, no cloud API). Idle costs nothing. The state machine needs to manage transitions to minimize cost while maintaining responsiveness.
+
+**Key architectural decisions needed:**
+
+- Local wake word detection engine (Picovoice Porcupine? Whisper-based? Browser Web Speech API?)
+- Where does VAD run — client-side or server-side?
+- How does the Grok voice session lifecycle map to active/passive states?
+- Does passive mode keep the Grok session alive (expensive) or tear it down and reconnect on activation (latency)?
+- Protocol changes needed: new message types for state transitions, wake events
+- Client UI changes: visual indicator for Idle/Active/Passive state
+
+**Not in scope for 3b:**
+
+- Proactive initiation (AI speaks first without being asked) — that's Phase 4 Discovery Loop
+- Multi-room/multi-device presence — future work
+
+- [ ] Wake word detection (local, lightweight)
+- [ ] Active/Passive/Idle state machine in server
+- [ ] Conversation context awareness (transition detection)
+- [ ] Protocol additions for state transitions
+- [ ] Client UI for presence state indicator
+- [ ] Cost-optimized state transitions (tear down vs keep alive)
 
 #### Phase 4 — Discovery Loop
 
