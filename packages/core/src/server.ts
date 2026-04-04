@@ -4,12 +4,14 @@ import { join } from 'path';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { ClientMessage, ServerMessage, DataStore } from '@neura/types';
+import type { ClientMessage, ServerMessage, DataStore, VoiceProvider } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import { createVoiceSession } from './voice-session.js';
 import { createVisionWatcher } from './vision-watcher.js';
 import { createCostTracker } from './cost-tracker.js';
 import { loadConfig } from './config.js';
+import { createMemoryManager, type MemoryManager } from './memory-manager.js';
+import type { MemoryToolHandler } from './tools.js';
 
 const log = new Logger('server');
 const config = loadConfig();
@@ -33,6 +35,15 @@ if (config.pgDataPath) {
     log.warn('database unavailable, persistence disabled', { err: String(err) });
   }
 }
+
+// Initialize memory manager if store and Google API key are available
+let memoryManager: MemoryManager | null = null;
+if (store && config.googleApiKey) {
+  memoryManager = createMemoryManager({ store, googleApiKey: config.googleApiKey });
+  log.info('memory manager initialized');
+}
+
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 const app = express();
 const server = createServer(app);
@@ -96,6 +107,35 @@ function attachWebSocket() {
       void p.finally(() => pendingWrites.delete(p));
     }
 
+    // Extraction flag — prevents double extraction from idle timer + close
+    let extractionTriggered = false;
+    function triggerExtraction() {
+      if (extractionTriggered || !memoryManager) return;
+      extractionTriggered = true;
+      const extractionPromise = sessionIdPromise
+        .then(async (sid) => {
+          if (sid) {
+            await Promise.allSettled([...pendingWrites]);
+            await memoryManager.queueExtraction(sid);
+          }
+        })
+        .catch((err) => {
+          log.warn('extraction failed', { err: String(err) });
+        });
+      pendingCleanups.add(extractionPromise);
+      void extractionPromise.finally(() => pendingCleanups.delete(extractionPromise));
+    }
+
+    // Idle timer — triggers extraction after inactivity
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    function resetIdleTimer() {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        log.info('idle timeout, triggering extraction');
+        triggerExtraction();
+      }, IDLE_TIMEOUT_MS);
+    }
+
     // One watcher per source — created on demand, destroyed on stop
     let cameraWatcher: ReturnType<typeof createVisionWatcher> | null = null;
     let screenWatcher: ReturnType<typeof createVisionWatcher> | null = null;
@@ -134,11 +174,31 @@ function attachWebSocket() {
       }
     }
 
-    const session = createVoiceSession({
-      onAudio(data) {
+    // Build memory tools handler (closes over memoryManager)
+    const memoryTools: MemoryToolHandler | undefined = memoryManager
+      ? {
+          storeFact: (content, category, tags, sessionId) =>
+            memoryManager.storeFact(content, category, tags, sessionId),
+          recall: (query, limit) => memoryManager.recall(query, limit),
+          storePreference: (preference, category, sessionId) =>
+            memoryManager.storePreference(preference, category, sessionId),
+        }
+      : undefined;
+
+    // Voice session is created after the memory prompt resolves.
+    // Message handlers use a guard (if !session) for the brief gap.
+    let session: VoiceProvider | null = null;
+    let connectionClosed = false;
+
+    function send(msg: ServerMessage) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    }
+
+    const voiceCallbacks = {
+      onAudio(data: string) {
         send({ type: 'audio', data });
       },
-      onInputTranscript(text) {
+      onInputTranscript(text: string) {
         send({ type: 'inputTranscript', text });
         if (store) {
           trackWrite(
@@ -152,10 +212,10 @@ function attachWebSocket() {
           );
         }
       },
-      onOutputTranscript(text) {
+      onOutputTranscript(text: string) {
         send({ type: 'outputTranscript', text });
       },
-      onOutputTranscriptComplete(text) {
+      onOutputTranscriptComplete(text: string) {
         if (store) {
           trackWrite(
             sessionIdPromise
@@ -174,45 +234,62 @@ function attachWebSocket() {
       onTurnComplete() {
         send({ type: 'turnComplete' });
       },
-      onToolCall(name, args) {
+      onToolCall(name: string, args: Record<string, unknown>) {
         send({ type: 'toolCall', name, args });
       },
-      onToolResult(name, result) {
+      onToolResult(name: string, result: Record<string, unknown>) {
         send({ type: 'toolResult', name, result });
       },
-      onError(error) {
+      onError(error: string) {
         send({ type: 'error', error });
       },
       onClose() {
         send({ type: 'sessionClosed' });
       },
       onReconnected() {
-        // Re-send active source state so the new Grok session knows what's available
         if (cameraWatcher?.isConnected()) {
-          session.sendSystemEvent(
+          session?.sendSystemEvent(
             'The user is currently sharing their camera. You can use the describe_camera tool to see it.'
           );
         }
         if (screenWatcher?.isConnected()) {
-          session.sendSystemEvent(
+          session?.sendSystemEvent(
             'The user is currently sharing their screen. You can use the describe_screen tool to see it.'
           );
         }
       },
-      queryWatcher(prompt, source) {
+      queryWatcher(prompt: string, source: 'camera' | 'screen') {
         const watcher = source === 'camera' ? cameraWatcher : screenWatcher;
         if (!watcher) {
           return Promise.resolve(`${source} not active — user hasn't shared their ${source}.`);
         }
         return watcher.query(prompt);
       },
+    };
+
+    // Build system prompt then create voice session
+    const promptPromise = memoryManager
+      ? memoryManager.buildSystemPrompt().catch((err) => {
+          log.warn('memory prompt build failed', { err: String(err) });
+          return undefined;
+        })
+      : Promise.resolve(undefined);
+
+    void promptPromise.then((systemPromptPrefix) => {
+      if (connectionClosed) return; // WS closed before prompt resolved
+      session = createVoiceSession(voiceCallbacks, {
+        systemPromptPrefix,
+        memoryTools,
+      });
+      costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
+      session.connect();
+      resetIdleTimer();
     });
 
-    function send(msg: ServerMessage) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-    }
-
     ws.on('message', (raw: Buffer) => {
+      resetIdleTimer();
+      extractionTriggered = false; // Allow re-extraction if new content arrives after idle extraction
+      if (!session) return; // Voice session not ready yet
       try {
         const msg = JSON.parse(raw.toString()) as ClientMessage;
         switch (msg.type) {
@@ -229,7 +306,6 @@ function attachWebSocket() {
           }
           case 'sourceChanged':
             if (msg.active) {
-              // Close existing watcher first (fresh session = no stale frames)
               closeWatcher(msg.source);
               getOrCreateWatcher(msg.source);
               session.sendSystemEvent(
@@ -250,7 +326,15 @@ function attachWebSocket() {
 
     ws.on('close', () => {
       log.info('client disconnected');
+      connectionClosed = true;
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
       costTracker.stopInterval();
+
+      // Trigger extraction if not already triggered by idle timer
+      triggerExtraction();
 
       const cleanup = (async () => {
         // Drain in-flight transcript writes before finalizing
@@ -266,13 +350,10 @@ function attachWebSocket() {
       pendingCleanups.add(cleanup);
       void cleanup.finally(() => pendingCleanups.delete(cleanup));
 
-      session.close();
+      session?.close();
       cameraWatcher?.close();
       screenWatcher?.close();
     });
-
-    costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
-    session.connect();
   });
 }
 
@@ -316,11 +397,13 @@ async function shutdown() {
     wss.close(() => {
       void (async () => {
         await Promise.allSettled([...pendingCleanups]);
+        await memoryManager?.close();
         await store?.close();
         server.close(() => process.exit(0));
       })();
     });
   } else {
+    await memoryManager?.close();
     await store?.close();
     server.close(() => process.exit(0));
   }

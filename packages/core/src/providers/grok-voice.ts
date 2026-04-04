@@ -8,7 +8,7 @@
 import WebSocket from 'ws';
 import { Logger } from '@neura/utils/logger';
 import type { VoiceProvider, VoiceProviderCallbacks } from '@neura/types';
-import { toolDefs, handleToolCall } from '../tools.js';
+import { getToolDefs, handleToolCall, type MemoryToolHandler } from '../tools.js';
 
 const log = new Logger('voice');
 
@@ -24,6 +24,8 @@ export interface GrokVoiceConfig {
   vadPrefixPaddingMs?: number;
   maxReconnectAttempts?: number;
   sessionMaxMs?: number;
+  systemPromptPrefix?: string;
+  memoryTools?: MemoryToolHandler;
 }
 
 export function createGrokVoiceSession(
@@ -55,15 +57,23 @@ export function createGrokVoiceSession(
   }
 
   function buildInstructions(): string {
-    const base = [
-      'You are a helpful voice assistant with camera and screen vision.',
-      "You can see through the user's camera using the describe_camera tool.",
-      "You can see the user's shared screen using the describe_screen tool.",
-      'When the user asks you to look at something physical, use describe_camera.',
-      'When they ask about their screen, code, or display, use describe_screen.',
-      'Keep responses short and conversational — 1-2 sentences unless asked for detail.',
-      'Be direct, no filler.',
-    ];
+    const base: string[] = [];
+
+    if (config.systemPromptPrefix) {
+      // Memory system provides a complete prompt with identity, preferences, tools, etc.
+      base.push(config.systemPromptPrefix);
+    } else {
+      // Fallback: hardcoded personality when memory system is not available
+      base.push(
+        'You are a helpful voice assistant with camera and screen vision.',
+        "You can see through the user's camera using the describe_camera tool.",
+        "You can see the user's shared screen using the describe_screen tool.",
+        'When the user asks you to look at something physical, use describe_camera.',
+        'When they ask about their screen, code, or display, use describe_screen.',
+        'Keep responses short and conversational — 1-2 sentences unless asked for detail.',
+        'Be direct, no filler.'
+      );
+    }
 
     // Seed context from previous transcript on reconnect
     if (transcript.length > 0) {
@@ -72,7 +82,7 @@ export function createGrokVoiceSession(
       base.push(`\n[Session resumed. Previous conversation context:\n${context}\n]`);
     }
 
-    return base.join(' ');
+    return base.join('\n');
   }
 
   function connect() {
@@ -108,7 +118,7 @@ export function createGrokVoiceSession(
               silence_duration_ms: vadSilenceDurationMs,
               prefix_padding_ms: vadPrefixPaddingMs,
             },
-            tools: toolDefs,
+            tools: getToolDefs(!!config.memoryTools),
           },
         })
       );
@@ -256,7 +266,7 @@ export function createGrokVoiceSession(
     const callId = msg.call_id;
 
     cb.onToolCall(name, args);
-    const result = await handleToolCall(name, args, cb.queryWatcher);
+    const result = await handleToolCall(name, args, cb.queryWatcher, config.memoryTools);
     cb.onToolResult(name, result);
 
     if (currentWs && currentWs === ws && currentWs.readyState === WebSocket.OPEN) {

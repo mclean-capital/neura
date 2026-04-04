@@ -220,14 +220,14 @@ describe('PgliteStore', () => {
     });
 
     it('searches facts by vector embedding', async () => {
-      // Create a 768-dim vector (simplified: mostly zeros with a few values)
-      const vec1 = new Array(768).fill(0);
+      // Create a 3072-dim vector (simplified: mostly zeros with a few values)
+      const vec1 = new Array(3072).fill(0);
       vec1[0] = 1.0;
       vec1[1] = 0.5;
-      const vec2 = new Array(768).fill(0);
+      const vec2 = new Array(3072).fill(0);
       vec2[0] = 0.9;
       vec2[1] = 0.4;
-      const vec3 = new Array(768).fill(0);
+      const vec3 = new Array(3072).fill(0);
       vec3[0] = 0.1;
       vec3[1] = 0.1;
 

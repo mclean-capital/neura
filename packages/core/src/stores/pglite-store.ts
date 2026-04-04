@@ -1,6 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite/vector';
 import crypto from 'crypto';
+import { Logger } from '@neura/utils/logger';
+
+const log = new Logger('store');
 import type {
   DataStore,
   SessionRecord,
@@ -99,7 +102,7 @@ export class PgliteStore implements DataStore {
         content TEXT NOT NULL,
         category TEXT NOT NULL DEFAULT 'general',
         tags JSONB NOT NULL DEFAULT '[]',
-        embedding vector(768),
+        embedding vector(3072),
         source_session_id TEXT,
         confidence REAL NOT NULL DEFAULT 0.8,
         access_count INTEGER NOT NULL DEFAULT 0,
@@ -110,6 +113,22 @@ export class PgliteStore implements DataStore {
         CONSTRAINT facts_content_category_key UNIQUE(content, category)
       )
     `);
+
+    // Migrate embedding column from vector(768) → vector(3072) if needed
+    const typeCheck = await this.db.query<{ col_type: string }>(
+      `SELECT format_type(atttypid, atttypmod) AS col_type FROM pg_attribute
+       WHERE attrelid = 'facts'::regclass AND attname = 'embedding'`
+    );
+    if (typeCheck.rows.length > 0 && typeCheck.rows[0].col_type !== 'vector(3072)') {
+      await this.db.exec('ALTER TABLE facts DROP COLUMN embedding');
+      await this.db.exec('ALTER TABLE facts ADD COLUMN embedding vector(3072)');
+      log.info('migrated facts.embedding to vector(3072)', { was: typeCheck.rows[0].col_type });
+    }
+
+    // Ensure unique index exists (may be missing on tables created before constraint was added)
+    await this.db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_content_category ON facts(content, category)'
+    );
 
     await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category)');
     await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at DESC)');
@@ -127,6 +146,11 @@ export class PgliteStore implements DataStore {
         CONSTRAINT preferences_pref_category_key UNIQUE(preference, category)
       )
     `);
+
+    // Ensure unique index exists (may be missing on tables created before constraint was added)
+    await this.db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_preferences_pref_category ON preferences(preference, category)'
+    );
 
     await this.db.exec(`
       CREATE TABLE IF NOT EXISTS session_summaries (
@@ -380,7 +404,7 @@ export class PgliteStore implements DataStore {
   }
 
   async searchFacts(query: string, embedding?: number[], limit = 10): Promise<FactEntry[]> {
-    if (embedding?.length === 768) {
+    if (embedding?.length === 3072) {
       const vecStr = `[${embedding.join(',')}]`;
       const result = await this.db.query<{
         id: string;
@@ -436,8 +460,8 @@ export class PgliteStore implements DataStore {
     confidence = 0.8,
     embedding?: number[]
   ): Promise<string> {
-    if (embedding && embedding.length !== 768) {
-      throw new Error(`Embedding must be 768-dimensional, got ${embedding.length}`);
+    if (embedding && embedding.length !== 3072) {
+      throw new Error(`Embedding must be 3072-dimensional, got ${embedding.length}`);
     }
     const id = crypto.randomUUID();
     const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
@@ -445,7 +469,7 @@ export class PgliteStore implements DataStore {
     const result = await this.db.query<{ id: string }>(
       `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, embedding)
        VALUES ($1, $2, $3, $4, $5, $6, $7::vector)
-       ON CONFLICT ON CONSTRAINT facts_content_category_key DO UPDATE
+       ON CONFLICT (content, category) DO UPDATE
        SET tags = EXCLUDED.tags,
            source_session_id = EXCLUDED.source_session_id,
            confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
@@ -524,7 +548,7 @@ export class PgliteStore implements DataStore {
     await this.db.query(
       `INSERT INTO preferences (id, preference, category, source_session_id)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT ON CONSTRAINT preferences_pref_category_key DO UPDATE
+       ON CONFLICT (preference, category) DO UPDATE
        SET source_session_id = EXCLUDED.source_session_id,
            reinforcement_count = preferences.reinforcement_count + 1,
            strength = LEAST(preferences.strength + 0.1, 2.0),

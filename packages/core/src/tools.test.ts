@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toolDefs, handleToolCall } from './tools.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 3 tools', () => {
-    expect(toolDefs).toHaveLength(3);
+  it('defines exactly 6 tools', () => {
+    expect(toolDefs).toHaveLength(6);
   });
 
   it('each tool has the required structure', () => {
@@ -20,6 +20,9 @@ describe('toolDefs', () => {
     expect(names).toContain('describe_camera');
     expect(names).toContain('describe_screen');
     expect(names).toContain('get_current_time');
+    expect(names).toContain('remember_fact');
+    expect(names).toContain('recall_memory');
+    expect(names).toContain('update_preference');
   });
 });
 
@@ -84,5 +87,91 @@ describe('handleToolCall', () => {
     const result = await handleToolCall('nonexistent_tool', {}, queryWatcher);
 
     expect(result).toEqual({ error: 'Unknown tool: nonexistent_tool' });
+  });
+
+  describe('memory tools', () => {
+    const memoryTools = {
+      storeFact: vi.fn(() => Promise.resolve('fact-id-123')),
+      recall: vi.fn(() =>
+        Promise.resolve([
+          {
+            id: '1',
+            content: 'User lives in Seattle',
+            category: 'personal' as const,
+            tags: ['location'],
+            sourceSessionId: null,
+            confidence: 0.8,
+            accessCount: 0,
+            lastAccessedAt: null,
+            createdAt: '',
+            updatedAt: '',
+            expiresAt: null,
+          },
+        ])
+      ),
+      storePreference: vi.fn(() => Promise.resolve()),
+    };
+
+    beforeEach(() => {
+      memoryTools.storeFact.mockClear();
+      memoryTools.recall.mockClear();
+      memoryTools.storePreference.mockClear();
+    });
+
+    it('remember_fact stores a fact', async () => {
+      const result = await handleToolCall(
+        'remember_fact',
+        { content: 'User lives in Seattle', category: 'personal', tags: 'location, city' },
+        queryWatcher,
+        memoryTools
+      );
+
+      expect(memoryTools.storeFact).toHaveBeenCalledWith('User lives in Seattle', 'personal', [
+        'location',
+        'city',
+      ]);
+      expect(result).toEqual({ result: { stored: true, id: 'fact-id-123' } });
+    });
+
+    it('remember_fact defaults to general category', async () => {
+      await handleToolCall(
+        'remember_fact',
+        { content: 'Important fact' },
+        queryWatcher,
+        memoryTools
+      );
+
+      expect(memoryTools.storeFact).toHaveBeenCalledWith('Important fact', 'general', []);
+    });
+
+    it('recall_memory searches facts', async () => {
+      const result = await handleToolCall(
+        'recall_memory',
+        { query: 'where does user live' },
+        queryWatcher,
+        memoryTools
+      );
+
+      expect(memoryTools.recall).toHaveBeenCalledWith('where does user live');
+      const inner = result.result as { facts: unknown[] };
+      expect(inner.facts).toHaveLength(1);
+    });
+
+    it('update_preference stores preference', async () => {
+      const result = await handleToolCall(
+        'update_preference',
+        { preference: 'Be more concise', category: 'response_style' },
+        queryWatcher,
+        memoryTools
+      );
+
+      expect(memoryTools.storePreference).toHaveBeenCalledWith('Be more concise', 'response_style');
+      expect(result).toEqual({ result: { stored: true } });
+    });
+
+    it('memory tools return error when handler not available', async () => {
+      const result = await handleToolCall('remember_fact', { content: 'test' }, queryWatcher);
+      expect(result).toEqual({ error: 'Memory system not available' });
+    });
   });
 });
