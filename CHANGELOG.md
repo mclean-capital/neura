@@ -1,3 +1,9 @@
+# [1.1.0](https://github.com/mclean-capital/neura/compare/v1.0.0...v1.1.0) (2026-04-04)
+
+### Features
+
+- **cli,core:** implement neura update, auto-update check, and core build CI ([167206d](https://github.com/mclean-capital/neura/commit/167206d3076842b907bf92b3e5edaf0564649626))
+
 # 1.0.0 (2026-04-04)
 
 ### Bug Fixes
