@@ -96,6 +96,27 @@ export interface MemoryBackup {
   sessionSummaries: SessionSummaryEntry[];
 }
 
+/** Work item status */
+export type WorkItemStatus = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'failed';
+
+/** Work item priority */
+export type WorkItemPriority = 'low' | 'medium' | 'high';
+
+/** Work item — a task created by the user or the discovery loop */
+export interface WorkItemEntry {
+  id: string;
+  title: string;
+  description: string | null;
+  status: WorkItemStatus;
+  priority: WorkItemPriority;
+  dueAt: string | null;
+  parentId: string | null;
+  sourceSessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
 /** Output from the extraction pipeline */
 export interface ExtractionResult {
   facts: { content: string; category: string; tags: string[] }[];

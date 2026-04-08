@@ -13,6 +13,7 @@ import {
   handleToolCall,
   type MemoryToolHandler,
   type EnterModeHandler,
+  type TaskToolHandler,
 } from '../tools.js';
 
 const log = new Logger('voice');
@@ -32,6 +33,7 @@ export interface GrokVoiceConfig {
   systemPromptPrefix?: string;
   memoryTools?: MemoryToolHandler;
   enterMode?: EnterModeHandler;
+  taskTools?: TaskToolHandler;
 }
 
 export function createGrokVoiceSession(
@@ -128,6 +130,7 @@ export function createGrokVoiceSession(
             tools: getToolDefs({
               includeMemory: !!config.memoryTools,
               includePresence: !!config.enterMode,
+              includeTasks: !!config.taskTools,
             }),
           },
         })
@@ -280,13 +283,12 @@ export function createGrokVoiceSession(
     const callId = msg.call_id;
 
     cb.onToolCall(name, args);
-    const result = await handleToolCall(
-      name,
-      args,
-      cb.queryWatcher,
-      config.memoryTools,
-      config.enterMode
-    );
+    const result = await handleToolCall(name, args, {
+      queryWatcher: cb.queryWatcher,
+      memoryTools: config.memoryTools,
+      enterMode: config.enterMode,
+      taskTools: config.taskTools,
+    });
     cb.onToolResult(name, result);
 
     if (currentWs && currentWs === ws && currentWs.readyState === WebSocket.OPEN) {

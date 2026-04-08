@@ -10,6 +10,7 @@
 import { writeFileSync, readFileSync, renameSync, existsSync, statSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { Logger } from '@neura/utils/logger';
+import { IntervalTimer } from '@neura/utils';
 import type { DataStore, MemoryBackup } from '@neura/types';
 
 const log = new Logger('backup');
@@ -32,8 +33,11 @@ export interface BackupService {
 
 export function createBackupService(options: BackupServiceOptions): BackupService {
   const { store, backupPath, intervalMs = 5 * 60_000, staleThresholdMs = 60 * 60_000 } = options;
-  let timer: ReturnType<typeof setInterval> | null = null;
   let backupInProgress = false;
+
+  const timer = new IntervalTimer(() => {
+    void backup().catch((err) => log.warn('periodic backup failed', { err: String(err) }));
+  }, intervalMs);
 
   async function backup(): Promise<void> {
     if (backupInProgress) return;
@@ -84,18 +88,11 @@ export function createBackupService(options: BackupServiceOptions): BackupServic
   }
 
   function start(): void {
-    if (timer) return;
-    timer = setInterval(() => {
-      void backup().catch((err) => log.warn('periodic backup failed', { err: String(err) }));
-    }, intervalMs);
-    timer.unref();
+    timer.start();
   }
 
   function stop(): void {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
+    timer.stop();
   }
 
   function checkStaleness(): void {

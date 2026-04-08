@@ -7,6 +7,8 @@ import type {
   MemoryExtractionRecord,
   MemoryContext,
   MemoryBackup,
+  WorkItemEntry,
+  WorkItemPriority,
 } from './memory.js';
 
 /** Voice provider interface — any voice backend must implement this. */
@@ -120,6 +122,26 @@ export interface DataStore {
 
   // Composite context for system prompt injection
   getMemoryContext(options?: { maxTokens?: number }): Promise<MemoryContext>;
+
+  // Work items
+  getOpenWorkItems(limit?: number): Promise<WorkItemEntry[]>;
+  getWorkItems(options?: { status?: string; limit?: number }): Promise<WorkItemEntry[]>;
+  getWorkItem(id: string): Promise<WorkItemEntry | null>;
+  createWorkItem(
+    title: string,
+    priority: WorkItemPriority,
+    options?: {
+      description?: string;
+      dueAt?: string;
+      parentId?: string;
+      sourceSessionId?: string;
+    }
+  ): Promise<string>;
+  updateWorkItem(
+    id: string,
+    updates: Partial<Pick<WorkItemEntry, 'status' | 'priority' | 'title' | 'description' | 'dueAt'>>
+  ): Promise<void>;
+  deleteWorkItem(id: string): Promise<void>;
 
   // Backup & recovery
   exportMemories(): Promise<MemoryBackup>;

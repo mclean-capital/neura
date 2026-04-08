@@ -535,6 +535,121 @@ describe('PgliteStore', () => {
     });
   });
 
+  describe('work items', () => {
+    it('creates a work item and retrieves it by ID', async () => {
+      const id = await store.createWorkItem('Buy groceries', 'medium');
+      expect(id).toBeTruthy();
+
+      const item = await store.getWorkItem(id);
+      expect(item).not.toBeNull();
+      expect(item!.title).toBe('Buy groceries');
+      expect(item!.priority).toBe('medium');
+      expect(item!.status).toBe('pending');
+      expect(item!.description).toBeNull();
+      expect(item!.dueAt).toBeNull();
+      expect(item!.parentId).toBeNull();
+      expect(item!.completedAt).toBeNull();
+    });
+
+    it('getOpenWorkItems returns only pending/in_progress items', async () => {
+      const id1 = await store.createWorkItem('Pending task', 'medium');
+      const id2 = await store.createWorkItem('In progress task', 'medium');
+      const id3 = await store.createWorkItem('Done task', 'medium');
+      const id4 = await store.createWorkItem('Cancelled task', 'medium');
+
+      await store.updateWorkItem(id2, { status: 'in_progress' });
+      await store.updateWorkItem(id3, { status: 'done' });
+      await store.updateWorkItem(id4, { status: 'cancelled' });
+
+      const open = await store.getOpenWorkItems();
+      const openIds = open.map((i) => i.id);
+      expect(openIds).toContain(id1);
+      expect(openIds).toContain(id2);
+      expect(openIds).not.toContain(id3);
+      expect(openIds).not.toContain(id4);
+    });
+
+    it('getOpenWorkItems sorts by priority (high first) then due date', async () => {
+      const idLow = await store.createWorkItem('Low priority', 'low', {
+        dueAt: '2030-01-01T00:00:00Z',
+      });
+      const idHigh = await store.createWorkItem('High priority', 'high', {
+        dueAt: '2030-06-01T00:00:00Z',
+      });
+      const idMedEarly = await store.createWorkItem('Medium early', 'medium', {
+        dueAt: '2030-01-01T00:00:00Z',
+      });
+      const idMedLate = await store.createWorkItem('Medium late', 'medium', {
+        dueAt: '2030-12-01T00:00:00Z',
+      });
+
+      const open = await store.getOpenWorkItems();
+      const ids = open.map((i) => i.id);
+
+      // High should be first
+      expect(ids[0]).toBe(idHigh);
+      // Medium items next, early due date first
+      expect(ids[1]).toBe(idMedEarly);
+      expect(ids[2]).toBe(idMedLate);
+      // Low last
+      expect(ids[3]).toBe(idLow);
+    });
+
+    it('updateWorkItem changes fields correctly', async () => {
+      const id = await store.createWorkItem('Original title', 'low');
+      await store.updateWorkItem(id, {
+        title: 'Updated title',
+        priority: 'high',
+        description: 'A description',
+      });
+
+      const item = await store.getWorkItem(id);
+      expect(item!.title).toBe('Updated title');
+      expect(item!.priority).toBe('high');
+      expect(item!.description).toBe('A description');
+    });
+
+    it('updateWorkItem sets completedAt when status changes to done', async () => {
+      const id = await store.createWorkItem('Task to complete', 'medium');
+      await store.updateWorkItem(id, { status: 'done' });
+
+      const item = await store.getWorkItem(id);
+      expect(item!.status).toBe('done');
+      expect(item!.completedAt).toBeTruthy();
+    });
+
+    it('deleteWorkItem removes the item', async () => {
+      const id = await store.createWorkItem('To delete', 'low');
+      expect(await store.getWorkItem(id)).not.toBeNull();
+
+      await store.deleteWorkItem(id);
+      expect(await store.getWorkItem(id)).toBeNull();
+    });
+
+    it('getWorkItem returns null for nonexistent ID', async () => {
+      const item = await store.getWorkItem('nonexistent-id');
+      expect(item).toBeNull();
+    });
+
+    it('createWorkItem with all optional fields', async () => {
+      const parentId = await store.createWorkItem('Parent task', 'high');
+      const sessionId = await store.createSession('grok', 'gemini');
+
+      const childId = await store.createWorkItem('Child task', 'medium', {
+        description: 'Detailed description',
+        dueAt: '2030-06-15T10:00:00Z',
+        parentId,
+        sourceSessionId: sessionId,
+      });
+
+      const item = await store.getWorkItem(childId);
+      expect(item!.description).toBe('Detailed description');
+      expect(item!.dueAt).toBeTruthy();
+      expect(item!.parentId).toBe(parentId);
+      expect(item!.sourceSessionId).toBe(sessionId);
+    });
+  });
+
   describe('file persistence', () => {
     it('persists data across close and reopen', async () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neura-pglite-test-'));

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { toolDefs, handleToolCall } from './tools.js';
+import { toolDefs, handleToolCall, type ToolCallContext } from './tools.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 7 tools', () => {
-    expect(toolDefs).toHaveLength(7);
+  it('defines exactly 12 tools', () => {
+    expect(toolDefs).toHaveLength(12);
   });
 
   it('each tool has the required structure', () => {
@@ -24,6 +24,11 @@ describe('toolDefs', () => {
     expect(names).toContain('recall_memory');
     expect(names).toContain('update_preference');
     expect(names).toContain('enter_mode');
+    expect(names).toContain('create_task');
+    expect(names).toContain('list_tasks');
+    expect(names).toContain('get_task');
+    expect(names).toContain('update_task');
+    expect(names).toContain('delete_task');
   });
 });
 
@@ -31,6 +36,8 @@ describe('handleToolCall', () => {
   const queryWatcher = vi.fn((_prompt: string, _source: 'camera' | 'screen') =>
     Promise.resolve('')
   );
+
+  const ctx: ToolCallContext = { queryWatcher };
 
   beforeEach(() => {
     queryWatcher.mockClear();
@@ -42,7 +49,7 @@ describe('handleToolCall', () => {
     const result = await handleToolCall(
       'describe_camera',
       { focus: 'the cat', detail: 'brief' },
-      queryWatcher
+      ctx
     );
 
     expect(queryWatcher).toHaveBeenCalledOnce();
@@ -57,7 +64,7 @@ describe('handleToolCall', () => {
   it('describe_camera with no args uses default prompt', async () => {
     queryWatcher.mockResolvedValue('Room view');
 
-    await handleToolCall('describe_camera', {}, queryWatcher);
+    await handleToolCall('describe_camera', {}, ctx);
 
     const [prompt, source] = queryWatcher.mock.calls[0];
     expect(source).toBe('camera');
@@ -67,7 +74,7 @@ describe('handleToolCall', () => {
   it('describe_screen with detailed uses thorough prompt', async () => {
     queryWatcher.mockResolvedValue('Code editor open');
 
-    await handleToolCall('describe_screen', { detail: 'detailed' }, queryWatcher);
+    await handleToolCall('describe_screen', { detail: 'detailed' }, ctx);
 
     const [prompt, source] = queryWatcher.mock.calls[0];
     expect(source).toBe('screen');
@@ -75,7 +82,7 @@ describe('handleToolCall', () => {
   });
 
   it('get_current_time returns time/date/timezone', async () => {
-    const result = await handleToolCall('get_current_time', {}, queryWatcher);
+    const result = await handleToolCall('get_current_time', {}, ctx);
 
     expect(result).toHaveProperty('result');
     const inner = result.result as Record<string, unknown>;
@@ -85,7 +92,7 @@ describe('handleToolCall', () => {
   });
 
   it('unknown tool returns error', async () => {
-    const result = await handleToolCall('nonexistent_tool', {}, queryWatcher);
+    const result = await handleToolCall('nonexistent_tool', {}, ctx);
 
     expect(result).toEqual({ error: 'Unknown tool: nonexistent_tool' });
   });
@@ -113,6 +120,8 @@ describe('handleToolCall', () => {
       storePreference: vi.fn(() => Promise.resolve()),
     };
 
+    const memCtx: ToolCallContext = { queryWatcher, memoryTools };
+
     beforeEach(() => {
       memoryTools.storeFact.mockClear();
       memoryTools.recall.mockClear();
@@ -123,8 +132,7 @@ describe('handleToolCall', () => {
       const result = await handleToolCall(
         'remember_fact',
         { content: 'User lives in Seattle', category: 'personal', tags: 'location, city' },
-        queryWatcher,
-        memoryTools
+        memCtx
       );
 
       expect(memoryTools.storeFact).toHaveBeenCalledWith('User lives in Seattle', 'personal', [
@@ -135,12 +143,7 @@ describe('handleToolCall', () => {
     });
 
     it('remember_fact defaults to general category', async () => {
-      await handleToolCall(
-        'remember_fact',
-        { content: 'Important fact' },
-        queryWatcher,
-        memoryTools
-      );
+      await handleToolCall('remember_fact', { content: 'Important fact' }, memCtx);
 
       expect(memoryTools.storeFact).toHaveBeenCalledWith('Important fact', 'general', []);
     });
@@ -149,8 +152,7 @@ describe('handleToolCall', () => {
       const result = await handleToolCall(
         'recall_memory',
         { query: 'where does user live' },
-        queryWatcher,
-        memoryTools
+        memCtx
       );
 
       expect(memoryTools.recall).toHaveBeenCalledWith('where does user live');
@@ -162,8 +164,7 @@ describe('handleToolCall', () => {
       const result = await handleToolCall(
         'update_preference',
         { preference: 'Be more concise', category: 'response_style' },
-        queryWatcher,
-        memoryTools
+        memCtx
       );
 
       expect(memoryTools.storePreference).toHaveBeenCalledWith('Be more concise', 'response_style');
@@ -171,8 +172,15 @@ describe('handleToolCall', () => {
     });
 
     it('memory tools return error when handler not available', async () => {
-      const result = await handleToolCall('remember_fact', { content: 'test' }, queryWatcher);
+      const result = await handleToolCall('remember_fact', { content: 'test' }, ctx);
       expect(result).toEqual({ error: 'Memory system not available' });
+    });
+  });
+
+  describe('task tools', () => {
+    it('task tools return error when handler not available', async () => {
+      const result = await handleToolCall('create_task', { title: 'test' }, ctx);
+      expect(result).toEqual({ error: 'Task system not available' });
     });
   });
 });
