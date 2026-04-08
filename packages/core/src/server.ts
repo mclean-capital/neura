@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import express from 'express';
 import { createServer } from 'http';
@@ -11,6 +11,7 @@ import { createVisionWatcher } from './vision-watcher.js';
 import { createCostTracker } from './cost-tracker.js';
 import { loadConfig } from './config.js';
 import { createMemoryManager, type MemoryManager } from './memory-manager.js';
+import { createBackupService, type BackupService } from './memory-backup.js';
 import type { MemoryToolHandler } from './tools.js';
 import { createWakeDetector, type WakeDetector } from './wake-detector.js';
 import { createPresenceManager } from './presence-manager.js';
@@ -38,9 +39,19 @@ if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
 
 // Initialize data store if DB path is available (optional — skip persistence if not configured).
 // PGlite (WASM Postgres) can corrupt on dirty shutdown (force kill, crash). If the database
-// fails to open, delete the data directory and retry once with a fresh database.
+// fails to open, delete the data directory and retry with a fresh database, then restore
+// memories from the periodic backup file.
 let store: DataStore | null = null;
+const backupPath = join(config.neuraHome, 'memory-backup.json');
+
 if (config.pgDataPath) {
+  // Clean stale postmaster.pid from a previous dirty shutdown
+  const pidPath = join(config.pgDataPath, 'postmaster.pid');
+  if (existsSync(pidPath)) {
+    log.warn('removing stale postmaster.pid');
+    unlinkSync(pidPath);
+  }
+
   try {
     const { PgliteStore } = await import('./stores/index.js');
     store = await PgliteStore.create(config.pgDataPath);
@@ -48,13 +59,23 @@ if (config.pgDataPath) {
   } catch (err) {
     log.warn('database corrupt or failed to open, resetting', { err: String(err) });
     try {
-      const { rmSync } = await import('fs');
       rmSync(config.pgDataPath, { recursive: true, force: true });
       const { PgliteStore } = await import('./stores/index.js');
       store = await PgliteStore.create(config.pgDataPath);
       log.info('database recreated after reset', { path: config.pgDataPath });
+
+      // Auto-restore memories from backup after corruption recovery
+      if (existsSync(backupPath)) {
+        const bs = createBackupService({ store, backupPath });
+        const result = await bs.restore();
+        if (result) {
+          log.info('memories restored from backup after corruption', result);
+        }
+      }
     } catch (retryErr) {
-      log.warn('database unavailable after reset, persistence disabled', { err: String(retryErr) });
+      log.warn('database unavailable after reset, persistence disabled', {
+        err: String(retryErr),
+      });
     }
   }
 }
@@ -62,8 +83,20 @@ if (config.pgDataPath) {
 // Initialize memory manager if store and Google API key are available
 let memoryManager: MemoryManager | null = null;
 if (store && config.googleApiKey) {
-  memoryManager = createMemoryManager({ store, googleApiKey: config.googleApiKey });
+  memoryManager = createMemoryManager({
+    store,
+    googleApiKey: config.googleApiKey,
+    onExtractionComplete: () => backupService?.backup() ?? Promise.resolve(),
+  });
   log.info('memory manager initialized');
+}
+
+// Start periodic memory backup
+let backupService: BackupService | null = null;
+if (store) {
+  backupService = createBackupService({ store, backupPath });
+  backupService.checkStaleness();
+  backupService.start();
 }
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -89,6 +122,28 @@ if (uiAvailable) {
   app.use(express.static(uiDir));
   log.info('web UI mounted', { path: uiDir });
 }
+
+app.post('/backup', (_req, res) => {
+  if (!backupService) {
+    res.status(503).json({ error: 'backup not available (no store)' });
+    return;
+  }
+  void backupService
+    .backup()
+    .then(() => res.json({ status: 'ok', path: backupService.backupPath }))
+    .catch((err) => res.status(500).json({ error: String(err) }));
+});
+
+app.post('/restore', (_req, res) => {
+  if (!backupService) {
+    res.status(503).json({ error: 'backup not available (no store)' });
+    return;
+  }
+  void backupService
+    .restore()
+    .then((result) => res.json({ status: 'ok', ...result }))
+    .catch((err) => res.status(500).json({ error: String(err) }));
+});
 
 // IMPORTANT: This catch-all MUST be the last route registered.
 // Any GET route added after this will be shadowed.
@@ -503,6 +558,8 @@ async function shutdown() {
   const forceExit = setTimeout(() => process.exit(1), 5000);
   forceExit.unref();
 
+  backupService?.stop();
+
   // Close WSS first — triggers ws 'close' handlers which finalize sessions in store.
   // Then await all in-flight session cleanups before closing the store.
   if (wss) {
@@ -510,12 +567,18 @@ async function shutdown() {
       void (async () => {
         await Promise.allSettled([...pendingCleanups]);
         await memoryManager?.close();
+        await backupService
+          ?.backup()
+          .catch((err) => log.warn('final backup failed', { err: String(err) }));
         await store?.close();
         server.close(() => process.exit(0));
       })();
     });
   } else {
     await memoryManager?.close();
+    await backupService
+      ?.backup()
+      .catch((err) => log.warn('final backup failed', { err: String(err) }));
     await store?.close();
     server.close(() => process.exit(0));
   }

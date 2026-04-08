@@ -415,6 +415,126 @@ describe('PgliteStore', () => {
     });
   });
 
+  describe('exportMemories / importMemories', () => {
+    it('round-trips all memory tables through export → wipe → import', async () => {
+      // Seed data
+      await store.upsertIdentity('tone', 'casual', 'user_feedback', undefined);
+      await store.upsertUserProfile('name', 'Don', 0.95, undefined);
+      await store.upsertFact('Likes TypeScript', 'technical', ['lang'], undefined, 0.9);
+      await store.upsertPreference('Be concise', 'response_style', undefined);
+      // Reinforce preference to bump strength
+      const prefs = await store.getPreferences();
+      await store.reinforcePreference(prefs[0].id);
+
+      const sessionId = await store.createSession('grok', 'gemini');
+      await store.createSessionSummary(sessionId, {
+        summary: 'Discussed TypeScript',
+        topics: ['typescript'],
+        keyDecisions: ['use strict mode'],
+        openThreads: [],
+        extractionModel: 'gemini-2.5-flash',
+        extractionCostUsd: 0.002,
+      });
+
+      // Export
+      const backup = await store.exportMemories();
+      expect(backup.version).toBe(1);
+      expect(backup.identity.length).toBeGreaterThanOrEqual(1);
+      expect(backup.userProfile).toHaveLength(1);
+      expect(backup.facts).toHaveLength(1);
+      expect(backup.preferences).toHaveLength(1);
+      expect(backup.sessionSummaries).toHaveLength(1);
+
+      // Verify preference strength was preserved in export
+      expect(backup.preferences[0].strength).toBeGreaterThan(1.0);
+      expect(backup.preferences[0].reinforcementCount).toBe(2);
+
+      // Import into a fresh store
+      const store2 = await PgliteStore.create(); // fresh in-memory
+      const result = await store2.importMemories(backup);
+      expect(result.imported).toBeGreaterThan(0);
+
+      // Verify all data restored
+      const identity2 = await store2.getIdentity();
+      const toneEntry = identity2.find((e) => e.attribute === 'tone');
+      expect(toneEntry?.value).toBe('casual');
+      expect(toneEntry?.source).toBe('user_feedback');
+
+      const profile2 = await store2.getUserProfile();
+      expect(profile2).toHaveLength(1);
+      expect(profile2[0].field).toBe('name');
+      expect(profile2[0].confidence).toBe(0.95);
+
+      const facts2 = await store2.getFacts();
+      expect(facts2).toHaveLength(1);
+      expect(facts2[0].content).toBe('Likes TypeScript');
+      expect(facts2[0].confidence).toBe(0.9);
+
+      const prefs2 = await store2.getPreferences();
+      expect(prefs2).toHaveLength(1);
+      expect(prefs2[0].preference).toBe('Be concise');
+      expect(prefs2[0].strength).toBeGreaterThan(1.0);
+      expect(prefs2[0].reinforcementCount).toBe(2);
+
+      const summaries2 = await store2.getRecentSummaries();
+      expect(summaries2).toHaveLength(1);
+      expect(summaries2[0].summary).toBe('Discussed TypeScript');
+      expect(summaries2[0].topics).toEqual(['typescript']);
+
+      await store2.close();
+    });
+
+    it('import is idempotent — re-importing same backup does not inflate values', async () => {
+      await store.upsertPreference('Be verbose', 'response_style', undefined);
+      const prefs = await store.getPreferences();
+      const originalStrength = prefs[0].strength;
+
+      const backup = await store.exportMemories();
+
+      // Import into same store twice
+      await store.importMemories(backup);
+      await store.importMemories(backup);
+
+      const prefs2 = await store.getPreferences();
+      // GREATEST keeps the higher value, doesn't add — strength should not inflate
+      expect(prefs2[0].strength).toBe(originalStrength);
+    });
+
+    it('handles empty backup gracefully', async () => {
+      const store2 = await PgliteStore.create();
+      const emptyBackup = await store2.exportMemories();
+
+      // Identity has defaults, rest should be empty
+      expect(emptyBackup.userProfile).toHaveLength(0);
+      expect(emptyBackup.facts).toHaveLength(0);
+      expect(emptyBackup.preferences).toHaveLength(0);
+      expect(emptyBackup.sessionSummaries).toHaveLength(0);
+
+      const result = await store.importMemories(emptyBackup);
+      expect(result.skipped).toBe(0);
+
+      await store2.close();
+    });
+
+    it('preserves fact accessCount and expiresAt through round-trip', async () => {
+      await store.upsertFact('Expiring fact', 'general', [], undefined, 0.8);
+      const facts = await store.getFacts();
+      // Touch the fact to increment access count
+      await store.touchFact(facts[0].id);
+      await store.touchFact(facts[0].id);
+
+      const backup = await store.exportMemories();
+      expect(backup.facts[0].accessCount).toBe(2);
+
+      const store2 = await PgliteStore.create();
+      await store2.importMemories(backup);
+      const facts2 = await store2.getFacts();
+      expect(facts2[0].accessCount).toBe(2);
+
+      await store2.close();
+    });
+  });
+
   describe('file persistence', () => {
     it('persists data across close and reopen', async () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neura-pglite-test-'));

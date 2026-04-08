@@ -6,6 +6,7 @@ import type {
   SessionSummaryEntry,
   MemoryExtractionRecord,
   MemoryContext,
+  MemoryBackup,
 } from './memory.js';
 
 /** Voice provider interface — any voice backend must implement this. */
@@ -119,6 +120,10 @@ export interface DataStore {
 
   // Composite context for system prompt injection
   getMemoryContext(options?: { maxTokens?: number }): Promise<MemoryContext>;
+
+  // Backup & recovery
+  exportMemories(): Promise<MemoryBackup>;
+  importMemories(backup: MemoryBackup): Promise<{ imported: number; skipped: number }>;
 
   close(): Promise<void>;
 }
