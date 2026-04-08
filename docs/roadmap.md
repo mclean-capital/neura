@@ -8,7 +8,7 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 
 ## Current State
 
-Phase 3 (Memory & Identity) is complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, and 100+ unit tests.
+Phase 3b (Presence & Wake) is complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, and 100+ unit tests.
 
 ### What's built
 
@@ -21,6 +21,7 @@ Phase 3 (Memory & Identity) is complete. The platform is a fully functional mono
 - **Provider adapter layer** — Pluggable voice/vision providers behind typed interfaces
 - **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
 - **Memory & Identity** — Cross-session memory via extraction pipeline (Gemini 2.5 Flash), semantic recall (Gemini Embedding 2, 3072-dim vectors), voice-callable memory tools, token-budgeted system prompt injection
+- **Presence & Wake** — Ambient wake word detection (VAD + Gemini transcription + fuzzy match), PASSIVE/ACTIVE/IDLE state machine, audio replay to Grok, configurable assistant name (default: "jarvis"), manual start fallback
 - **`neura update`** — Downloads core bundles from GitHub releases, atomic extraction, background auto-update check with local cache
 - **CI/CD** — Semantic release, desktop builds (Electron), core bundle builds for 5 platforms, auto-changelog
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
@@ -225,7 +226,7 @@ Download from neura.ai or GitHub releases. The desktop app connects to a running
 | File export        | Planned | Save transcripts, export conversation history      |
 | Push notifications | Planned | Proactive alerts to connected clients              |
 | SMS/messaging      | Planned | Text the user when they're not connected           |
-| Persistent memory  | Planned | Conversation context across sessions (Phase 3)     |
+| Persistent memory  | Done    | Cross-session memory via extraction pipeline       |
 
 ---
 
@@ -691,14 +692,28 @@ The current architecture is session-based: a client connects, starts a session, 
 - Proactive initiation (AI speaks first without being asked) — that's Phase 4 Discovery Loop
 - Multi-room/multi-device presence — future work
 
-- [ ] Wake word detection (local, lightweight)
-- [ ] Active/Passive/Idle state machine in server
-- [ ] Conversation context awareness (transition detection)
-- [ ] Protocol additions for state transitions
-- [ ] Client UI for presence state indicator
-- [ ] Cost-optimized state transitions (tear down vs keep alive)
+- [x] Wake word detection (VAD + Gemini transcription + fuzzy match)
+- [x] Active/Passive/Idle state machine in server (`presence-manager.ts`)
+- [x] AI-driven state transitions (`enter_mode` tool)
+- [x] Protocol additions for state transitions (`presenceState`, `manualStart`)
+- [x] Client UI for presence state indicator + manual Start button
+- [x] Cost-optimized: $0 in passive (VAD only), Grok session only in active mode
+- [x] Audio replay to Grok on wake (buffered PCM, no lost context)
+- [x] Auto-mic on connect, configurable wake word (default: "jarvis")
 
-#### Phase 4 — Discovery Loop
+#### Phase 4 — Storage Hardening (PGlite backup & recovery)
+
+PGlite (WASM Postgres) can corrupt on dirty shutdowns (force kill, crash, power loss) because its WASM build lacks native Postgres crash recovery. Rather than migrating to SQLite (which would sacrifice pgvector, Postgres SQL dialect, and the seamless cloud migration path), we add periodic backup of valuable memory data and auto-restore on corruption.
+
+- [ ] Periodic JSON export of memory tables (facts, preferences, identity, user_profile, session_summaries) to `~/.neura/memory-backup.json`
+- [ ] Configurable backup interval (default: every 5 minutes, on every extraction completion)
+- [ ] Auto-restore on corruption: self-heal (delete pgdata) + re-import memories from backup
+- [ ] Graceful shutdown hardening: `uncaughtException` + `unhandledRejection` handlers (done)
+- [ ] Startup validation: detect stale `postmaster.pid` and clean up before PGlite.create()
+- [ ] Log warning when backup is stale (> 1 hour old)
+- [ ] CLI command: `neura backup` / `neura restore` for manual export/import
+
+#### Phase 5 — Discovery Loop
 
 - [ ] Heartbeat scheduler (configurable interval, default 30min)
 - [ ] Heartbeat checklist (DB-stored, configurable via CLI or voice)
@@ -709,7 +724,7 @@ The current architecture is session-based: a client connects, starts a session, 
 - [ ] Proactive voice notifications to connected clients
 - [ ] Cost-optimized isolated heartbeat sessions
 
-#### Phase 5 — Skill Registry
+#### Phase 6 — Skill Registry
 
 - [ ] Skill directory structure (`SKILL.md` with YAML frontmatter)
 - [ ] Runtime skill loading (no recompilation)
@@ -718,7 +733,7 @@ The current architecture is session-based: a client connects, starts a session, 
 - [ ] Skill marketplace foundation
 - [ ] Self-extensible: agent writes new skills autonomously
 
-#### Phase 6 — Workers & Execution Loop
+#### Phase 7 — Workers & Execution Loop
 
 - [ ] Worker runtime and lifecycle management
 - [ ] Execution loop (autonomous task completion)
@@ -729,7 +744,7 @@ The current architecture is session-based: a client connects, starts a session, 
 - [ ] Enable Grok's `web_search` and `x_search` tools
 - [ ] File/document upload
 
-#### Phase 7 — Cloud & Clients
+#### Phase 8 — Cloud & Clients
 
 - [ ] Cloud-hosted core (managed deployment, auth, teams)
 - [ ] WebSocket auth (bearer token on upgrade handshake)
@@ -741,7 +756,7 @@ The current architecture is session-based: a client connects, starts a session, 
 - [ ] Browser extension (`packages/extension`)
 - [ ] Worker marketplace
 
-#### Phase 8 — Real-time Video & Specialized
+#### Phase 9 — Real-time Video & Specialized
 
 - [ ] Real-time video mode (adaptive FPS, system audio, push-to-talk)
 - [ ] VS Code extension (voice coding assistant)

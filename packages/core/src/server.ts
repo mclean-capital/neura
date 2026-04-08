@@ -36,7 +36,9 @@ if (config.xaiApiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = conf
 if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
   process.env.GOOGLE_API_KEY = config.googleApiKey;
 
-// Initialize data store if DB path is available (optional — skip persistence if not configured)
+// Initialize data store if DB path is available (optional — skip persistence if not configured).
+// PGlite (WASM Postgres) can corrupt on dirty shutdown (force kill, crash). If the database
+// fails to open, delete the data directory and retry once with a fresh database.
 let store: DataStore | null = null;
 if (config.pgDataPath) {
   try {
@@ -44,7 +46,16 @@ if (config.pgDataPath) {
     store = await PgliteStore.create(config.pgDataPath);
     log.info('database initialized', { path: config.pgDataPath });
   } catch (err) {
-    log.warn('database unavailable, persistence disabled', { err: String(err) });
+    log.warn('database corrupt or failed to open, resetting', { err: String(err) });
+    try {
+      const { rmSync } = await import('fs');
+      rmSync(config.pgDataPath, { recursive: true, force: true });
+      const { PgliteStore } = await import('./stores/index.js');
+      store = await PgliteStore.create(config.pgDataPath);
+      log.info('database recreated after reset', { path: config.pgDataPath });
+    } catch (retryErr) {
+      log.warn('database unavailable after reset, persistence disabled', { err: String(retryErr) });
+    }
   }
 }
 
@@ -512,3 +523,11 @@ async function shutdown() {
 
 process.on('SIGTERM', () => void shutdown());
 process.on('SIGINT', () => void shutdown());
+process.on('uncaughtException', (err) => {
+  log.error('uncaught exception, shutting down', { err: err.message });
+  void shutdown();
+});
+process.on('unhandledRejection', (reason) => {
+  log.error('unhandled rejection, shutting down', { err: String(reason) });
+  void shutdown();
+});
