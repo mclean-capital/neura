@@ -52,9 +52,9 @@ jobs:
 
       - run: npm ci
 
-      # Build core (tsc + esbuild bundle)
+      # Build core and its dependencies (types, utils) via turbo
       - name: Build core
-        run: npm run build -w @neura/core
+        run: npx turbo run build --filter=@neura/core
 
       # Extract version from release tag
       - name: Extract version
