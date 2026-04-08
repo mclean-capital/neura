@@ -17,6 +17,7 @@ import { uninstallCommand } from './commands/uninstall.js';
 import { versionCommand } from './commands/version.js';
 import { openCommand } from './commands/open.js';
 import { updateCommand } from './commands/update.js';
+import { backupCommand, restoreCommand } from './commands/backup.js';
 
 const program = new Command();
 
@@ -70,5 +71,14 @@ program.command('open').description('Open the web UI in default browser').action
 program.command('update').description('Download the latest core binary').action(updateCommand);
 
 program.command('version').description('Show CLI and core versions').action(versionCommand);
+
+// Data management
+program.command('backup').description('Create a memory backup').action(backupCommand);
+
+program
+  .command('restore')
+  .description('Restore memories from backup')
+  .option('--force', 'Skip confirmation prompt')
+  .action(restoreCommand);
 
 program.parse();

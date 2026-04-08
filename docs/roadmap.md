@@ -8,13 +8,13 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 
 ## Current State
 
-Phase 3b (Presence & Wake) is complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, and 100+ unit tests.
+Phase 4 (Storage Hardening) is complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, PGlite backup/recovery, and 100+ unit tests.
 
 ### What's built
 
 - **Hybrid voice + vision** — Grok Eve for voice, Gemini Live for continuous vision watcher, bridged via tool calls
 - **Persistent core service** — Core runs as an OS-managed background service (launchd, systemd, Windows Service stub), independent of any client
-- **`neura` CLI** — 11 commands to install, configure, and manage core: `install`, `start`, `stop`, `restart`, `status`, `config`, `logs`, `open`, `update`, `version`, `uninstall`
+- **`neura` CLI** — 13 commands to install, configure, and manage core: `install`, `start`, `stop`, `restart`, `status`, `config`, `logs`, `open`, `update`, `version`, `uninstall`, `backup`, `restore`
 - **Desktop app** — Electron with setup wizard, tray icon, global hotkey, auto-update
 - **Web UI** — React 19 + Vite 6 + Tailwind v4, connects to core via WebSocket
 - **Design system** — 11 shared React components, 6 hooks, Storybook, industrial precision aesthetic
@@ -640,8 +640,6 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [ ] Bun compile release pipeline for standalone binaries
 - [ ] WinSW integration for Windows Service registration
 
-### Upcoming
-
 #### Phase 3 — Memory & Identity ([detailed architecture](phase3-memory.md))
 
 - [x] PGlite (WASM PostgreSQL 17 + pgvector) replaces sql.js
@@ -705,13 +703,15 @@ The current architecture is session-based: a client connects, starts a session, 
 
 PGlite (WASM Postgres) can corrupt on dirty shutdowns (force kill, crash, power loss) because its WASM build lacks native Postgres crash recovery. Rather than migrating to SQLite (which would sacrifice pgvector, Postgres SQL dialect, and the seamless cloud migration path), we add periodic backup of valuable memory data and auto-restore on corruption.
 
-- [ ] Periodic JSON export of memory tables (facts, preferences, identity, user_profile, session_summaries) to `~/.neura/memory-backup.json`
-- [ ] Configurable backup interval (default: every 5 minutes, on every extraction completion)
-- [ ] Auto-restore on corruption: self-heal (delete pgdata) + re-import memories from backup
-- [ ] Graceful shutdown hardening: `uncaughtException` + `unhandledRejection` handlers (done)
-- [ ] Startup validation: detect stale `postmaster.pid` and clean up before PGlite.create()
-- [ ] Log warning when backup is stale (> 1 hour old)
-- [ ] CLI command: `neura backup` / `neura restore` for manual export/import
+- [x] Periodic JSON export of memory tables (facts, preferences, identity, user_profile, session_summaries) to `~/.neura/memory-backup.json`
+- [x] Configurable backup interval (default: every 5 minutes, on every extraction completion)
+- [x] Auto-restore on corruption: self-heal (delete pgdata) + re-import memories from backup
+- [x] Graceful shutdown hardening: `uncaughtException` + `unhandledRejection` handlers
+- [x] Startup validation: detect stale `postmaster.pid` and clean up before PGlite.create()
+- [x] Log warning when backup is stale (> 1 hour old)
+- [x] CLI command: `neura backup` / `neura restore` for manual export/import
+
+### Upcoming
 
 #### Phase 5 — Discovery Loop
 

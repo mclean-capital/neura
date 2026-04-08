@@ -105,14 +105,14 @@ npm run dev             # http://localhost:3002
 
 CLI tool for installing and managing Neura Core as a persistent OS background service.
 
-- `src/index.ts` — Commander.js entry point, 13 commands
+- `src/index.ts` — Commander.js entry point, 15 commands
 - `src/config.ts` — Load/save `~/.neura/config.json`
 - `src/health.ts` — HTTP health check client for `/health` endpoint (includes version field)
 - `src/port.ts` — Auto-assign free port in 18000-19000 range
 - `src/download.ts` — GitHub release asset downloader + extractor (atomic staging via temp dir)
 - `src/update-check.ts` — Background update check via detached child process + local cache file
 - `src/service/` — Platform-specific service managers (Windows, macOS, Linux)
-- `src/commands/` — install, uninstall, start, stop, restart, status, config, logs, open, update, version
+- `src/commands/` — install, uninstall, start, stop, restart, status, config, logs, open, update, version, backup, restore
 
 Config lives at `~/.neura/config.json`. Port priority: `PORT` env var > config.json > default (0 = not yet assigned). See `docs/cli-service-architecture.md` for full spec.
 
