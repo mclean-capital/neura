@@ -7,12 +7,19 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
   createWriteStream: vi.fn(() => ({ on: vi.fn(), write: vi.fn(), end: vi.fn() })),
   chmodSync: vi.fn(),
+  rmSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
+  renameSync: vi.fn(),
 }));
 
-vi.mock('os', () => ({
-  platform: vi.fn(() => 'linux'),
-  arch: vi.fn(() => 'x64'),
-}));
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return {
+    ...actual,
+    platform: vi.fn(() => 'linux'),
+    arch: vi.fn(() => 'x64'),
+  };
+});
 
 vi.mock('./config.js', () => ({
   getNeuraHome: vi.fn(() => '/home/testuser/.neura'),
@@ -21,7 +28,7 @@ vi.mock('./config.js', () => ({
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync } from 'fs';
 import { platform, arch } from 'os';
 import {
   getLatestVersion,
@@ -29,6 +36,7 @@ import {
   hasCoreBinary,
   getCoreBinaryPath,
   getInstalledCoreVersion,
+  downloadCore,
 } from './download.js';
 
 const mockedExistsSync = vi.mocked(existsSync);
@@ -124,5 +132,41 @@ describe('getInstalledCoreVersion', () => {
   it('returns null when version.txt does not exist', () => {
     mockedExistsSync.mockReturnValue(false);
     expect(getInstalledCoreVersion()).toBeNull();
+  });
+});
+
+describe('downloadCore', () => {
+  const mockedRmSync = vi.mocked(rmSync);
+
+  it('throws helpful message when release exists but asset is missing (404)', async () => {
+    // First fetch: download asset → 404
+    // Second fetch: check if release exists → 200
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found' })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ tag_name: 'v1.3.0' }) });
+
+    await expect(downloadCore('v1.3.0')).rejects.toThrow('not yet available');
+
+    // Staging directory should be cleaned up even on error
+    expect(mockedRmSync).toHaveBeenCalledWith(
+      expect.stringContaining('neura-update-'),
+      expect.objectContaining({ recursive: true, force: true })
+    );
+  });
+
+  it('throws generic error when release does not exist (404)', async () => {
+    // First fetch: download asset → 404
+    // Second fetch: check release → also 404
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found' })
+      .mockResolvedValueOnce({ ok: false, status: 404 });
+
+    await expect(downloadCore('v9.9.9')).rejects.toThrow('Download failed: 404');
+
+    // Staging directory should be cleaned up even on error
+    expect(mockedRmSync).toHaveBeenCalledWith(
+      expect.stringContaining('neura-update-'),
+      expect.objectContaining({ recursive: true, force: true })
+    );
   });
 });

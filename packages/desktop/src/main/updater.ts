@@ -28,6 +28,13 @@ export function initUpdater() {
   });
 
   autoUpdater.on('error', (err) => {
+    // Network errors and missing release assets are expected when builds
+    // haven't been uploaded yet — log without alarming the user
+    const msg = err?.message ?? '';
+    if (msg.includes('net::') || msg.includes('404') || msg.includes('ENOTFOUND')) {
+      console.log('[updater] Update check skipped — release assets not available yet');
+      return;
+    }
     console.error('[updater] Error:', err);
   });
 

@@ -1,8 +1,17 @@
 name: Desktop Build
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.3.0)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -19,6 +28,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/setup-node@v4
         with:
@@ -29,14 +40,28 @@ jobs:
 
       - run: npm run build
 
+      # Extract tag and inject correct version into desktop package.json
+      # so electron-builder generates manifests (latest-mac.yml, latest.yml)
+      # with the real release version instead of the placeholder 0.0.0
+      - name: Set desktop version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          cd packages/desktop
+          node -e "const pkg=JSON.parse(require('fs').readFileSync('package.json','utf8')); pkg.version='$VERSION'; require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n')"
+
+      # Build desktop installer without auto-publishing — softprops/action-gh-release
+      # handles the upload to the correct release tag
       - name: Build desktop installer
-        run: npm run ${{ matrix.command }} -w @neura/desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run ${{ matrix.command }} -w @neura/desktop -- --publish never
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
             packages/desktop/release/*.exe
             packages/desktop/release/*.dmg
