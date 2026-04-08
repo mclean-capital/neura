@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/mclean-capital/neura/compare/v1.3.0...v1.3.1) (2026-04-08)
+
+### Bug Fixes
+
+- **ci:** use reusable workflows for release asset builds ([563e92c](https://github.com/mclean-capital/neura/commit/563e92c3f0d1f02c540f59a228c7c7fe7e492734))
+
 # [1.3.0](https://github.com/mclean-capital/neura/compare/v1.2.0...v1.3.0) (2026-04-08)
 
 ### Features
