@@ -85,6 +85,17 @@ export interface MemoryContext {
   tokenEstimate: number;
 }
 
+/** Shape of ~/.neura/memory-backup.json */
+export interface MemoryBackup {
+  version: 1;
+  exportedAt: string;
+  identity: IdentityEntry[];
+  userProfile: UserProfileEntry[];
+  facts: FactEntry[];
+  preferences: PreferenceEntry[];
+  sessionSummaries: SessionSummaryEntry[];
+}
+
 /** Output from the extraction pipeline */
 export interface ExtractionResult {
   facts: { content: string; category: string; tags: string[] }[];

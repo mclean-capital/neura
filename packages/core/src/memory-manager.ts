@@ -8,6 +8,7 @@ const log = new Logger('memory');
 export interface MemoryManagerOptions {
   store: DataStore;
   googleApiKey: string;
+  onExtractionComplete?: () => Promise<void>;
 }
 
 export interface MemoryManager {
@@ -97,6 +98,12 @@ export function createMemoryManager(options: MemoryManagerOptions): MemoryManage
 
       await store.updateExtraction(extractionId, 'completed', memoriesCreated);
       log.info('extraction stored', { sessionId, memoriesCreated });
+
+      if (options.onExtractionComplete) {
+        await options
+          .onExtractionComplete()
+          .catch((e) => log.warn('post-extraction callback failed', { err: String(e) }));
+      }
     } catch (err) {
       log.error('extraction failed', { sessionId, err: String(err) });
       await store

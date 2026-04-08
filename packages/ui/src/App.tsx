@@ -30,6 +30,7 @@ export function App() {
   const { playChunk, clearQueue, close: closePlayback } = useAudioPlayback();
   const { cost, handleCostUpdate } = useCostTracker();
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+  const [presenceState, setPresenceState] = useState<'passive' | 'active' | 'idle'>('passive');
 
   // Track current streaming messages
   const currentUserRef = useRef<string | null>(null);
@@ -97,6 +98,10 @@ export function App() {
         case 'costUpdate':
           handleCostUpdate(msg);
           break;
+
+        case 'presenceState':
+          setPresenceState(msg.state);
+          break;
       }
     });
   }, [subscribe, playChunk, clearQueue, addEntry, updateEntry, handleCostUpdate]);
@@ -143,6 +148,13 @@ export function App() {
   const isConnected = status === 'connected';
   const isDisconnected = status === 'disconnected';
 
+  // Auto-start mic on connection
+  useEffect(() => {
+    if (isConnected && !mic.isCapturing) {
+      void mic.start();
+    }
+  }, [isConnected]);
+
   const handleSessionToggle = useCallback(() => {
     if (isDisconnected) {
       connect();
@@ -162,16 +174,44 @@ export function App() {
           NEURA
         </span>
         <CostIndicator cost={cost} />
-        {isConnected ? (
-          <button
-            className="px-4 py-1.5 rounded-full border-2 border-signal-danger text-signal-danger cursor-pointer text-xs font-medium transition-all duration-200 hover:bg-signal-danger-bg"
-            onClick={handleSessionToggle}
-          >
-            End Session
-          </button>
-        ) : (
-          <StatusBadge status={status} />
-        )}
+        <div className="flex items-center gap-3">
+          {isConnected && (
+            <span
+              className={`text-xs font-mono tracking-wider flex items-center gap-1.5 ${
+                presenceState === 'active' ? 'text-session-green' : 'text-dark-text-muted'
+              }`}
+            >
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${
+                  presenceState === 'active'
+                    ? 'bg-session-green animate-pulse'
+                    : 'bg-dark-text-muted'
+                }`}
+              />
+              {presenceState === 'active' ? 'ACTIVE' : 'PASSIVE'}
+            </span>
+          )}
+          {isConnected ? (
+            <div className="flex items-center gap-2">
+              {presenceState === 'passive' && (
+                <button
+                  className="px-4 py-1.5 rounded-full border-2 border-session-green text-session-green cursor-pointer text-xs font-medium transition-all duration-200 hover:bg-session-green-bg"
+                  onClick={() => sendMessage({ type: 'manualStart' })}
+                >
+                  Start
+                </button>
+              )}
+              <button
+                className="px-4 py-1.5 rounded-full border-2 border-signal-danger text-signal-danger cursor-pointer text-xs font-medium transition-all duration-200 hover:bg-signal-danger-bg"
+                onClick={handleSessionToggle}
+              >
+                End Session
+              </button>
+            </div>
+          ) : (
+            <StatusBadge status={status} />
+          )}
+        </div>
       </div>
 
       {(camera.isActive || screen.isActive) && (

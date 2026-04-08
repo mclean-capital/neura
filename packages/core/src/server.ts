@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import express from 'express';
 import { createServer } from 'http';
@@ -11,7 +11,10 @@ import { createVisionWatcher } from './vision-watcher.js';
 import { createCostTracker } from './cost-tracker.js';
 import { loadConfig } from './config.js';
 import { createMemoryManager, type MemoryManager } from './memory-manager.js';
+import { createBackupService, type BackupService } from './memory-backup.js';
 import type { MemoryToolHandler } from './tools.js';
+import { createWakeDetector, type WakeDetector } from './wake-detector.js';
+import { createPresenceManager } from './presence-manager.js';
 
 const log = new Logger('server');
 const config = loadConfig();
@@ -34,23 +37,66 @@ if (config.xaiApiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = conf
 if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
   process.env.GOOGLE_API_KEY = config.googleApiKey;
 
-// Initialize data store if DB path is available (optional — skip persistence if not configured)
+// Initialize data store if DB path is available (optional — skip persistence if not configured).
+// PGlite (WASM Postgres) can corrupt on dirty shutdown (force kill, crash). If the database
+// fails to open, delete the data directory and retry with a fresh database, then restore
+// memories from the periodic backup file.
 let store: DataStore | null = null;
+const backupPath = join(config.neuraHome, 'memory-backup.json');
+
 if (config.pgDataPath) {
+  // Clean stale postmaster.pid from a previous dirty shutdown
+  const pidPath = join(config.pgDataPath, 'postmaster.pid');
+  if (existsSync(pidPath)) {
+    log.warn('removing stale postmaster.pid');
+    unlinkSync(pidPath);
+  }
+
   try {
     const { PgliteStore } = await import('./stores/index.js');
     store = await PgliteStore.create(config.pgDataPath);
     log.info('database initialized', { path: config.pgDataPath });
   } catch (err) {
-    log.warn('database unavailable, persistence disabled', { err: String(err) });
+    log.warn('database corrupt or failed to open, resetting', { err: String(err) });
+    try {
+      rmSync(config.pgDataPath, { recursive: true, force: true });
+      const { PgliteStore } = await import('./stores/index.js');
+      store = await PgliteStore.create(config.pgDataPath);
+      log.info('database recreated after reset', { path: config.pgDataPath });
+
+      // Auto-restore memories from backup after corruption recovery
+      if (existsSync(backupPath)) {
+        const bs = createBackupService({ store, backupPath });
+        const result = await bs.restore();
+        if (result) {
+          log.info('memories restored from backup after corruption', result);
+        }
+      }
+    } catch (retryErr) {
+      log.warn('database unavailable after reset, persistence disabled', {
+        err: String(retryErr),
+      });
+    }
   }
 }
 
 // Initialize memory manager if store and Google API key are available
 let memoryManager: MemoryManager | null = null;
 if (store && config.googleApiKey) {
-  memoryManager = createMemoryManager({ store, googleApiKey: config.googleApiKey });
+  memoryManager = createMemoryManager({
+    store,
+    googleApiKey: config.googleApiKey,
+    onExtractionComplete: () => backupService?.backup() ?? Promise.resolve(),
+  });
   log.info('memory manager initialized');
+}
+
+// Start periodic memory backup
+let backupService: BackupService | null = null;
+if (store) {
+  backupService = createBackupService({ store, backupPath });
+  backupService.checkStaleness();
+  backupService.start();
 }
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -77,6 +123,28 @@ if (uiAvailable) {
   log.info('web UI mounted', { path: uiDir });
 }
 
+app.post('/backup', (_req, res) => {
+  if (!backupService) {
+    res.status(503).json({ error: 'backup not available (no store)' });
+    return;
+  }
+  void backupService
+    .backup()
+    .then(() => res.json({ status: 'ok', path: backupService.backupPath }))
+    .catch((err) => res.status(500).json({ error: String(err) }));
+});
+
+app.post('/restore', (_req, res) => {
+  if (!backupService) {
+    res.status(503).json({ error: 'backup not available (no store)' });
+    return;
+  }
+  void backupService
+    .restore()
+    .then((result) => res.json({ status: 'ok', ...result }))
+    .catch((err) => res.status(500).json({ error: String(err) }));
+});
+
 // IMPORTANT: This catch-all MUST be the last route registered.
 // Any GET route added after this will be shadowed.
 app.get('*', (_req, res) => {
@@ -101,6 +169,10 @@ function attachWebSocket() {
 
   wss.on('connection', (ws: WebSocket) => {
     log.info('client connected');
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'presenceState', state: 'passive' }));
+    }
 
     // Create DB session in the background — handlers are registered synchronously
     // so no messages or close events are missed while the insert runs.
@@ -196,10 +268,10 @@ function attachWebSocket() {
         }
       : undefined;
 
-    // Voice session is created after the memory prompt resolves.
-    // Message handlers use a guard (if !session) for the brief gap.
+    // ── Presence state machine ─────────────────────────────────────
     let session: VoiceProvider | null = null;
     let connectionClosed = false;
+    let wakeDetector: WakeDetector | null = null;
 
     function send(msg: ServerMessage) {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -257,6 +329,17 @@ function attachWebSocket() {
       onClose() {
         send({ type: 'sessionClosed' });
       },
+      onReady() {
+        // Grok session is configured — seed the wake transcript if available
+        if (pendingWakeAudio) {
+          const chunks = pendingWakeAudio;
+          pendingWakeAudio = null;
+          // Replay buffered audio so Grok hears the original wake speech
+          for (const chunk of chunks) {
+            session?.sendAudio(chunk);
+          }
+        }
+      },
       onReconnected() {
         if (cameraWatcher?.isConnected()) {
           session?.sendSystemEvent(
@@ -278,44 +361,111 @@ function attachWebSocket() {
       },
     };
 
-    // Build system prompt then create voice session
-    const promptPromise = memoryManager
-      ? memoryManager.buildSystemPrompt().catch((err) => {
-          log.warn('memory prompt build failed', { err: String(err) });
-          return undefined;
-        })
-      : Promise.resolve(undefined);
+    let pendingWakeAudio: string[] | null = null;
 
-    void promptPromise.then((systemPromptPrefix) => {
-      if (connectionClosed) return; // WS closed before prompt resolved
+    async function activateVoiceSession(wakeTranscript: string) {
+      if (connectionClosed || session) return;
+      log.info('activating voice session', { wakeTranscript });
+
+      // Reset extraction flag so this active session gets its own extraction
+      extractionTriggered = false;
+
+      // Stop wake detector while active
+      wakeDetector?.close();
+      wakeDetector = null;
+
+      // Build fresh system prompt each activation (memory context may have changed)
+      const systemPromptPrefix = memoryManager
+        ? await memoryManager.buildSystemPrompt().catch((err) => {
+            log.warn('memory prompt build failed', { err: String(err) });
+            return undefined;
+          })
+        : undefined;
+
+      // Re-check state after async gap — may have gone passive/idle during await
+      if (connectionClosed || presence.state !== 'active') return;
+
       session = createVoiceSession(voiceCallbacks, {
         systemPromptPrefix,
         memoryTools,
+        enterMode: (mode) => presence.enterMode(mode),
       });
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();
       resetIdleTimer();
+    }
+
+    function deactivateVoiceSession() {
+      log.info('deactivating voice session');
+      pendingWakeAudio = null;
+      costTracker.stopInterval();
+      triggerExtraction();
+
+      session?.close();
+      session = null;
+
+      // Resume wake word detection
+      startWakeDetector();
+    }
+
+    function startWakeDetector() {
+      if (!config.googleApiKey || connectionClosed) return;
+      wakeDetector = createWakeDetector({
+        assistantName: config.assistantName,
+        googleApiKey: config.googleApiKey,
+        onWake: (audioChunks) => {
+          pendingWakeAudio = audioChunks;
+          presence.wake('(detected via gemini)');
+        },
+        onDebug: (info) => {
+          log.debug('wake check', info);
+        },
+      });
+    }
+
+    const presence = createPresenceManager({
+      onActivate: (wakeTranscript) => void activateVoiceSession(wakeTranscript),
+      onDeactivate: () => deactivateVoiceSession(),
+      onStateChange: (state) => send({ type: 'presenceState', state }),
     });
 
+    // Start in passive mode with wake detection
+    startWakeDetector();
+
     ws.on('message', (raw: Buffer) => {
-      resetIdleTimer();
-      extractionTriggered = false; // Allow re-extraction if new content arrives after idle extraction
-      if (!session) return; // Voice session not ready yet
       try {
         const msg = JSON.parse(raw.toString()) as ClientMessage;
         switch (msg.type) {
           case 'audio':
-            session.sendAudio(msg.data);
+            if (presence.state === 'active' && session) {
+              // Active: forward audio to Grok
+              resetIdleTimer();
+              presence.resetIdleTimer();
+              extractionTriggered = false;
+              session.sendAudio(msg.data);
+            } else if (presence.state === 'passive') {
+              if (wakeDetector) {
+                wakeDetector.feedAudio(msg.data);
+              } else {
+                log.debug('audio received but no wake detector');
+              }
+            }
             break;
           case 'text':
-            session.sendText(msg.text);
+            if (presence.state === 'active' && session) {
+              resetIdleTimer();
+              extractionTriggered = false;
+              session.sendText(msg.text);
+            }
             break;
           case 'videoFrame': {
+            if (presence.state !== 'active') break;
             const watcher = getOrCreateWatcher(msg.source);
             watcher.sendFrame(msg.data);
             break;
           }
           case 'sourceChanged':
+            if (presence.state !== 'active' || !session) break;
             if (msg.active) {
               closeWatcher(msg.source);
               getOrCreateWatcher(msg.source);
@@ -327,6 +477,12 @@ function attachWebSocket() {
               session.sendSystemEvent(
                 `The user stopped sharing their ${msg.source}. The describe_${msg.source} tool is no longer available.`
               );
+            }
+            break;
+          case 'manualStart':
+            if (presence.state === 'passive') {
+              log.info('manual session start');
+              presence.enterMode('active');
             }
             break;
         }
@@ -342,10 +498,11 @@ function attachWebSocket() {
         clearTimeout(idleTimer);
         idleTimer = null;
       }
-      costTracker.stopInterval();
 
-      // Trigger extraction if not already triggered by idle timer
-      triggerExtraction();
+      // Clean up presence (triggers deactivate if active)
+      presence.close();
+      wakeDetector?.close();
+      wakeDetector = null;
 
       const cleanup = (async () => {
         // Drain in-flight transcript writes before finalizing
@@ -361,7 +518,6 @@ function attachWebSocket() {
       pendingCleanups.add(cleanup);
       void cleanup.finally(() => pendingCleanups.delete(cleanup));
 
-      session?.close();
       cameraWatcher?.close();
       screenWatcher?.close();
     });
@@ -402,6 +558,8 @@ async function shutdown() {
   const forceExit = setTimeout(() => process.exit(1), 5000);
   forceExit.unref();
 
+  backupService?.stop();
+
   // Close WSS first — triggers ws 'close' handlers which finalize sessions in store.
   // Then await all in-flight session cleanups before closing the store.
   if (wss) {
@@ -409,12 +567,18 @@ async function shutdown() {
       void (async () => {
         await Promise.allSettled([...pendingCleanups]);
         await memoryManager?.close();
+        await backupService
+          ?.backup()
+          .catch((err) => log.warn('final backup failed', { err: String(err) }));
         await store?.close();
         server.close(() => process.exit(0));
       })();
     });
   } else {
     await memoryManager?.close();
+    await backupService
+      ?.backup()
+      .catch((err) => log.warn('final backup failed', { err: String(err) }));
     await store?.close();
     server.close(() => process.exit(0));
   }
@@ -422,3 +586,11 @@ async function shutdown() {
 
 process.on('SIGTERM', () => void shutdown());
 process.on('SIGINT', () => void shutdown());
+process.on('uncaughtException', (err) => {
+  log.error('uncaught exception, shutting down', { err: err.message });
+  void shutdown();
+});
+process.on('unhandledRejection', (reason) => {
+  log.error('unhandled rejection, shutting down', { err: String(reason) });
+  void shutdown();
+});

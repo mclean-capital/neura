@@ -8,7 +8,12 @@
 import WebSocket from 'ws';
 import { Logger } from '@neura/utils/logger';
 import type { VoiceProvider, VoiceProviderCallbacks } from '@neura/types';
-import { getToolDefs, handleToolCall, type MemoryToolHandler } from '../tools.js';
+import {
+  getToolDefs,
+  handleToolCall,
+  type MemoryToolHandler,
+  type EnterModeHandler,
+} from '../tools.js';
 
 const log = new Logger('voice');
 
@@ -26,6 +31,7 @@ export interface GrokVoiceConfig {
   sessionMaxMs?: number;
   systemPromptPrefix?: string;
   memoryTools?: MemoryToolHandler;
+  enterMode?: EnterModeHandler;
 }
 
 export function createGrokVoiceSession(
@@ -45,6 +51,7 @@ export function createGrokVoiceSession(
   let intentionalClose = false;
   let reconnectAttempts = 0;
   let sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  let readyFired = false;
 
   // Transcript history for context seeding on reconnect
   const transcript: { role: 'user' | 'assistant'; text: string }[] = [];
@@ -118,7 +125,10 @@ export function createGrokVoiceSession(
               silence_duration_ms: vadSilenceDurationMs,
               prefix_padding_ms: vadPrefixPaddingMs,
             },
-            tools: getToolDefs(!!config.memoryTools),
+            tools: getToolDefs({
+              includeMemory: !!config.memoryTools,
+              includePresence: !!config.enterMode,
+            }),
           },
         })
       );
@@ -203,6 +213,10 @@ export function createGrokVoiceSession(
         break;
       case 'session.updated':
         log.info('session configured');
+        if (!readyFired) {
+          readyFired = true;
+          cb.onReady();
+        }
         break;
       case 'response.audio.delta':
       case 'response.output_audio.delta':
@@ -266,7 +280,13 @@ export function createGrokVoiceSession(
     const callId = msg.call_id;
 
     cb.onToolCall(name, args);
-    const result = await handleToolCall(name, args, cb.queryWatcher, config.memoryTools);
+    const result = await handleToolCall(
+      name,
+      args,
+      cb.queryWatcher,
+      config.memoryTools,
+      config.enterMode
+    );
     cb.onToolResult(name, result);
 
     if (currentWs && currentWs === ws && currentWs.readyState === WebSocket.OPEN) {

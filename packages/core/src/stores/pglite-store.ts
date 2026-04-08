@@ -15,6 +15,7 @@ import type {
   SessionSummaryEntry,
   MemoryExtractionRecord,
   MemoryContext,
+  MemoryBackup,
 } from '@neura/types';
 
 export class PgliteStore implements DataStore {
@@ -747,6 +748,179 @@ export class PgliteStore implements DataStore {
       recentSummaries: trimmedSummaries,
       tokenEstimate: totalTokens,
     };
+  }
+
+  // --- Backup & recovery ---
+
+  async exportMemories(): Promise<MemoryBackup> {
+    const identity = await this.getIdentity();
+    const userProfile = await this.getUserProfile();
+    const facts = await this.getFacts({ limit: 10000 });
+    const preferences = await this.getPreferences();
+    const sessionSummaries = await this.getRecentSummaries(1000);
+
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      identity,
+      userProfile,
+      facts,
+      preferences,
+      sessionSummaries,
+    };
+  }
+
+  async importMemories(backup: MemoryBackup): Promise<{ imported: number; skipped: number }> {
+    let imported = 0;
+    let skipped = 0;
+
+    // Identity — direct SQL to preserve all fields
+    for (const entry of backup.identity ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO identity (id, attribute, value, source, source_session_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (attribute) DO UPDATE SET
+             value = EXCLUDED.value,
+             source = EXCLUDED.source,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            entry.id,
+            entry.attribute,
+            entry.value,
+            entry.source,
+            entry.sourceSessionId,
+            entry.createdAt,
+            entry.updatedAt,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    // User profile — direct SQL to preserve confidence
+    for (const entry of backup.userProfile ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO user_profile (id, field, value, confidence, source_session_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (field, value) DO UPDATE SET
+             confidence = EXCLUDED.confidence,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            entry.id,
+            entry.field,
+            entry.value,
+            entry.confidence,
+            entry.sourceSessionId,
+            entry.createdAt,
+            entry.updatedAt,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    // Facts — direct SQL to preserve accessCount, lastAccessedAt, expiresAt
+    for (const entry of backup.facts ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, access_count, last_accessed_at, created_at, updated_at, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (content, category) DO UPDATE SET
+             tags = EXCLUDED.tags,
+             confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
+             access_count = GREATEST(facts.access_count, EXCLUDED.access_count),
+             last_accessed_at = COALESCE(EXCLUDED.last_accessed_at, facts.last_accessed_at),
+             expires_at = COALESCE(EXCLUDED.expires_at, facts.expires_at),
+             updated_at = EXCLUDED.updated_at`,
+          [
+            entry.id,
+            entry.content,
+            entry.category,
+            JSON.stringify(entry.tags),
+            entry.sourceSessionId,
+            entry.confidence,
+            entry.accessCount,
+            entry.lastAccessedAt,
+            entry.createdAt,
+            entry.updatedAt,
+            entry.expiresAt,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    // Preferences — direct SQL to preserve strength and reinforcementCount
+    for (const entry of backup.preferences ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO preferences (id, preference, category, strength, source_session_id, reinforcement_count, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (preference, category) DO UPDATE SET
+             strength = GREATEST(preferences.strength, EXCLUDED.strength),
+             reinforcement_count = GREATEST(preferences.reinforcement_count, EXCLUDED.reinforcement_count),
+             updated_at = EXCLUDED.updated_at`,
+          [
+            entry.id,
+            entry.preference,
+            entry.category,
+            entry.strength,
+            entry.sourceSessionId,
+            entry.reinforcementCount,
+            entry.createdAt,
+            entry.updatedAt,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    // Session summaries — need stub session rows for FK constraint
+    for (const entry of backup.sessionSummaries ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO sessions (id, voice_provider, vision_provider)
+           VALUES ($1, 'restored', 'restored')
+           ON CONFLICT (id) DO NOTHING`,
+          [entry.sessionId]
+        );
+        await this.db.query(
+          `INSERT INTO session_summaries (id, session_id, summary, topics, key_decisions, open_threads, extraction_model, extraction_cost_usd)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (session_id) DO UPDATE SET
+             summary = EXCLUDED.summary,
+             topics = EXCLUDED.topics,
+             key_decisions = EXCLUDED.key_decisions,
+             open_threads = EXCLUDED.open_threads`,
+          [
+            entry.id,
+            entry.sessionId,
+            entry.summary,
+            JSON.stringify(entry.topics),
+            JSON.stringify(entry.keyDecisions),
+            JSON.stringify(entry.openThreads),
+            entry.extractionModel,
+            entry.extractionCostUsd,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    log.info('import complete', { imported, skipped });
+    return { imported, skipped };
   }
 
   async close(): Promise<void> {

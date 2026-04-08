@@ -22,7 +22,16 @@ export interface SourceChangedMessage {
   active: boolean;
 }
 
-export type ClientMessage = AudioMessage | TextMessage | VideoFrameMessage | SourceChangedMessage;
+export interface ManualStartMessage {
+  type: 'manualStart';
+}
+
+export type ClientMessage =
+  | AudioMessage
+  | TextMessage
+  | VideoFrameMessage
+  | SourceChangedMessage
+  | ManualStartMessage;
 
 // ── Server → Client messages ─────────────────────────────────────────
 
@@ -80,6 +89,11 @@ export interface CostUpdateMessage {
   };
 }
 
+export interface PresenceStateMessage {
+  type: 'presenceState';
+  state: 'passive' | 'active' | 'idle';
+}
+
 export type ServerMessage =
   | ServerAudioMessage
   | InputTranscriptMessage
@@ -90,4 +104,5 @@ export type ServerMessage =
   | ToolResultMessage
   | ErrorMessage
   | SessionClosedMessage
-  | CostUpdateMessage;
+  | CostUpdateMessage
+  | PresenceStateMessage;
