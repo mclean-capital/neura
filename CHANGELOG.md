@@ -1,3 +1,9 @@
+# [1.3.0](https://github.com/mclean-capital/neura/compare/v1.2.0...v1.3.0) (2026-04-08)
+
+### Features
+
+- **cli:** add neura backup and neura restore commands ([9d3e958](https://github.com/mclean-capital/neura/commit/9d3e9584b787f708c608599c0d5529a6147af537))
+
 # [1.2.0](https://github.com/mclean-capital/neura/compare/v1.1.0...v1.2.0) (2026-04-08)
 
 ### Features
