@@ -63,9 +63,9 @@ Test files live in `src/__tests__/` (design-system) or alongside source (`src/*.
 
 Pure types package — zero runtime dependencies. Defines the WebSocket protocol contract between core and all clients, plus provider and store interfaces.
 
-- `protocol.ts` — `ClientMessage` / `ServerMessage` discriminated unions
+- `protocol.ts` — `ClientMessage` / `ServerMessage` discriminated unions (includes `PresenceStateMessage`, `ManualStartMessage`)
 - `tools.ts` — `ToolDefinition`, `ToolCallResult`, `VisionToolArgs`
-- `config.ts` — `CoreConfig`, `UIConfig` interfaces
+- `config.ts` — `CoreConfig`, `UIConfig`, `NeuraConfigFile` interfaces (includes `assistantName`)
 - `providers.ts` — `VoiceProvider`, `VisionProvider`, `DataStore` (session + memory methods), `ProviderPricing`, `SessionRecord`, `TranscriptEntry`
 - `memory.ts` — Memory types: `IdentityEntry`, `UserProfileEntry`, `FactEntry`, `PreferenceEntry`, `SessionSummaryEntry`, `MemoryContext`, `ExtractionResult`
 
@@ -80,17 +80,20 @@ Shared runtime utilities used by core and clients.
 
 Standalone server with provider adapter layer and pluggable storage.
 
-- `server.ts` — Express + WebSocket, typed message routing, optional PGlite persistence, memory manager lifecycle, idle timer
+- `server.ts` — Express + WebSocket, typed message routing, presence-aware audio routing (passive → wake detector, active → Grok), optional PGlite persistence, memory manager lifecycle, idle timer
+- `wake-detector.ts` — Energy VAD + Gemini 2.5 Flash transcription + Levenshtein fuzzy match, pre-speech buffer, audio replay chunks for Grok
+- `presence-manager.ts` — PASSIVE/ACTIVE/IDLE state machine, 5-min idle timeout, `enterMode` for AI-driven transitions
 - `voice-session.ts` — Factory wrapper, delegates to active voice provider
 - `vision-watcher.ts` — Factory wrapper, delegates to active vision provider
-- `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect, memory-driven system prompt
+- `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect, memory-driven system prompt, `onReady` callback for audio replay
 - `providers/gemini-vision.ts` — Gemini Live vision provider, one session per source (camera/screen independent)
 - `stores/pglite-store.ts` — `PgliteStore` implementing `DataStore` (WASM PostgreSQL 17 + pgvector: sessions, transcripts, memory tables)
 - `memory-manager.ts` — Singleton orchestrator: system prompt building, extraction queuing, fact recall/storage
 - `memory-extractor.ts` — Gemini 2.5 Flash transcript extraction + Gemini Embedding 2 (3072-dim vectors)
 - `memory-prompt-builder.ts` — Formats `MemoryContext` into priority-ordered system prompt
-- `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`, `remember_fact`, `recall_memory`, `update_preference`
+- `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`, `remember_fact`, `recall_memory`, `update_preference`, `enter_mode`
 - `cost-tracker.ts` — Per-source cost estimator, accepts `ProviderPricing`
+- `config.ts` — `assistantName` config (default: "jarvis"), configurable via env var or config.json
 
 ```bash
 cd packages/core
@@ -115,7 +118,7 @@ Config lives at `~/.neura/config.json`. Port priority: `PORT` env var > config.j
 
 ### ui
 
-React 19 + Vite 6 + Tailwind v4 app. Session is off by default (no auto-charge). Independent media toggles (mic, camera, screen share). Real-time cost indicator with voice/vision breakdown.
+React 19 + Vite 6 + Tailwind v4 app. Connects to core in PASSIVE mode with auto-mic. Wake word activates voice session; manual Start button as fallback. Presence indicator (PASSIVE/ACTIVE). Independent media toggles (camera, screen share). Real-time cost indicator with voice/vision breakdown.
 
 ```bash
 npm run dev -w @neura/ui   # http://localhost:5173 (proxies /ws → :3002)

@@ -29,6 +29,7 @@ export interface VoiceProviderCallbacks {
   onToolResult: (name: string, result: Record<string, unknown>) => void;
   onError: (error: string) => void;
   onClose: () => void;
+  onReady: () => void;
   onReconnected: () => void;
   queryWatcher: (prompt: string, source: 'camera' | 'screen') => Promise<string>;
 }

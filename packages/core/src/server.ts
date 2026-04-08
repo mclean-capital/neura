@@ -12,6 +12,8 @@ import { createCostTracker } from './cost-tracker.js';
 import { loadConfig } from './config.js';
 import { createMemoryManager, type MemoryManager } from './memory-manager.js';
 import type { MemoryToolHandler } from './tools.js';
+import { createWakeDetector, type WakeDetector } from './wake-detector.js';
+import { createPresenceManager } from './presence-manager.js';
 
 const log = new Logger('server');
 const config = loadConfig();
@@ -101,6 +103,10 @@ function attachWebSocket() {
 
   wss.on('connection', (ws: WebSocket) => {
     log.info('client connected');
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'presenceState', state: 'passive' }));
+    }
 
     // Create DB session in the background — handlers are registered synchronously
     // so no messages or close events are missed while the insert runs.
@@ -196,10 +202,10 @@ function attachWebSocket() {
         }
       : undefined;
 
-    // Voice session is created after the memory prompt resolves.
-    // Message handlers use a guard (if !session) for the brief gap.
+    // ── Presence state machine ─────────────────────────────────────
     let session: VoiceProvider | null = null;
     let connectionClosed = false;
+    let wakeDetector: WakeDetector | null = null;
 
     function send(msg: ServerMessage) {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -257,6 +263,17 @@ function attachWebSocket() {
       onClose() {
         send({ type: 'sessionClosed' });
       },
+      onReady() {
+        // Grok session is configured — seed the wake transcript if available
+        if (pendingWakeAudio) {
+          const chunks = pendingWakeAudio;
+          pendingWakeAudio = null;
+          // Replay buffered audio so Grok hears the original wake speech
+          for (const chunk of chunks) {
+            session?.sendAudio(chunk);
+          }
+        }
+      },
       onReconnected() {
         if (cameraWatcher?.isConnected()) {
           session?.sendSystemEvent(
@@ -278,44 +295,111 @@ function attachWebSocket() {
       },
     };
 
-    // Build system prompt then create voice session
-    const promptPromise = memoryManager
-      ? memoryManager.buildSystemPrompt().catch((err) => {
-          log.warn('memory prompt build failed', { err: String(err) });
-          return undefined;
-        })
-      : Promise.resolve(undefined);
+    let pendingWakeAudio: string[] | null = null;
 
-    void promptPromise.then((systemPromptPrefix) => {
-      if (connectionClosed) return; // WS closed before prompt resolved
+    async function activateVoiceSession(wakeTranscript: string) {
+      if (connectionClosed || session) return;
+      log.info('activating voice session', { wakeTranscript });
+
+      // Reset extraction flag so this active session gets its own extraction
+      extractionTriggered = false;
+
+      // Stop wake detector while active
+      wakeDetector?.close();
+      wakeDetector = null;
+
+      // Build fresh system prompt each activation (memory context may have changed)
+      const systemPromptPrefix = memoryManager
+        ? await memoryManager.buildSystemPrompt().catch((err) => {
+            log.warn('memory prompt build failed', { err: String(err) });
+            return undefined;
+          })
+        : undefined;
+
+      // Re-check state after async gap — may have gone passive/idle during await
+      if (connectionClosed || presence.state !== 'active') return;
+
       session = createVoiceSession(voiceCallbacks, {
         systemPromptPrefix,
         memoryTools,
+        enterMode: (mode) => presence.enterMode(mode),
       });
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();
       resetIdleTimer();
+    }
+
+    function deactivateVoiceSession() {
+      log.info('deactivating voice session');
+      pendingWakeAudio = null;
+      costTracker.stopInterval();
+      triggerExtraction();
+
+      session?.close();
+      session = null;
+
+      // Resume wake word detection
+      startWakeDetector();
+    }
+
+    function startWakeDetector() {
+      if (!config.googleApiKey || connectionClosed) return;
+      wakeDetector = createWakeDetector({
+        assistantName: config.assistantName,
+        googleApiKey: config.googleApiKey,
+        onWake: (audioChunks) => {
+          pendingWakeAudio = audioChunks;
+          presence.wake('(detected via gemini)');
+        },
+        onDebug: (info) => {
+          log.debug('wake check', info);
+        },
+      });
+    }
+
+    const presence = createPresenceManager({
+      onActivate: (wakeTranscript) => void activateVoiceSession(wakeTranscript),
+      onDeactivate: () => deactivateVoiceSession(),
+      onStateChange: (state) => send({ type: 'presenceState', state }),
     });
 
+    // Start in passive mode with wake detection
+    startWakeDetector();
+
     ws.on('message', (raw: Buffer) => {
-      resetIdleTimer();
-      extractionTriggered = false; // Allow re-extraction if new content arrives after idle extraction
-      if (!session) return; // Voice session not ready yet
       try {
         const msg = JSON.parse(raw.toString()) as ClientMessage;
         switch (msg.type) {
           case 'audio':
-            session.sendAudio(msg.data);
+            if (presence.state === 'active' && session) {
+              // Active: forward audio to Grok
+              resetIdleTimer();
+              presence.resetIdleTimer();
+              extractionTriggered = false;
+              session.sendAudio(msg.data);
+            } else if (presence.state === 'passive') {
+              if (wakeDetector) {
+                wakeDetector.feedAudio(msg.data);
+              } else {
+                log.debug('audio received but no wake detector');
+              }
+            }
             break;
           case 'text':
-            session.sendText(msg.text);
+            if (presence.state === 'active' && session) {
+              resetIdleTimer();
+              extractionTriggered = false;
+              session.sendText(msg.text);
+            }
             break;
           case 'videoFrame': {
+            if (presence.state !== 'active') break;
             const watcher = getOrCreateWatcher(msg.source);
             watcher.sendFrame(msg.data);
             break;
           }
           case 'sourceChanged':
+            if (presence.state !== 'active' || !session) break;
             if (msg.active) {
               closeWatcher(msg.source);
               getOrCreateWatcher(msg.source);
@@ -327,6 +411,12 @@ function attachWebSocket() {
               session.sendSystemEvent(
                 `The user stopped sharing their ${msg.source}. The describe_${msg.source} tool is no longer available.`
               );
+            }
+            break;
+          case 'manualStart':
+            if (presence.state === 'passive') {
+              log.info('manual session start');
+              presence.enterMode('active');
             }
             break;
         }
@@ -342,10 +432,11 @@ function attachWebSocket() {
         clearTimeout(idleTimer);
         idleTimer = null;
       }
-      costTracker.stopInterval();
 
-      // Trigger extraction if not already triggered by idle timer
-      triggerExtraction();
+      // Clean up presence (triggers deactivate if active)
+      presence.close();
+      wakeDetector?.close();
+      wakeDetector = null;
 
       const cleanup = (async () => {
         // Drain in-flight transcript writes before finalizing
@@ -361,7 +452,6 @@ function attachWebSocket() {
       pendingCleanups.add(cleanup);
       void cleanup.finally(() => pendingCleanups.delete(cleanup));
 
-      session?.close();
       cameraWatcher?.close();
       screenWatcher?.close();
     });

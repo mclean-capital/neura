@@ -41,6 +41,7 @@ function makeMockCallbacks(): SessionCallbacks {
     onToolResult: vi.fn(),
     onError: vi.fn(),
     onClose: vi.fn(),
+    onReady: vi.fn(),
     onReconnected: vi.fn(),
     queryWatcher: vi.fn().mockResolvedValue('mock vision response'),
   };

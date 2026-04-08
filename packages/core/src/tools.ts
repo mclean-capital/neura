@@ -4,11 +4,15 @@ import { Logger } from '@neura/utils/logger';
 const log = new Logger('tool');
 
 const MEMORY_TOOL_NAMES = new Set(['remember_fact', 'recall_memory', 'update_preference']);
+const PRESENCE_TOOL_NAMES = new Set(['enter_mode']);
 
-/** Return tool definitions, optionally excluding memory tools when unavailable. */
-export function getToolDefs(includeMemory: boolean) {
-  if (includeMemory) return toolDefs;
-  return toolDefs.filter((t) => !MEMORY_TOOL_NAMES.has(t.name));
+/** Return tool definitions, excluding unavailable tool groups. */
+export function getToolDefs(options: { includeMemory: boolean; includePresence: boolean }) {
+  return toolDefs.filter((t) => {
+    if (MEMORY_TOOL_NAMES.has(t.name) && !options.includeMemory) return false;
+    if (PRESENCE_TOOL_NAMES.has(t.name) && !options.includePresence) return false;
+    return true;
+  });
 }
 
 export interface MemoryToolHandler {
@@ -122,13 +126,34 @@ export const toolDefs: ToolDefinition[] = [
       required: ['preference'],
     },
   },
+  {
+    type: 'function',
+    name: 'enter_mode',
+    description:
+      "Transition the presence mode. Call with 'passive' when the conversation has naturally ended, when the user says goodbye/thanks, or when you detect the user is no longer speaking to you. Call with 'active' only if needed to re-engage.",
+    parameters: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          enum: ['passive', 'active'],
+          description: "'passive' to stop listening actively, 'active' to re-engage",
+        },
+      },
+      required: ['mode'],
+    },
+  },
 ];
+
+/** Callback for presence mode changes triggered by AI tool calls */
+export type EnterModeHandler = (mode: 'passive' | 'active') => void;
 
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown>,
   queryWatcher: (prompt: string, source: 'camera' | 'screen') => Promise<string>,
-  memoryTools?: MemoryToolHandler
+  memoryTools?: MemoryToolHandler,
+  enterMode?: EnterModeHandler
 ): Promise<Record<string, unknown>> {
   log.info(`${name}`, { args });
 
@@ -209,6 +234,25 @@ export async function handleToolCall(
       } catch (err) {
         log.error('update_preference failed', { err: String(err) });
         return { error: `Failed to store preference: ${String(err)}` };
+      }
+    }
+
+    case 'enter_mode': {
+      if (!enterMode) return { error: 'Presence system not available' };
+      try {
+        const mode = args.mode as string;
+        if (mode !== 'passive' && mode !== 'active') {
+          return { error: `Invalid mode: ${mode}. Use 'passive' or 'active'.` };
+        }
+        // Defer to macrotask queue so the tool result is sent back to the voice
+        // provider before the session is torn down. queueMicrotask would fire
+        // before the await continuation in the caller, tearing down the session
+        // before the result is sent.
+        setTimeout(() => enterMode(mode), 0);
+        return { result: { mode, transitioned: true } };
+      } catch (err) {
+        log.error('enter_mode failed', { err: String(err) });
+        return { error: `Failed to change mode: ${String(err)}` };
       }
     }
 

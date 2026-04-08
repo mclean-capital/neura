@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toolDefs, handleToolCall } from './tools.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 6 tools', () => {
-    expect(toolDefs).toHaveLength(6);
+  it('defines exactly 7 tools', () => {
+    expect(toolDefs).toHaveLength(7);
   });
 
   it('each tool has the required structure', () => {
@@ -23,6 +23,7 @@ describe('toolDefs', () => {
     expect(names).toContain('remember_fact');
     expect(names).toContain('recall_memory');
     expect(names).toContain('update_preference');
+    expect(names).toContain('enter_mode');
   });
 });
 

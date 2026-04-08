@@ -34,4 +34,5 @@ export interface NeuraConfigFile {
   };
   pgDataPath?: string;
   autoUpdate?: boolean;
+  assistantName?: string;
 }

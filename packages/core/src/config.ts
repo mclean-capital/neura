@@ -10,6 +10,7 @@ export interface ResolvedCoreConfig {
   voice: string;
   pgDataPath: string | undefined;
   neuraHome: string;
+  assistantName: string;
 }
 
 function tryParseInt(val: string | undefined): number | undefined {
@@ -48,5 +49,6 @@ export function loadConfig(): ResolvedCoreConfig {
     pgDataPath:
       process.env.PG_DATA_PATH ?? process.env.DB_PATH ?? file.pgDataPath ?? pgDataPathDefault,
     neuraHome,
+    assistantName: process.env.NEURA_ASSISTANT_NAME ?? file.assistantName ?? 'jarvis',
   };
 }
