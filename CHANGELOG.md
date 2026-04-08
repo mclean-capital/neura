@@ -1,3 +1,9 @@
+# [1.2.0](https://github.com/mclean-capital/neura/compare/v1.1.0...v1.2.0) (2026-04-08)
+
+### Features
+
+- Phase 3b Presence & Wake + Phase 4 Storage Hardening ([#3](https://github.com/mclean-capital/neura/issues/3)) ([b0f02f0](https://github.com/mclean-capital/neura/commit/b0f02f07c0bfdb27f75f706f30c7013909b51ec5))
+
 # [1.1.0](https://github.com/mclean-capital/neura/compare/v1.0.0...v1.1.0) (2026-04-04)
 
 ### Features
