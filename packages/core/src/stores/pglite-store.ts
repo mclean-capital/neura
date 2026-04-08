@@ -18,7 +18,30 @@ import type {
   MemoryBackup,
   WorkItemEntry,
   WorkItemPriority,
+  EntityEntry,
+  EntityRelationship,
+  TimelineEntry,
+  MemoryStats,
 } from '@neura/types';
+
+/** Raw DB row shape for facts table (snake_case column names). */
+interface FactRow {
+  id: string;
+  content: string;
+  category: string;
+  tags: string[];
+  source_session_id: string | null;
+  confidence: number;
+  access_count: number;
+  last_accessed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  expires_at: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  superseded_by?: string | null;
+  tag_path?: string | null;
+}
 
 export class PgliteStore implements DataStore {
   private db: PGlite;
@@ -206,6 +229,82 @@ export class PgliteStore implements DataStore {
     await this.db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status)');
     await this.db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_due ON work_items(due_at)');
 
+    // --- Phase 5b: Advanced Memory ---
+
+    // Temporal tracking columns on facts
+    await this.db.exec(
+      'ALTER TABLE facts ADD COLUMN IF NOT EXISTS valid_from TIMESTAMP DEFAULT NOW()'
+    );
+    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS valid_to TIMESTAMP');
+    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS superseded_by TEXT');
+    await this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_facts_valid ON facts (valid_to) WHERE valid_to IS NULL'
+    );
+
+    // Hierarchical tag path
+    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS tag_path TEXT');
+    // Backfill tag_path from category for existing facts
+    await this.db.exec(
+      'UPDATE facts SET tag_path = category WHERE tag_path IS NULL AND category IS NOT NULL'
+    );
+
+    // Full-text search (application-managed tsvector)
+    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS tsv tsvector');
+    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_tsv ON facts USING GIN (tsv)');
+    // Backfill tsvector for existing facts
+    await this.db.exec(`
+      UPDATE facts SET tsv = to_tsvector('english',
+        content || ' ' || COALESCE((SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags)), '')
+      ) WHERE tsv IS NULL
+    `);
+
+    // Transcript embeddings
+    await this.db.exec('ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS embedding vector(3072)');
+
+    // Entity tables
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS entities (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        canonical_name TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(canonical_name, type)
+      )
+    `);
+
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS entity_relationships (
+        id TEXT PRIMARY KEY,
+        source_entity_id TEXT NOT NULL REFERENCES entities(id),
+        target_entity_id TEXT NOT NULL REFERENCES entities(id),
+        relationship TEXT NOT NULL,
+        valid_from TIMESTAMP NOT NULL DEFAULT NOW(),
+        valid_to TIMESTAMP,
+        source_fact_id TEXT REFERENCES facts(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS fact_entities (
+        fact_id TEXT NOT NULL REFERENCES facts(id),
+        entity_id TEXT NOT NULL REFERENCES entities(id),
+        PRIMARY KEY (fact_id, entity_id)
+      )
+    `);
+
+    await this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_entity_rels_source ON entity_relationships(source_entity_id)'
+    );
+    await this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_entity_rels_target ON entity_relationships(target_entity_id)'
+    );
+    await this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fact_entities_entity ON fact_entities(entity_id)'
+    );
+    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_tag_path ON facts(tag_path)');
+
     // Seed default identity if table is empty
     const identityCount = await this.db.query<{ count: string }>(
       'SELECT COUNT(*)::TEXT as count FROM identity'
@@ -213,6 +312,16 @@ export class PgliteStore implements DataStore {
     if (identityCount.rows[0].count === '0') {
       await this.seedIdentity();
     }
+  }
+
+  /** Update the tsvector column for a fact (application-managed full-text search). */
+  private async updateFactTsv(factId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE facts SET tsv = to_tsvector('english',
+        content || ' ' || COALESCE((SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags)), '')
+      ) WHERE id = $1`,
+      [factId]
+    );
   }
 
   private async seedIdentity(): Promise<void> {
@@ -398,7 +507,7 @@ export class PgliteStore implements DataStore {
     const { category, limit = 50, minConfidence = 0 } = options;
 
     let sql =
-      'SELECT * FROM facts WHERE confidence >= $1 AND (expires_at IS NULL OR expires_at > NOW())';
+      'SELECT * FROM facts WHERE confidence >= $1 AND (expires_at IS NULL OR expires_at > NOW()) AND valid_to IS NULL';
     const params: (string | number)[] = [minConfidence];
 
     if (category) {
@@ -409,19 +518,7 @@ export class PgliteStore implements DataStore {
     params.push(limit);
     sql += ` ORDER BY updated_at DESC LIMIT $${params.length}`;
 
-    const result = await this.db.query<{
-      id: string;
-      content: string;
-      category: string;
-      tags: string[];
-      source_session_id: string | null;
-      confidence: number;
-      access_count: number;
-      last_accessed_at: string | null;
-      created_at: string;
-      updated_at: string;
-      expires_at: string | null;
-    }>(sql, params);
+    const result = await this.db.query<FactRow>(sql, params);
 
     return result.rows.map((r) => this.mapFact(r));
   }
@@ -429,21 +526,11 @@ export class PgliteStore implements DataStore {
   async searchFacts(query: string, embedding?: number[], limit = 10): Promise<FactEntry[]> {
     if (embedding?.length === 3072) {
       const vecStr = `[${embedding.join(',')}]`;
-      const result = await this.db.query<{
-        id: string;
-        content: string;
-        category: string;
-        tags: string[];
-        source_session_id: string | null;
-        confidence: number;
-        access_count: number;
-        last_accessed_at: string | null;
-        created_at: string;
-        updated_at: string;
-        expires_at: string | null;
-      }>(
+      const result = await this.db.query<FactRow>(
         `SELECT * FROM facts
          WHERE embedding IS NOT NULL
+           AND valid_to IS NULL
+           AND (expires_at IS NULL OR expires_at > NOW())
          ORDER BY embedding <=> $1::vector
          LIMIT $2`,
         [vecStr, limit]
@@ -452,22 +539,11 @@ export class PgliteStore implements DataStore {
     }
 
     // Fallback: ILIKE text search
-    const result = await this.db.query<{
-      id: string;
-      content: string;
-      category: string;
-      tags: string[];
-      source_session_id: string | null;
-      confidence: number;
-      access_count: number;
-      last_accessed_at: string | null;
-      created_at: string;
-      updated_at: string;
-      expires_at: string | null;
-    }>(
+    const result = await this.db.query<FactRow>(
       `SELECT * FROM facts
        WHERE content ILIKE $1
          AND (expires_at IS NULL OR expires_at > NOW())
+         AND valid_to IS NULL
        ORDER BY confidence DESC, updated_at DESC
        LIMIT $2`,
       [`%${query}%`, limit]
@@ -481,22 +557,27 @@ export class PgliteStore implements DataStore {
     tags: string[],
     sourceSessionId?: string,
     confidence = 0.8,
-    embedding?: number[]
+    embedding?: number[],
+    tagPath?: string
   ): Promise<string> {
     if (embedding && embedding.length !== 3072) {
       throw new Error(`Embedding must be 3072-dimensional, got ${embedding.length}`);
     }
     const id = crypto.randomUUID();
     const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
-    // Use content+category as dedup key — if the same fact exists, update it
+    const resolvedTagPath = tagPath ?? category;
     const result = await this.db.query<{ id: string }>(
-      `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, embedding)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::vector)
+      `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, embedding, tag_path, valid_from)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, NOW())
        ON CONFLICT (content, category) DO UPDATE
        SET tags = EXCLUDED.tags,
            source_session_id = EXCLUDED.source_session_id,
            confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
            embedding = COALESCE(EXCLUDED.embedding, facts.embedding),
+           tag_path = COALESCE(EXCLUDED.tag_path, facts.tag_path),
+           valid_to = NULL,
+           superseded_by = NULL,
+           valid_from = CASE WHEN facts.valid_to IS NOT NULL THEN NOW() ELSE facts.valid_from END,
            updated_at = NOW()
        RETURNING id`,
       [
@@ -507,9 +588,12 @@ export class PgliteStore implements DataStore {
         sourceSessionId ?? null,
         confidence,
         embeddingStr,
+        resolvedTagPath,
       ]
     );
-    return result.rows[0].id;
+    const factId = result.rows[0].id;
+    await this.updateFactTsv(factId);
+    return factId;
   }
 
   async touchFact(id: string): Promise<void> {
@@ -954,18 +1038,53 @@ export class PgliteStore implements DataStore {
   async exportMemories(): Promise<MemoryBackup> {
     const identity = await this.getIdentity();
     const userProfile = await this.getUserProfile();
-    const facts = await this.getFacts({ limit: 10000 });
+    // Export ALL facts including invalidated ones (for temporal history preservation)
+    const allFactsResult = await this.db.query<FactRow>('SELECT * FROM facts ORDER BY created_at');
+    const facts = allFactsResult.rows.map((r) => this.mapFact(r));
     const preferences = await this.getPreferences();
     const sessionSummaries = await this.getRecentSummaries(1000);
+    const entities = await this.getEntities();
+    const relResult = await this.db.query<{
+      id: string;
+      source_entity_id: string;
+      target_entity_id: string;
+      relationship: string;
+      valid_from: string;
+      valid_to: string | null;
+      source_fact_id: string | null;
+      created_at: string;
+    }>('SELECT * FROM entity_relationships');
+    const entityRelationships: EntityRelationship[] = relResult.rows.map((r) => ({
+      id: r.id,
+      sourceEntityId: r.source_entity_id,
+      targetEntityId: r.target_entity_id,
+      relationship: r.relationship,
+      validFrom: r.valid_from,
+      validTo: r.valid_to,
+      sourceFactId: r.source_fact_id,
+      createdAt: r.created_at,
+    }));
+
+    const factEntitiesResult = await this.db.query<{
+      fact_id: string;
+      entity_id: string;
+    }>('SELECT * FROM fact_entities');
+    const factEntities = factEntitiesResult.rows.map((r) => ({
+      factId: r.fact_id,
+      entityId: r.entity_id,
+    }));
 
     return {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       identity,
       userProfile,
       facts,
       preferences,
       sessionSummaries,
+      entities,
+      entityRelationships,
+      factEntities,
     };
   }
 
@@ -1024,19 +1143,26 @@ export class PgliteStore implements DataStore {
       }
     }
 
-    // Facts — direct SQL to preserve accessCount, lastAccessedAt, expiresAt
+    // Facts — direct SQL to preserve all fields including Phase 5b temporal/tag columns
     for (const entry of backup.facts ?? []) {
       try {
-        await this.db.query(
-          `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, access_count, last_accessed_at, created_at, updated_at, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        const validFrom = entry.validFrom ?? entry.createdAt;
+        const validTo = entry.validTo ?? null;
+        const tagPath = entry.tagPath ?? entry.category;
+        const factResult = await this.db.query<{ id: string }>(
+          `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, access_count, last_accessed_at, created_at, updated_at, expires_at, valid_from, valid_to, superseded_by, tag_path)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            ON CONFLICT (content, category) DO UPDATE SET
              tags = EXCLUDED.tags,
              confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
              access_count = GREATEST(facts.access_count, EXCLUDED.access_count),
              last_accessed_at = COALESCE(EXCLUDED.last_accessed_at, facts.last_accessed_at),
              expires_at = COALESCE(EXCLUDED.expires_at, facts.expires_at),
-             updated_at = EXCLUDED.updated_at`,
+             valid_from = COALESCE(facts.valid_from, EXCLUDED.valid_from),
+             valid_to = EXCLUDED.valid_to,
+             tag_path = COALESCE(EXCLUDED.tag_path, facts.tag_path),
+             updated_at = EXCLUDED.updated_at
+           RETURNING id`,
           [
             entry.id,
             entry.content,
@@ -1049,8 +1175,15 @@ export class PgliteStore implements DataStore {
             entry.createdAt,
             entry.updatedAt,
             entry.expiresAt,
+            validFrom,
+            validTo,
+            entry.supersededBy ?? null,
+            tagPath,
           ]
         );
+        // Use the surviving row ID (may differ from entry.id on conflict)
+        const survivingId = factResult.rows[0].id;
+        await this.updateFactTsv(survivingId);
         imported++;
       } catch {
         skipped++;
@@ -1118,8 +1251,440 @@ export class PgliteStore implements DataStore {
       }
     }
 
+    // Phase 5b: Entities (v2 backups only)
+    for (const entry of backup.entities ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO entities (id, name, type, canonical_name, created_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (canonical_name, type) DO UPDATE SET name = EXCLUDED.name`,
+          [entry.id, entry.name, entry.type, entry.canonicalName, entry.createdAt]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    // Phase 5b: Entity relationships (v2 backups only)
+    for (const entry of backup.entityRelationships ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO entity_relationships (id, source_entity_id, target_entity_id, relationship, valid_from, valid_to, source_fact_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT DO NOTHING`,
+          [
+            entry.id,
+            entry.sourceEntityId,
+            entry.targetEntityId,
+            entry.relationship,
+            entry.validFrom,
+            entry.validTo,
+            entry.sourceFactId,
+            entry.createdAt,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    // Phase 5b: Fact-entity links (v2 backups only)
+    for (const entry of backup.factEntities ?? []) {
+      try {
+        await this.db.query(
+          'INSERT INTO fact_entities (fact_id, entity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [entry.factId, entry.entityId]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
     log.info('import complete', { imported, skipped });
     return { imported, skipped };
+  }
+
+  // --- Phase 5b: Hybrid Retrieval ---
+
+  async searchFactsHybrid(query: string, embedding?: number[], limit = 10): Promise<FactEntry[]> {
+    const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
+
+    // If we have an embedding, use RRF fusion of vector + BM25
+    if (embeddingStr) {
+      const result = await this.db.query<FactRow>(
+        `WITH vector_results AS (
+          SELECT id, content, category, tags, source_session_id, confidence,
+                 access_count, last_accessed_at, created_at, updated_at, expires_at,
+                 valid_from, valid_to, superseded_by, tag_path,
+                 ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector) AS vec_rank
+          FROM facts
+          WHERE embedding IS NOT NULL
+            AND confidence >= 0.2
+            AND valid_to IS NULL
+            AND (expires_at IS NULL OR expires_at > NOW())
+          ORDER BY embedding <=> $1::vector
+          LIMIT $2
+        ),
+        text_results AS (
+          SELECT id, content, category, tags, source_session_id, confidence,
+                 access_count, last_accessed_at, created_at, updated_at, expires_at,
+                 valid_from, valid_to, superseded_by, tag_path,
+                 ROW_NUMBER() OVER (ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $3)) DESC) AS text_rank
+          FROM facts
+          WHERE tsv @@ plainto_tsquery('english', $3)
+            AND confidence >= 0.2
+            AND valid_to IS NULL
+            AND (expires_at IS NULL OR expires_at > NOW())
+          ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $3)) DESC
+          LIMIT $2
+        )
+        SELECT COALESCE(v.id, t.id) AS id,
+               COALESCE(v.content, t.content) AS content,
+               COALESCE(v.category, t.category) AS category,
+               COALESCE(v.tags, t.tags) AS tags,
+               COALESCE(v.source_session_id, t.source_session_id) AS source_session_id,
+               COALESCE(v.confidence, t.confidence) AS confidence,
+               COALESCE(v.access_count, t.access_count) AS access_count,
+               COALESCE(v.last_accessed_at, t.last_accessed_at) AS last_accessed_at,
+               COALESCE(v.created_at, t.created_at) AS created_at,
+               COALESCE(v.updated_at, t.updated_at) AS updated_at,
+               COALESCE(v.expires_at, t.expires_at) AS expires_at,
+               COALESCE(v.valid_from, t.valid_from) AS valid_from,
+               COALESCE(v.valid_to, t.valid_to) AS valid_to,
+               COALESCE(v.superseded_by, t.superseded_by) AS superseded_by,
+               COALESCE(v.tag_path, t.tag_path) AS tag_path,
+               (1.0 / (60 + COALESCE(v.vec_rank, 999))) +
+               (1.0 / (60 + COALESCE(t.text_rank, 999))) AS rrf_score
+        FROM vector_results v
+        FULL OUTER JOIN text_results t ON v.id = t.id
+        ORDER BY rrf_score DESC
+        LIMIT $2`,
+        [embeddingStr, limit, query]
+      );
+      return result.rows.map((r) => this.mapFact(r));
+    }
+
+    // Fallback: text-only BM25 search
+    const result = await this.db.query<FactRow>(
+      `SELECT * FROM facts
+       WHERE tsv @@ plainto_tsquery('english', $1)
+         AND valid_to IS NULL
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $1)) DESC
+       LIMIT $2`,
+      [query, limit]
+    );
+    return result.rows.map((r) => this.mapFact(r));
+  }
+
+  async searchTranscripts(
+    embedding: number[],
+    limit = 10,
+    sessionId?: string
+  ): Promise<TranscriptEntry[]> {
+    const embeddingStr = `[${embedding.join(',')}]`;
+    if (sessionId) {
+      const result = await this.db.query<{
+        id: number;
+        session_id: string;
+        role: 'user' | 'assistant';
+        text: string;
+        created_at: string;
+      }>(
+        `SELECT id, session_id, role, text, created_at FROM transcripts
+         WHERE session_id = $2 AND embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector
+         LIMIT $3`,
+        [embeddingStr, sessionId, limit]
+      );
+      return result.rows.map((r) => ({
+        id: r.id,
+        sessionId: r.session_id,
+        role: r.role,
+        text: r.text,
+        createdAt: r.created_at,
+      }));
+    }
+    const result = await this.db.query<{
+      id: number;
+      session_id: string;
+      role: 'user' | 'assistant';
+      text: string;
+      created_at: string;
+    }>(
+      `SELECT id, session_id, role, text, created_at FROM transcripts
+       WHERE embedding IS NOT NULL
+       ORDER BY embedding <=> $1::vector
+       LIMIT $2`,
+      [embeddingStr, limit]
+    );
+    return result.rows.map((r) => ({
+      id: r.id,
+      sessionId: r.session_id,
+      role: r.role,
+      text: r.text,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async indexTranscriptEmbeddings(
+    sessionId: string,
+    embeddings: Map<number, number[]>
+  ): Promise<void> {
+    for (const [transcriptId, embedding] of embeddings) {
+      const embeddingStr = `[${embedding.join(',')}]`;
+      await this.db.query(
+        'UPDATE transcripts SET embedding = $1::vector WHERE id = $2 AND session_id = $3',
+        [embeddingStr, transcriptId, sessionId]
+      );
+    }
+  }
+
+  // --- Phase 5b: Temporal Tracking ---
+
+  async invalidateFact(id: string): Promise<void> {
+    await this.db.query('UPDATE facts SET valid_to = NOW(), updated_at = NOW() WHERE id = $1', [
+      id,
+    ]);
+  }
+
+  async supersedeFact(oldId: string, newId: string): Promise<void> {
+    await this.db.query(
+      'UPDATE facts SET valid_to = NOW(), superseded_by = $2, updated_at = NOW() WHERE id = $1',
+      [oldId, newId]
+    );
+  }
+
+  async getFactHistory(content: string, category: string): Promise<FactEntry[]> {
+    const result = await this.db.query<FactRow>(
+      `SELECT * FROM facts WHERE content = $1 AND category = $2 ORDER BY created_at DESC`,
+      [content, category]
+    );
+    return result.rows.map((r) => this.mapFact(r));
+  }
+
+  // --- Phase 5b: Entities ---
+
+  async upsertEntity(name: string, type: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const canonicalName = name.toLowerCase().trim();
+    const result = await this.db.query<{ id: string }>(
+      `INSERT INTO entities (id, name, type, canonical_name)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (canonical_name, type) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [id, name, type, canonicalName]
+    );
+    return result.rows[0].id;
+  }
+
+  async getEntities(type?: string): Promise<EntityEntry[]> {
+    if (type) {
+      const result = await this.db.query<{
+        id: string;
+        name: string;
+        type: string;
+        canonical_name: string;
+        created_at: string;
+      }>('SELECT * FROM entities WHERE type = $1 ORDER BY name', [type]);
+      return result.rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        type: r.type as EntityEntry['type'],
+        canonicalName: r.canonical_name,
+        createdAt: r.created_at,
+      }));
+    }
+    const result = await this.db.query<{
+      id: string;
+      name: string;
+      type: string;
+      canonical_name: string;
+      created_at: string;
+    }>('SELECT * FROM entities ORDER BY name');
+    return result.rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type as EntityEntry['type'],
+      canonicalName: r.canonical_name,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async linkFactEntity(factId: string, entityId: string): Promise<void> {
+    await this.db.query(
+      'INSERT INTO fact_entities (fact_id, entity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [factId, entityId]
+    );
+  }
+
+  async getRelatedFacts(factId: string, limit = 5): Promise<FactEntry[]> {
+    const result = await this.db.query<FactRow>(
+      `SELECT DISTINCT f2.* FROM fact_entities fe1
+       JOIN fact_entities fe2 ON fe1.entity_id = fe2.entity_id
+       JOIN facts f2 ON fe2.fact_id = f2.id
+       WHERE fe1.fact_id = $1
+         AND fe2.fact_id != $1
+         AND f2.valid_to IS NULL
+         AND (f2.expires_at IS NULL OR f2.expires_at > NOW())
+       LIMIT $2`,
+      [factId, limit]
+    );
+    return result.rows.map((r) => this.mapFact(r));
+  }
+
+  async getEntityRelationships(entityId: string): Promise<EntityRelationship[]> {
+    const result = await this.db.query<{
+      id: string;
+      source_entity_id: string;
+      target_entity_id: string;
+      relationship: string;
+      valid_from: string;
+      valid_to: string | null;
+      source_fact_id: string | null;
+      created_at: string;
+    }>('SELECT * FROM entity_relationships WHERE source_entity_id = $1 OR target_entity_id = $1', [
+      entityId,
+    ]);
+    return result.rows.map((r) => ({
+      id: r.id,
+      sourceEntityId: r.source_entity_id,
+      targetEntityId: r.target_entity_id,
+      relationship: r.relationship,
+      validFrom: r.valid_from,
+      validTo: r.valid_to,
+      sourceFactId: r.source_fact_id,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async createEntityRelationship(
+    sourceEntityId: string,
+    targetEntityId: string,
+    relationship: string,
+    sourceFactId?: string
+  ): Promise<string> {
+    const id = crypto.randomUUID();
+    await this.db.query(
+      `INSERT INTO entity_relationships (id, source_entity_id, target_entity_id, relationship, source_fact_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, sourceEntityId, targetEntityId, relationship, sourceFactId ?? null]
+    );
+    return id;
+  }
+
+  // --- Phase 5b: Timeline & Stats ---
+
+  async getTimeline(from: Date, to: Date, entityFilter?: string): Promise<TimelineEntry[]> {
+    const params: unknown[] = [from.toISOString(), to.toISOString()];
+
+    let entityJoin = '';
+    let entityWhere = '';
+    if (entityFilter) {
+      entityJoin =
+        'JOIN fact_entities fe ON f.id = fe.fact_id JOIN entities e ON fe.entity_id = e.id';
+      entityWhere = `AND e.canonical_name = $${params.length + 1}`;
+      params.push(entityFilter.toLowerCase().trim());
+    }
+
+    const query = `
+      SELECT 'fact_created' AS type, f.created_at AS timestamp, f.content, f.id AS fact_id, NULL AS entity_name
+      FROM facts f ${entityJoin}
+      WHERE f.created_at BETWEEN $1 AND $2 ${entityWhere}
+
+      UNION ALL
+
+      SELECT 'fact_invalidated' AS type, f.valid_to AS timestamp, f.content, f.id AS fact_id, NULL AS entity_name
+      FROM facts f ${entityJoin}
+      WHERE f.valid_to IS NOT NULL AND f.valid_to BETWEEN $1 AND $2 ${entityWhere}
+
+      UNION ALL
+
+      SELECT 'entity_created' AS type, e2.created_at AS timestamp, e2.name AS content, NULL AS fact_id, e2.name AS entity_name
+      FROM entities e2
+      WHERE e2.created_at BETWEEN $1 AND $2
+      ${entityFilter ? `AND e2.canonical_name = $${params.length}` : ''}
+
+      UNION ALL
+
+      SELECT 'relationship_created' AS type, er.created_at AS timestamp,
+             er.relationship AS content, er.source_fact_id AS fact_id, NULL AS entity_name
+      FROM entity_relationships er
+      ${entityFilter ? `JOIN entities esrc ON er.source_entity_id = esrc.id JOIN entities etgt ON er.target_entity_id = etgt.id` : ''}
+      WHERE er.created_at BETWEEN $1 AND $2
+      ${entityFilter ? `AND (esrc.canonical_name = $${params.length} OR etgt.canonical_name = $${params.length})` : ''}
+
+      ORDER BY timestamp ASC
+    `;
+
+    const result = await this.db.query<{
+      type: TimelineEntry['type'];
+      timestamp: string;
+      content: string;
+      fact_id: string | null;
+      entity_name: string | null;
+    }>(query, params);
+
+    return result.rows.map((r) => ({
+      type: r.type,
+      timestamp: r.timestamp,
+      content: r.content,
+      factId: r.fact_id ?? undefined,
+      entityName: r.entity_name ?? undefined,
+    }));
+  }
+
+  async getMemoryStats(): Promise<MemoryStats> {
+    const [
+      totalFacts,
+      activeFacts,
+      expiredFacts,
+      categories,
+      entities,
+      relationships,
+      dateRange,
+      transcripts,
+    ] = await Promise.all([
+      this.db.query<{ count: string }>('SELECT COUNT(*)::TEXT as count FROM facts'),
+      this.db.query<{ count: string }>(
+        'SELECT COUNT(*)::TEXT as count FROM facts WHERE valid_to IS NULL'
+      ),
+      this.db.query<{ count: string }>(
+        'SELECT COUNT(*)::TEXT as count FROM facts WHERE valid_to IS NOT NULL'
+      ),
+      this.db.query<{ category: string; count: string }>(
+        'SELECT COALESCE(tag_path, category) as category, COUNT(*)::TEXT as count FROM facts WHERE valid_to IS NULL GROUP BY COALESCE(tag_path, category) ORDER BY count DESC LIMIT 10'
+      ),
+      this.db.query<{ count: string }>('SELECT COUNT(*)::TEXT as count FROM entities'),
+      this.db.query<{ count: string }>('SELECT COUNT(*)::TEXT as count FROM entity_relationships'),
+      this.db.query<{ oldest: string | null; newest: string | null }>(
+        'SELECT MIN(created_at)::TEXT as oldest, MAX(created_at)::TEXT as newest FROM facts'
+      ),
+      this.db.query<{ count: string }>(
+        'SELECT COUNT(*)::TEXT as count FROM transcripts WHERE embedding IS NOT NULL'
+      ),
+    ]);
+
+    const topCategories: Record<string, number> = {};
+    for (const row of categories.rows) {
+      topCategories[row.category] = parseInt(row.count, 10);
+    }
+
+    return {
+      totalFacts: parseInt(totalFacts.rows[0].count, 10),
+      activeFacts: parseInt(activeFacts.rows[0].count, 10),
+      expiredFacts: parseInt(expiredFacts.rows[0].count, 10),
+      topCategories,
+      totalEntities: parseInt(entities.rows[0].count, 10),
+      totalRelationships: parseInt(relationships.rows[0].count, 10),
+      oldestFact: dateRange.rows[0].oldest,
+      newestFact: dateRange.rows[0].newest,
+      totalTranscriptsIndexed: parseInt(transcripts.rows[0].count, 10),
+      storageEstimate: `${totalFacts.rows[0].count} facts`,
+    };
   }
 
   async close(): Promise<void> {
@@ -1128,19 +1693,7 @@ export class PgliteStore implements DataStore {
 
   // --- Private helpers ---
 
-  private mapFact(r: {
-    id: string;
-    content: string;
-    category: string;
-    tags: string[];
-    source_session_id: string | null;
-    confidence: number;
-    access_count: number;
-    last_accessed_at: string | null;
-    created_at: string;
-    updated_at: string;
-    expires_at: string | null;
-  }): FactEntry {
+  private mapFact(r: FactRow): FactEntry {
     return {
       id: r.id,
       content: r.content,
@@ -1153,6 +1706,10 @@ export class PgliteStore implements DataStore {
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       expiresAt: r.expires_at,
+      validFrom: r.valid_from ?? undefined,
+      validTo: r.valid_to ?? undefined,
+      supersededBy: r.superseded_by ?? undefined,
+      tagPath: r.tag_path ?? undefined,
     };
   }
 

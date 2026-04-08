@@ -88,6 +88,7 @@ if (store && config.googleApiKey) {
     store,
     googleApiKey: config.googleApiKey,
     onExtractionComplete: () => backupService?.backup() ?? Promise.resolve(),
+    retrievalStrategy: config.retrievalStrategy,
   });
   log.info('memory manager initialized');
 }
@@ -298,6 +299,10 @@ function attachWebSocket() {
           recall: (query, limit) => memoryManager.recall(query, limit),
           storePreference: (preference, category, sessionId) =>
             memoryManager.storePreference(preference, category, sessionId),
+          invalidateFact: (query) => memoryManager.invalidateFact(query),
+          getTimeline: (daysBack, entityFilter) =>
+            memoryManager.getTimeline(daysBack, entityFilter),
+          getMemoryStats: () => memoryManager.getMemoryStats(),
         }
       : undefined;
 

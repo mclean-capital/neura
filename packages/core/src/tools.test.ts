@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toolDefs, handleToolCall, type ToolCallContext } from './tools.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 12 tools', () => {
-    expect(toolDefs).toHaveLength(12);
+  it('defines exactly 15 tools', () => {
+    expect(toolDefs).toHaveLength(15);
   });
 
   it('each tool has the required structure', () => {
@@ -29,6 +29,9 @@ describe('toolDefs', () => {
     expect(names).toContain('get_task');
     expect(names).toContain('update_task');
     expect(names).toContain('delete_task');
+    expect(names).toContain('invalidate_fact');
+    expect(names).toContain('get_timeline');
+    expect(names).toContain('memory_stats');
   });
 });
 
@@ -118,6 +121,22 @@ describe('handleToolCall', () => {
         ])
       ),
       storePreference: vi.fn(() => Promise.resolve()),
+      invalidateFact: vi.fn(() => Promise.resolve('fact-id-456')),
+      getTimeline: vi.fn(() => Promise.resolve([])),
+      getMemoryStats: vi.fn(() =>
+        Promise.resolve({
+          totalFacts: 10,
+          activeFacts: 8,
+          expiredFacts: 2,
+          topCategories: { general: 5, project: 3 },
+          totalEntities: 3,
+          totalRelationships: 2,
+          oldestFact: '2026-01-01',
+          newestFact: '2026-04-08',
+          totalTranscriptsIndexed: 50,
+          storageEstimate: '10 facts',
+        })
+      ),
     };
 
     const memCtx: ToolCallContext = { queryWatcher, memoryTools };

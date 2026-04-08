@@ -11,6 +11,8 @@ const MIN_TRANSCRIPT_ENTRIES = 4;
 export interface ExtractionOutput {
   result: ExtractionResult;
   factEmbeddings: (number[] | null)[];
+  /** Phase 5b: transcript chunk embeddings keyed by transcript entry ID */
+  transcriptEmbeddings: Map<number, number[]>;
 }
 
 export interface ExtractionPipeline {
@@ -25,17 +27,20 @@ export interface ExtractionPipeline {
 const EXTRACTION_PROMPT = `You are a memory extraction agent. Analyze the conversation transcript and extract structured information. Return JSON only.
 
 Extract:
-1. facts — Durable knowledge that would be true tomorrow. Include category (project, technical, business, personal, general) and tags.
+1. facts — Durable knowledge that would be true tomorrow. Include category (project, technical, business, personal, general), tags, and tagPath (dot-separated hierarchy, e.g. "project.neura.memory" or "technical.typescript").
 2. preferences — Behavioral instructions from user feedback about how the AI should behave.
 3. userProfile — Who the user is (name, role, company, expertise, location, etc).
 4. identityUpdates — Changes to how the AI should behave (tone, verbosity, personality).
 5. sessionSummary — 2-4 sentence summary, topics discussed, key decisions made, open threads.
+6. entities — People, projects, tools, companies, or concepts mentioned. For each, list relationships to other entities (e.g. "works_on", "manages", "uses").
 
 Rules:
 - Only extract durable facts. Not "it's raining" but "user lives in Seattle."
 - Deduplicate against existing context provided below.
 - Empty arrays for categories with no extractions.
-- For sessionSummary, always provide summary and topics even if minimal.`;
+- For sessionSummary, always provide summary and topics even if minimal.
+- For tagPath, use dot-separated hierarchy: category.topic.subtopic (e.g. "project.neura.memory", "technical.react").
+- For each fact, include mentionedEntities: a list of entity names that are mentioned in or relevant to that specific fact. Use the same names as in the entities array.`;
 
 const EXTRACTION_SCHEMA = {
   type: 'object' as const,
@@ -48,6 +53,8 @@ const EXTRACTION_SCHEMA = {
           content: { type: 'string' as const },
           category: { type: 'string' as const },
           tags: { type: 'array' as const, items: { type: 'string' as const } },
+          tagPath: { type: 'string' as const },
+          mentionedEntities: { type: 'array' as const, items: { type: 'string' as const } },
         },
         required: ['content', 'category', 'tags'] as const,
       },
@@ -94,6 +101,28 @@ const EXTRACTION_SCHEMA = {
         openThreads: { type: 'array' as const, items: { type: 'string' as const } },
       },
       required: ['summary', 'topics', 'keyDecisions', 'openThreads'] as const,
+    },
+    entities: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string' as const },
+          type: { type: 'string' as const },
+          relationships: {
+            type: 'array' as const,
+            items: {
+              type: 'object' as const,
+              properties: {
+                target: { type: 'string' as const },
+                relationship: { type: 'string' as const },
+              },
+              required: ['target', 'relationship'] as const,
+            },
+          },
+        },
+        required: ['name', 'type'] as const,
+      },
     },
   },
   required: ['facts', 'preferences', 'userProfile', 'identityUpdates', 'sessionSummary'] as const,
@@ -176,14 +205,33 @@ export function createExtractionPipeline(googleApiKey: string): ExtractionPipeli
         result.facts.map((fact) => generateEmbedding(fact.content))
       );
 
+      // Phase 5b: Generate embeddings for transcript chunks (groups of 3, parallel)
+      const transcriptEmbeddings = new Map<number, number[]>();
+      const chunkSize = 3;
+      const chunks: { text: string; targetId: number }[] = [];
+      for (let i = 0; i < transcript.length; i += chunkSize) {
+        const chunk = transcript.slice(i, i + chunkSize);
+        const chunkText = chunk.map((t) => `${t.role}: ${t.text}`).join('\n');
+        const midIdx = Math.min(i + Math.floor(chunkSize / 2), transcript.length - 1);
+        chunks.push({ text: chunkText, targetId: transcript[midIdx].id });
+      }
+      const chunkEmbeddings = await Promise.all(chunks.map((c) => generateEmbedding(c.text)));
+      for (let i = 0; i < chunks.length; i++) {
+        if (chunkEmbeddings[i]) {
+          transcriptEmbeddings.set(chunks[i].targetId, chunkEmbeddings[i]!);
+        }
+      }
+
       log.info('extraction complete', {
         facts: result.facts.length,
         preferences: result.preferences.length,
         profileUpdates: result.userProfile.length,
         identityUpdates: result.identityUpdates.length,
+        entities: result.entities?.length ?? 0,
+        transcriptChunksEmbedded: transcriptEmbeddings.size,
       });
 
-      return { result, factEmbeddings };
+      return { result, factEmbeddings, transcriptEmbeddings };
     } catch (err) {
       log.error('extraction failed', { err: String(err) });
       return null;

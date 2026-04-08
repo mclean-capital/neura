@@ -1,9 +1,23 @@
-import type { ToolDefinition, VisionToolArgs, FactEntry, WorkItemEntry } from '@neura/types';
+import type {
+  ToolDefinition,
+  VisionToolArgs,
+  FactEntry,
+  WorkItemEntry,
+  TimelineEntry,
+  MemoryStats,
+} from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 
 const log = new Logger('tool');
 
-const MEMORY_TOOL_NAMES = new Set(['remember_fact', 'recall_memory', 'update_preference']);
+const MEMORY_TOOL_NAMES = new Set([
+  'remember_fact',
+  'recall_memory',
+  'update_preference',
+  'invalidate_fact',
+  'get_timeline',
+  'memory_stats',
+]);
 const PRESENCE_TOOL_NAMES = new Set(['enter_mode']);
 const TASK_TOOL_NAMES = new Set([
   'create_task',
@@ -31,6 +45,9 @@ export interface MemoryToolHandler {
   storeFact(content: string, category: string, tags: string[], sessionId?: string): Promise<string>;
   recall(query: string, limit?: number): Promise<FactEntry[]>;
   storePreference(preference: string, category: string, sessionId?: string): Promise<void>;
+  invalidateFact(query: string): Promise<string | null>;
+  getTimeline(daysBack: number, entityFilter?: string): Promise<TimelineEntry[]>;
+  getMemoryStats(): Promise<MemoryStats>;
 }
 
 export interface TaskToolHandler {
@@ -148,6 +165,52 @@ export const toolDefs: ToolDefinition[] = [
         },
       },
       required: ['preference'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'invalidate_fact',
+    description:
+      'Mark a stored fact as no longer true. Use when the user says something is no longer accurate, like "I left that company" or "we changed the architecture".',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Description of the fact to invalidate — will search and invalidate the best match',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_timeline',
+    description:
+      'Get a chronological timeline of memory changes. Use when the user asks "what changed recently?" or "what happened this week?".',
+    parameters: {
+      type: 'object',
+      properties: {
+        days_back: {
+          type: 'string',
+          description: 'Number of days to look back (default: 7)',
+        },
+        entity: {
+          type: 'string',
+          description: 'Optional: filter by entity name (e.g. a person or project)',
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    name: 'memory_stats',
+    description:
+      'Get statistics about stored memories — total facts, categories, entities, and more. Use when the user asks about their memory state.',
+    parameters: {
+      type: 'object',
+      properties: {},
     },
   },
   {
@@ -356,6 +419,55 @@ export async function handleToolCall(
       } catch (err) {
         log.error('update_preference failed', { err: String(err) });
         return { error: `Failed to store preference: ${String(err)}` };
+      }
+    }
+
+    case 'invalidate_fact': {
+      if (!ctx.memoryTools) return { error: 'Memory system not available' };
+      try {
+        const query = args.query as string;
+        const factId = await ctx.memoryTools.invalidateFact(query);
+        if (factId) {
+          return { result: { invalidated: true, factId } };
+        }
+        return { result: { invalidated: false, message: 'No matching fact found' } };
+      } catch (err) {
+        log.error('invalidate_fact failed', { err: String(err) });
+        return { error: `Failed to invalidate fact: ${String(err)}` };
+      }
+    }
+
+    case 'get_timeline': {
+      if (!ctx.memoryTools) return { error: 'Memory system not available' };
+      try {
+        const daysBack = parseInt((args.days_back as string) || '7', 10);
+        const entity = args.entity as string | undefined;
+        const entries = await ctx.memoryTools.getTimeline(daysBack, entity);
+        return {
+          result: {
+            entries: entries.map((e) => ({
+              type: e.type,
+              timestamp: e.timestamp,
+              content: e.content,
+              entity: e.entityName,
+            })),
+            count: entries.length,
+          },
+        };
+      } catch (err) {
+        log.error('get_timeline failed', { err: String(err) });
+        return { error: `Failed to get timeline: ${String(err)}` };
+      }
+    }
+
+    case 'memory_stats': {
+      if (!ctx.memoryTools) return { error: 'Memory system not available' };
+      try {
+        const stats = await ctx.memoryTools.getMemoryStats();
+        return { result: stats };
+      } catch (err) {
+        log.error('memory_stats failed', { err: String(err) });
+        return { error: `Failed to get memory stats: ${String(err)}` };
       }
     }
 
