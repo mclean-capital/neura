@@ -1,3 +1,9 @@
+# [1.4.0](https://github.com/mclean-capital/neura/compare/v1.3.2...v1.4.0) (2026-04-08)
+
+### Features
+
+- **core,utils,types:** implement Phase 5 discovery loop ([#4](https://github.com/mclean-capital/neura/issues/4)) ([362cb44](https://github.com/mclean-capital/neura/commit/362cb44c9ce0fecae66b0981ac396ef18f35e619))
+
 ## [1.3.2](https://github.com/mclean-capital/neura/compare/v1.3.1...v1.3.2) (2026-04-08)
 
 ### Bug Fixes
