@@ -94,6 +94,12 @@ export interface PresenceStateMessage {
   state: 'passive' | 'active' | 'idle';
 }
 
+export interface DiscoveryNotificationMessage {
+  type: 'discoveryNotification';
+  summary: string;
+  items: { id: string; title: string; reason: string }[];
+}
+
 export type ServerMessage =
   | ServerAudioMessage
   | InputTranscriptMessage
@@ -105,4 +111,5 @@ export type ServerMessage =
   | ErrorMessage
   | SessionClosedMessage
   | CostUpdateMessage
-  | PresenceStateMessage;
+  | PresenceStateMessage
+  | DiscoveryNotificationMessage;

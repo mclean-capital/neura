@@ -12,9 +12,10 @@ import { createCostTracker } from './cost-tracker.js';
 import { loadConfig } from './config.js';
 import { createMemoryManager, type MemoryManager } from './memory-manager.js';
 import { createBackupService, type BackupService } from './memory-backup.js';
-import type { MemoryToolHandler } from './tools.js';
+import type { MemoryToolHandler, TaskToolHandler } from './tools.js';
 import { createWakeDetector, type WakeDetector } from './wake-detector.js';
-import { createPresenceManager } from './presence-manager.js';
+import { createPresenceManager, type PresenceManager } from './presence-manager.js';
+import { createDiscoveryLoop, type DiscoveryLoop } from './discovery-loop.js';
 
 const log = new Logger('server');
 const config = loadConfig();
@@ -97,6 +98,38 @@ if (store) {
   backupService = createBackupService({ store, backupPath });
   backupService.checkStaleness();
   backupService.start();
+}
+
+// Connected clients registry — discovery loop uses this to deliver notifications
+const connectedClients = new Map<
+  WebSocket,
+  {
+    send: (msg: ServerMessage) => void;
+    presence: PresenceManager;
+    getSession: () => VoiceProvider | null;
+  }
+>();
+
+// Discovery loop — reviews open tasks, checks deadlines, notifies clients
+let discoveryLoop: DiscoveryLoop | null = null;
+if (store && config.googleApiKey) {
+  discoveryLoop = createDiscoveryLoop({
+    store,
+    googleApiKey: config.googleApiKey,
+    onNotifications: (summary, items) => {
+      for (const [, client] of connectedClients) {
+        if (client.presence.state === 'active') {
+          const session = client.getSession();
+          if (session) {
+            session.sendText(`Task reminder: ${summary}`);
+          }
+        } else if (client.presence.state === 'passive') {
+          client.send({ type: 'discoveryNotification', summary, items });
+        }
+      }
+    },
+  });
+  discoveryLoop.start();
 }
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -268,6 +301,60 @@ function attachWebSocket() {
         }
       : undefined;
 
+    // Build task tools handler (closes over store)
+    const taskTools: TaskToolHandler | undefined = store
+      ? {
+          createTask: (title, priority, opts) =>
+            store.createWorkItem(title, priority as 'low' | 'medium' | 'high', opts),
+          listTasks: async (status) => {
+            if (!status) return store.getOpenWorkItems(100);
+            return store.getWorkItems({ status, limit: 100 });
+          },
+          getTask: async (idOrTitle) => {
+            const byId = await store.getWorkItem(idOrTitle);
+            if (byId) return byId;
+            // Fall back to title substring match across all items
+            const all = await store.getWorkItems({ limit: 200 });
+            const lower = idOrTitle.toLowerCase();
+            return all.find((t) => t.title.toLowerCase().includes(lower)) ?? null;
+          },
+          updateTask: async (idOrTitle, updates) => {
+            let id = idOrTitle;
+            const byId = await store.getWorkItem(idOrTitle);
+            if (!byId) {
+              const all = await store.getWorkItems({ limit: 200 });
+              const lower = idOrTitle.toLowerCase();
+              const match = all.find((t) => t.title.toLowerCase().includes(lower));
+              if (!match) return false;
+              id = match.id;
+            }
+            await store.updateWorkItem(
+              id,
+              updates as Partial<
+                Pick<
+                  import('@neura/types').WorkItemEntry,
+                  'status' | 'priority' | 'title' | 'description' | 'dueAt'
+                >
+              >
+            );
+            return true;
+          },
+          deleteTask: async (idOrTitle) => {
+            const byId = await store.getWorkItem(idOrTitle);
+            if (byId) {
+              await store.deleteWorkItem(byId.id);
+              return true;
+            }
+            const all = await store.getWorkItems({ limit: 200 });
+            const lower = idOrTitle.toLowerCase();
+            const match = all.find((t) => t.title.toLowerCase().includes(lower));
+            if (!match) return false;
+            await store.deleteWorkItem(match.id);
+            return true;
+          },
+        }
+      : undefined;
+
     // ── Presence state machine ─────────────────────────────────────
     let session: VoiceProvider | null = null;
     let connectionClosed = false;
@@ -375,12 +462,29 @@ function attachWebSocket() {
       wakeDetector = null;
 
       // Build fresh system prompt each activation (memory context may have changed)
-      const systemPromptPrefix = memoryManager
+      let systemPromptPrefix = memoryManager
         ? await memoryManager.buildSystemPrompt().catch((err) => {
             log.warn('memory prompt build failed', { err: String(err) });
             return undefined;
           })
         : undefined;
+
+      // Append open tasks to system prompt so Grok knows about them
+      if (store) {
+        const openTasks = await store.getOpenWorkItems(20);
+        if (openTasks.length > 0) {
+          const taskBlock =
+            '\n\nOpen tasks:\n' +
+            openTasks
+              .map((t) => {
+                const due = t.dueAt ? ` (due: ${new Date(t.dueAt).toLocaleString()})` : '';
+                return `- [${t.priority}] ${t.title}${due}`;
+              })
+              .join('\n') +
+            '\nYou can reference these tasks and help the user manage them.';
+          systemPromptPrefix = (systemPromptPrefix ?? '') + taskBlock;
+        }
+      }
 
       // Re-check state after async gap — may have gone passive/idle during await
       if (connectionClosed || presence.state !== 'active') return;
@@ -389,6 +493,7 @@ function attachWebSocket() {
         systemPromptPrefix,
         memoryTools,
         enterMode: (mode) => presence.enterMode(mode),
+        taskTools,
       });
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();
@@ -427,6 +532,13 @@ function attachWebSocket() {
       onActivate: (wakeTranscript) => void activateVoiceSession(wakeTranscript),
       onDeactivate: () => deactivateVoiceSession(),
       onStateChange: (state) => send({ type: 'presenceState', state }),
+    });
+
+    // Register in connected clients for discovery loop notifications
+    connectedClients.set(ws, {
+      send,
+      presence,
+      getSession: () => session,
     });
 
     // Start in passive mode with wake detection
@@ -494,6 +606,7 @@ function attachWebSocket() {
     ws.on('close', () => {
       log.info('client disconnected');
       connectionClosed = true;
+      connectedClients.delete(ws);
       if (idleTimer) {
         clearTimeout(idleTimer);
         idleTimer = null;
@@ -558,6 +671,7 @@ async function shutdown() {
   const forceExit = setTimeout(() => process.exit(1), 5000);
   forceExit.unref();
 
+  discoveryLoop?.stop();
   backupService?.stop();
 
   // Close WSS first — triggers ws 'close' handlers which finalize sessions in store.
