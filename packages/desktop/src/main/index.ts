@@ -8,8 +8,8 @@ import {
   session,
 } from 'electron';
 import path from 'path';
-import { createCoreManager } from './core-manager.js';
-import { createUIServer } from './ui-server.js';
+import { CoreManager } from './core-manager.js';
+import { UIServer } from './ui-server.js';
 import { createTray } from './tray.js';
 import { registerHotkey } from './hotkey.js';
 import { initUpdater } from './updater.js';
@@ -150,15 +150,15 @@ app.on('ready', () => {
     // NEURA_DESKTOP_DEV is set by scripts/dev.ts — more reliable than app.isPackaged
     // which can misdetect when running `electron dist-main/index.mjs`
     const isDev = process.env.NEURA_DESKTOP_DEV === 'true' || !app.isPackaged;
-    let coreManager: ReturnType<typeof createCoreManager> | null = null;
+    let coreManager: CoreManager | null = null;
     let corePort = appStore.getPort();
-    let uiServer: ReturnType<typeof createUIServer> | null = null;
+    let uiServer: UIServer | null = null;
     let rendererUrl = `http://127.0.0.1:${corePort}`;
 
     async function startCore(): Promise<void> {
       if (coreManager?.isRunning()) return;
       const apiKeys = appStore.getApiKeys();
-      coreManager = createCoreManager({
+      coreManager = new CoreManager({
         port: corePort,
         env: apiKeys,
         onCrash: (code) => {
@@ -179,7 +179,7 @@ app.on('ready', () => {
 
     async function startUIServer(): Promise<void> {
       if (uiServer) return;
-      uiServer = createUIServer({ corePort });
+      uiServer = new UIServer({ corePort });
       const uiPort = await uiServer.start();
       rendererUrl = `http://127.0.0.1:${uiPort}`;
     }

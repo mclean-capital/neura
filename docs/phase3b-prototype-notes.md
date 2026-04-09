@@ -113,10 +113,10 @@ PASSIVE
 
 **Files created/modified:**
 
-- `packages/core/src/wake-detector.ts` — NEW: energy VAD + Whisper + fuzzy match + known aliases
-- `packages/core/src/presence-manager.ts` — NEW: PASSIVE/ACTIVE/IDLE state machine
-- `packages/core/src/server.ts` — MODIFIED: refactored WS handler to use presence manager, deferred voice session creation
-- `packages/core/src/tools.ts` — MODIFIED: added `enter_mode` tool, `getToolDefs` takes options object
+- `packages/core/src/presence/wake-detector.ts` — NEW: energy VAD + Whisper + fuzzy match + known aliases
+- `packages/core/src/presence/presence-manager.ts` — NEW: PASSIVE/ACTIVE/IDLE state machine
+- `packages/core/src/server/server.ts` — MODIFIED: refactored WS handler to use presence manager, deferred voice session creation
+- `packages/core/src/tools/` — MODIFIED: added `enter_mode` tool, `getToolDefs` takes options object
 - `packages/core/src/providers/grok-voice.ts` — MODIFIED: `enterMode` callback, `onReady` callback
 - `packages/types/src/protocol.ts` — MODIFIED: added `PresenceStateMessage`
 - `packages/types/src/providers.ts` — MODIFIED: added `onReady` to `VoiceProviderCallbacks`
@@ -211,11 +211,11 @@ The fix: **separate transcription from classification**. Gemini transcribes the 
 
 **Files created/modified:**
 
-- `packages/core/src/wake-detector.ts` — Energy VAD + Gemini transcription + Levenshtein fuzzy match + pre-speech buffer
-- `packages/core/src/presence-manager.ts` — PASSIVE/ACTIVE/IDLE state machine (5-min idle timeout)
-- `packages/core/src/server.ts` — Presence-aware WS handler, audio replay on wake via `onReady` callback, manual start support
-- `packages/core/src/tools.ts` — Added `enter_mode` tool (deferred via `queueMicrotask`)
-- `packages/core/src/config.ts` — Added `assistantName` config (default: "jarvis")
+- `packages/core/src/presence/wake-detector.ts` — Energy VAD + Gemini transcription + Levenshtein fuzzy match + pre-speech buffer
+- `packages/core/src/presence/presence-manager.ts` — PASSIVE/ACTIVE/IDLE state machine (5-min idle timeout)
+- `packages/core/src/server/server.ts` — Presence-aware WS handler, audio replay on wake via `onReady` callback, manual start support
+- `packages/core/src/tools/` — Added `enter_mode` tool (deferred via `queueMicrotask`)
+- `packages/core/src/config/config.ts` — Added `assistantName` config (default: "jarvis")
 - `packages/types/src/protocol.ts` — Added `PresenceStateMessage`, `ManualStartMessage`
 - `packages/types/src/providers.ts` — Added `onReady` to `VoiceProviderCallbacks`
 - `packages/types/src/tools.ts` — Added `enum` to `ToolParameter`

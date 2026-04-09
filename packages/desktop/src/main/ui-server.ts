@@ -15,10 +15,15 @@ function getRendererDistPath(): string {
   return path.join(__dirname, '..', 'dist-renderer');
 }
 
-export function createUIServer(opts: UIServerOptions) {
-  let server: Server | null = null;
+export class UIServer {
+  private server: Server | null = null;
+  private readonly corePort: number;
 
-  function start(): Promise<number> {
+  constructor(opts: UIServerOptions) {
+    this.corePort = opts.corePort;
+  }
+
+  start(): Promise<number> {
     return new Promise((resolve, reject) => {
       const ex = express();
 
@@ -31,7 +36,7 @@ export function createUIServer(opts: UIServerOptions) {
 
       // Proxy /ws to core WebSocket server
       const wsProxy = createProxyMiddleware({
-        target: `http://127.0.0.1:${opts.corePort}`,
+        target: `http://127.0.0.1:${this.corePort}`,
         ws: true,
         changeOrigin: true,
       });
@@ -46,12 +51,12 @@ export function createUIServer(opts: UIServerOptions) {
         res.sendFile(path.join(distPath, 'index.html'));
       });
 
-      server = createServer(ex);
+      this.server = createServer(ex);
       // Explicit upgrade handler required for WebSocket proxying in http-proxy-middleware v3
-      server.on('upgrade', wsProxy.upgrade);
-      server.on('error', reject);
-      server.listen(0, '127.0.0.1', () => {
-        const addr = server!.address();
+      this.server.on('upgrade', wsProxy.upgrade);
+      this.server.on('error', reject);
+      this.server.listen(0, '127.0.0.1', () => {
+        const addr = this.server!.address();
         const port = typeof addr === 'object' && addr ? addr.port : 0;
         console.log(`[ui-server] serving on port ${port}`);
         resolve(port);
@@ -59,10 +64,8 @@ export function createUIServer(opts: UIServerOptions) {
     });
   }
 
-  function stop() {
-    server?.close();
-    server = null;
+  stop(): void {
+    this.server?.close();
+    this.server = null;
   }
-
-  return { start, stop };
 }

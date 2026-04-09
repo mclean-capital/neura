@@ -365,13 +365,13 @@ ACTIVE ──── audio/text ──── ACTIVE (reset idle timer)
 
 ## Architecture: Memory Manager
 
-A service layer at `packages/core/src/memory-manager.ts` that orchestrates injection, extraction, and recall.
+A service layer at `packages/core/src/memory/memory-manager.ts` that orchestrates injection, extraction, and recall.
 
 ```
-packages/core/src/
+packages/core/src/memory/
   memory-manager.ts          — MemoryManager (injection, extraction, recall)
-  memory-extractor.ts        — ExtractionPipeline (LLM-based transcript → memories)
-  memory-prompt-builder.ts   — System prompt construction from memory context
+  extraction-pipeline.ts     — ExtractionPipeline (LLM-based transcript → memories)
+  prompt-builder.ts          — System prompt construction from memory context
 ```
 
 ### MemoryManager API
@@ -402,7 +402,7 @@ export interface MemoryManager {
 
 ```
 Server start
-  └─ createMemoryManager({ store, embeddingApiKey })
+  └─ new MemoryManager({ store, embeddingApiKey })
 
 Client connects
   └─ memoryManager.buildSystemPrompt()
@@ -506,7 +506,7 @@ At extraction time, each new fact gets a 768-dimensional embedding via **Gemini 
 
 ## Memory Tools
 
-Three new tools added to `packages/core/src/tools.ts`.
+Three new tools added to `packages/core/src/tools/`.
 
 ### remember_fact
 
@@ -639,19 +639,19 @@ Make DataStore fully async. Replace sql.js with PGlite (WASM PostgreSQL 17 + pgv
 
 ### Step 2: Memory prompt builder
 
-Create `packages/core/src/memory-prompt-builder.ts`. Implement `buildMemoryPrompt()` with token budget management. Add tests.
+Create `packages/core/src/memory/prompt-builder.ts`. Implement `buildMemoryPrompt()` with token budget management. Add tests.
 
 ### Step 3: Memory manager + conversation boundary
 
-Create `packages/core/src/memory-manager.ts`. Implement idle timeout conversation boundary. Wire `buildSystemPrompt()`, `storeFact()`, `recall()`, `storePreference()`, `queueExtraction()`. Add tests.
+Create `packages/core/src/memory/memory-manager.ts`. Implement idle timeout conversation boundary. Wire `buildSystemPrompt()`, `storeFact()`, `recall()`, `storePreference()`, `queueExtraction()`. Add tests.
 
 ### Step 4: Extraction pipeline
 
-Create `packages/core/src/memory-extractor.ts`. Implement Gemini 2.5 Flash extraction + Gemini Embedding generation. Add tests.
+Create `packages/core/src/memory/extraction-pipeline.ts`. Implement Gemini 2.5 Flash extraction + Gemini Embedding generation. Add tests.
 
 ### Step 5: Voice integration
 
-Add `systemPromptPrefix` to `GrokVoiceConfig`. Modify `buildInstructions()`. Wire memory manager into `server.ts` session lifecycle with conversation boundary.
+Add `systemPromptPrefix` to `GrokVoiceConfig`. Modify `buildInstructions()`. Wire memory manager into `server/server.ts` session lifecycle with conversation boundary.
 
 ### Step 6: Memory tools
 
@@ -670,9 +670,9 @@ Update CLAUDE.md, roadmap, and README to reflect the memory system. Remove all r
 ```
 packages/types/src/memory.ts                 — Memory type definitions (done)
 packages/core/src/stores/pglite-store.ts     — PGlite DataStore implementation (done)
-packages/core/src/memory-manager.ts          — MemoryManager service layer
-packages/core/src/memory-extractor.ts        — Extraction pipeline (Gemini Flash + Embedding)
-packages/core/src/memory-prompt-builder.ts   — System prompt construction from memory
+packages/core/src/memory/memory-manager.ts       — MemoryManager service layer
+packages/core/src/memory/extraction-pipeline.ts  — Extraction pipeline (Gemini Flash + Embedding)
+packages/core/src/memory/prompt-builder.ts       — System prompt construction from memory
 ```
 
 ### Modified files
@@ -683,11 +683,11 @@ packages/types/src/config.ts                 — pgDataPath replaces dbPath (don
 packages/types/src/index.ts                  — Export memory types (done)
 packages/core/package.json                   — Replace sql.js with @electric-sql/pglite (done)
 packages/core/src/stores/index.ts            — Export PgliteStore (done)
-packages/core/src/config.ts                  — PG_DATA_PATH, pgDataPath (done)
-packages/core/src/server.ts                  — Async store calls (done), memory manager lifecycle, conversation idle timeout
-packages/core/src/voice-session.ts           — Pass systemPromptPrefix through
+packages/core/src/config/config.ts               — PG_DATA_PATH, pgDataPath (done)
+packages/core/src/server/server.ts               — Async store calls (done), memory manager lifecycle, conversation idle timeout
+packages/core/src/providers/voice-session.ts     — Pass systemPromptPrefix through
 packages/core/src/providers/grok-voice.ts    — Accept systemPromptPrefix, modify buildInstructions()
-packages/core/src/tools.ts                   — Add memory tools
+packages/core/src/tools/                         — Add memory tools (split into multiple files)
 packages/core/scripts/bundle.ts              — Updated externals comment (done)
 packages/desktop/electron-builder.yml        — Updated extraResources for PGlite (done)
 packages/desktop/src/main/core-manager.ts    — PG_DATA_PATH env var (done)

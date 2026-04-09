@@ -103,7 +103,7 @@ LIMIT $2;
 **Files to modify:**
 
 - `packages/core/src/stores/pglite-store.ts` — New `searchFactsHybrid()` method, migration to add `tsv` column + GIN index
-- `packages/core/src/memory-manager.ts` — Update `recallMemory()` to use hybrid search
+- `packages/core/src/memory/memory-manager.ts` — Update `recallMemory()` to use hybrid search
 - `packages/types/src/providers.ts` — Add `searchFactsHybrid` to `DataStore` interface
 
 **RRF constant (k=60):** Standard value from the original RRF paper (Cormack et al., 2009). Balances vector and text rankings. Tunable later.
@@ -117,7 +117,7 @@ LIMIT $2;
 #### Implementation
 
 ```typescript
-// memory-manager.ts
+// memory/memory-manager.ts
 async rerank(query: string, candidates: FactEntry[], topN: number = 10): Promise<FactEntry[]> {
   const prompt = `Given this query: "${query}"
 
@@ -142,7 +142,7 @@ ${candidates.map((f, i) => `[${i}] ${f.content} (${f.category})`).join('\n')}`;
 
 **Files to modify:**
 
-- `packages/core/src/memory-manager.ts` — Add `rerank()` method, update `recallMemory()` to optionally rerank
+- `packages/core/src/memory/memory-manager.ts` — Add `rerank()` method, update `recallMemory()` to optionally rerank
 
 ### A3. Verbatim Transcript Indexing (Deep Search / L3)
 
@@ -186,8 +186,8 @@ async searchTranscripts(
 **Files to modify:**
 
 - `packages/core/src/stores/pglite-store.ts` — Migration, `searchTranscripts()` method
-- `packages/core/src/memory-extractor.ts` — Batch-embed transcript chunks after extraction
-- `packages/core/src/memory-manager.ts` — Fallback logic in `recallMemory()`
+- `packages/core/src/memory/extraction-pipeline.ts` — Batch-embed transcript chunks after extraction
+- `packages/core/src/memory/memory-manager.ts` — Fallback logic in `recallMemory()`
 - `packages/types/src/providers.ts` — Add `searchTranscripts` to `DataStore` interface
 
 **Cost impact:** Embedding transcripts costs more per session (~$0.005 additional for a typical 5-15 minute session). Longer sessions (30+ minutes, 200+ transcript entries) may cost ~$0.01-0.02 due to higher chunk count. Offset by dramatically better recall for verbatim queries.
@@ -207,7 +207,7 @@ Default: `'hybrid'` (best balance of quality and cost). `'hybrid-rerank'` for ma
 **Files to modify:**
 
 - `packages/types/src/config.ts` — Add `retrievalStrategy` to `CoreConfig`
-- `packages/core/src/memory-manager.ts` — Strategy dispatch in `recallMemory()`
+- `packages/core/src/memory/memory-manager.ts` — Strategy dispatch in `recallMemory()`
 
 ---
 
@@ -248,7 +248,7 @@ CREATE INDEX idx_facts_valid ON facts (valid_to) WHERE valid_to IS NULL;
 **Files to modify:**
 
 - `packages/core/src/stores/pglite-store.ts` — Migration, update `storeFact()` with supersession logic, add `invalidateFact()`, `getFactHistory()`
-- `packages/core/src/memory-extractor.ts` — Detect superseding facts during extraction
+- `packages/core/src/memory/extraction-pipeline.ts` — Detect superseding facts during extraction
 - `packages/types/src/memory.ts` — Add `validFrom`, `validTo`, `supersededBy` to `FactEntry`
 
 ### B2. Entity-Relationship Edges
@@ -316,7 +316,7 @@ Cost impact is negligible — entity fields are added to the existing extraction
 **Files to modify:**
 
 - `packages/core/src/stores/pglite-store.ts` — Migration, entity CRUD, relationship queries
-- `packages/core/src/memory-extractor.ts` — Add `entities` field to extraction schema, store extracted entities + relationships
+- `packages/core/src/memory/extraction-pipeline.ts` — Add `entities` field to extraction schema, store extracted entities + relationships
 - `packages/types/src/memory.ts` — `Entity`, `EntityRelationship`, `FactEntity` types
 - `packages/types/src/providers.ts` — Entity methods on `DataStore`
 
@@ -343,8 +343,8 @@ async getTimeline(
 **Files to modify:**
 
 - `packages/core/src/stores/pglite-store.ts` — `getTimeline()` query
-- `packages/core/src/tools.ts` — `get_timeline` tool definition
-- `packages/core/src/memory-manager.ts` — Timeline formatting for voice response
+- `packages/core/src/tools/` — `get_timeline` tool definition
+- `packages/core/src/memory/memory-manager.ts` — Timeline formatting for voice response
 - `packages/types/src/tools.ts` — `GetTimelineArgs` type
 
 ### B4. Fact Invalidation Tool
@@ -355,11 +355,11 @@ async getTimeline(
 
 **Files to modify:**
 
-- `packages/core/src/tools.ts` — `invalidate_fact` tool definition, add to `MEMORY_TOOL_NAMES` set and `getToolDefs` filter
-- `packages/core/src/memory-manager.ts` — `invalidateFact()` method
+- `packages/core/src/tools/` — `invalidate_fact` tool definition, add to `MEMORY_TOOL_NAMES` set and `getToolDefs` filter
+- `packages/core/src/memory/memory-manager.ts` — `invalidateFact()` method
 - `packages/core/src/stores/pglite-store.ts` — `invalidateFact()` store method
 
-> **Tool registration note:** All new tools (`get_timeline`, `invalidate_fact`, `memory_stats`) must be added to the `MEMORY_TOOL_NAMES` set and the conditional `getToolDefs` filter logic in `tools.ts` so they are included when `includeMemory: true`.
+> **Tool registration note:** All new tools (`get_timeline`, `invalidate_fact`, `memory_stats`) must be added to the `MEMORY_TOOL_NAMES` set and the conditional `getToolDefs` filter logic in `src/tools/` so they are included when `includeMemory: true`.
 
 ---
 
@@ -387,7 +387,7 @@ async getTimeline(
 **Implementation:**
 
 ```typescript
-// memory-manager.ts
+// memory/memory-manager.ts
 interface MemoryTierConfig {
   l0Budget: number; // default: 200
   l1Budget: number; // default: 400
@@ -404,8 +404,8 @@ async buildSystemPrompt(tierConfig?: MemoryTierConfig): Promise<string> {
 
 **Files to modify:**
 
-- `packages/core/src/memory-manager.ts` — Tier-aware prompt assembly
-- `packages/core/src/memory-prompt-builder.ts` — Refactor into tier builders
+- `packages/core/src/memory/memory-manager.ts` — Tier-aware prompt assembly
+- `packages/core/src/memory/prompt-builder.ts` — Refactor into tier builders
 - `packages/types/src/config.ts` — `MemoryTierConfig` in `CoreConfig`
 
 ### C2. Hierarchical Tags
@@ -439,7 +439,7 @@ UPDATE facts SET tag_path = category WHERE tag_path IS NULL;
 **Files to modify:**
 
 - `packages/core/src/stores/pglite-store.ts` — Migration, update queries to use `tag_path`
-- `packages/core/src/memory-extractor.ts` — Update extraction schema to produce `tag_path`
+- `packages/core/src/memory/extraction-pipeline.ts` — Update extraction schema to produce `tag_path`
 - `packages/types/src/memory.ts` — Add `tagPath` to `FactEntry`
 
 ### C3. Cross-Reference Detection
@@ -464,7 +464,7 @@ LIMIT 5;
 
 **Files to modify:**
 
-- `packages/core/src/memory-manager.ts` — Related facts expansion in `recallMemory()`
+- `packages/core/src/memory/memory-manager.ts` — Related facts expansion in `recallMemory()`
 - `packages/core/src/stores/pglite-store.ts` — `getRelatedFacts()` query
 
 ### C4. Memory Statistics Tool
@@ -494,7 +494,7 @@ LIMIT 5;
 
 **Files to modify:**
 
-- `packages/core/src/tools.ts` — `memory_stats` tool definition
+- `packages/core/src/tools/` — `memory_stats` tool definition
 - `packages/core/src/stores/pglite-store.ts` — `getMemoryStats()` aggregate query
 - `packages/types/src/tools.ts` — `MemoryStatsResult` type
 

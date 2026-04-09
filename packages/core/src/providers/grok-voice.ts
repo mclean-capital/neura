@@ -14,7 +14,7 @@ import {
   type MemoryToolHandler,
   type EnterModeHandler,
   type TaskToolHandler,
-} from '../tools.js';
+} from '../tools/index.js';
 
 const log = new Logger('voice');
 
@@ -36,41 +36,51 @@ export interface GrokVoiceConfig {
   taskTools?: TaskToolHandler;
 }
 
-export function createGrokVoiceSession(
-  cb: VoiceProviderCallbacks,
-  config: GrokVoiceConfig = {}
-): VoiceProvider {
-  const voice = config.voice ?? 'eve';
-  const vadThreshold = config.vadThreshold ?? 0.5;
-  const vadSilenceDurationMs = config.vadSilenceDurationMs ?? 1000;
-  const vadPrefixPaddingMs = config.vadPrefixPaddingMs ?? 300;
-  const maxReconnectAttempts = config.maxReconnectAttempts ?? 5;
-  const sessionMaxMs = config.sessionMaxMs ?? 28 * 60 * 1000; // 28 min (Grok 30-min cap)
+export class GrokVoiceProvider implements VoiceProvider {
+  private readonly cb: VoiceProviderCallbacks;
+  private readonly config: GrokVoiceConfig;
+  private readonly voice: string;
+  private readonly vadThreshold: number;
+  private readonly vadSilenceDurationMs: number;
+  private readonly vadPrefixPaddingMs: number;
+  private readonly maxReconnectAttempts: number;
+  private readonly sessionMaxMs: number;
+  private readonly XAI_API_KEY: string | undefined;
 
-  const XAI_API_KEY = process.env.XAI_API_KEY;
-
-  let ws: WebSocket | null = null;
-  let intentionalClose = false;
-  let reconnectAttempts = 0;
-  let sessionTimer: ReturnType<typeof setTimeout> | null = null;
-  let readyFired = false;
+  private ws: WebSocket | null = null;
+  private intentionalClose = false;
+  private reconnectAttempts = 0;
+  private sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  private readyFired = false;
 
   // Transcript history for context seeding on reconnect
-  const transcript: { role: 'user' | 'assistant'; text: string }[] = [];
+  private readonly transcript: { role: 'user' | 'assistant'; text: string }[] = [];
 
-  function pushTranscript(role: 'user' | 'assistant', text: string) {
-    transcript.push({ role, text });
-    if (transcript.length > MAX_TRANSCRIPT_ENTRIES) {
-      transcript.splice(0, transcript.length - MAX_TRANSCRIPT_ENTRIES);
+  constructor(cb: VoiceProviderCallbacks, config: GrokVoiceConfig = {}) {
+    this.cb = cb;
+    this.config = config;
+    this.voice = config.voice ?? 'eve';
+    this.vadThreshold = config.vadThreshold ?? 0.5;
+    this.vadSilenceDurationMs = config.vadSilenceDurationMs ?? 1000;
+    this.vadPrefixPaddingMs = config.vadPrefixPaddingMs ?? 300;
+    this.maxReconnectAttempts = config.maxReconnectAttempts ?? 5;
+    this.sessionMaxMs = config.sessionMaxMs ?? 28 * 60 * 1000; // 28 min (Grok 30-min cap)
+    this.XAI_API_KEY = process.env.XAI_API_KEY;
+  }
+
+  private pushTranscript(role: 'user' | 'assistant', text: string): void {
+    this.transcript.push({ role, text });
+    if (this.transcript.length > MAX_TRANSCRIPT_ENTRIES) {
+      this.transcript.splice(0, this.transcript.length - MAX_TRANSCRIPT_ENTRIES);
     }
   }
 
-  function buildInstructions(): string {
+  private buildInstructions(): string {
     const base: string[] = [];
 
-    if (config.systemPromptPrefix) {
+    if (this.config.systemPromptPrefix) {
       // Memory system provides a complete prompt with identity, preferences, tools, etc.
-      base.push(config.systemPromptPrefix);
+      base.push(this.config.systemPromptPrefix);
     } else {
       // Fallback: hardcoded personality when memory system is not available
       base.push(
@@ -85,8 +95,8 @@ export function createGrokVoiceSession(
     }
 
     // Seed context from previous transcript on reconnect
-    if (transcript.length > 0) {
-      const recent = transcript.slice(-20); // Last 20 exchanges
+    if (this.transcript.length > 0) {
+      const recent = this.transcript.slice(-20); // Last 20 exchanges
       const context = recent.map((t) => `${t.role}: ${t.text}`).join('\n');
       base.push(`\n[Session resumed. Previous conversation context:\n${context}\n]`);
     }
@@ -94,118 +104,120 @@ export function createGrokVoiceSession(
     return base.join('\n');
   }
 
-  function connect() {
-    if (!XAI_API_KEY) {
-      cb.onError('XAI_API_KEY is required — set it in .env');
-      cb.onClose();
+  connect(): void {
+    if (!this.XAI_API_KEY) {
+      this.cb.onError('XAI_API_KEY is required — set it in .env');
+      this.cb.onClose();
       return;
     }
 
-    intentionalClose = false;
+    this.intentionalClose = false;
 
-    ws = new WebSocket(WS_URL, {
-      headers: { Authorization: `Bearer ${XAI_API_KEY}` },
+    this.ws = new WebSocket(WS_URL, {
+      headers: { Authorization: `Bearer ${this.XAI_API_KEY}` },
     });
 
-    ws.on('open', () => {
-      const isReconnect = reconnectAttempts > 0 || transcript.length > 0;
+    this.ws.on('open', () => {
+      const isReconnect = this.reconnectAttempts > 0 || this.transcript.length > 0;
       log.info('connected');
-      reconnectAttempts = 0;
+      this.reconnectAttempts = 0;
 
-      ws!.send(
+      this.ws!.send(
         JSON.stringify({
           type: 'session.update',
           session: {
-            voice,
-            instructions: buildInstructions(),
+            voice: this.voice,
+            instructions: this.buildInstructions(),
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
             input_audio_transcription: { model: 'whisper-1' },
             turn_detection: {
               type: 'server_vad',
-              threshold: vadThreshold,
-              silence_duration_ms: vadSilenceDurationMs,
-              prefix_padding_ms: vadPrefixPaddingMs,
+              threshold: this.vadThreshold,
+              silence_duration_ms: this.vadSilenceDurationMs,
+              prefix_padding_ms: this.vadPrefixPaddingMs,
             },
             tools: getToolDefs({
-              includeMemory: !!config.memoryTools,
-              includePresence: !!config.enterMode,
-              includeTasks: !!config.taskTools,
+              includeMemory: !!this.config.memoryTools,
+              includePresence: !!this.config.enterMode,
+              includeTasks: !!this.config.taskTools,
             }),
           },
         })
       );
 
       // Proactive reconnect before session cap
-      if (sessionTimer) clearTimeout(sessionTimer);
-      sessionTimer = setTimeout(() => {
+      if (this.sessionTimer) clearTimeout(this.sessionTimer);
+      this.sessionTimer = setTimeout(() => {
         log.info('proactive reconnect (approaching session limit)');
-        void reconnect();
-      }, sessionMaxMs);
+        void this.reconnect();
+      }, this.sessionMaxMs);
 
-      if (isReconnect) cb.onReconnected();
+      if (isReconnect) this.cb.onReconnected();
     });
 
-    ws.on('message', (raw) => {
+    this.ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
-        handleMessage(msg);
+        this.handleMessage(msg);
       } catch (err) {
         log.error('parse error', { err: String(err) });
       }
     });
 
-    ws.on('error', (err) => {
+    this.ws.on('error', (err) => {
       log.error('ws error', { err: err.message });
-      cb.onError(err.message);
+      this.cb.onError(err.message);
     });
 
-    ws.on('close', () => {
+    this.ws.on('close', () => {
       log.info('disconnected');
-      if (sessionTimer) {
-        clearTimeout(sessionTimer);
-        sessionTimer = null;
+      if (this.sessionTimer) {
+        clearTimeout(this.sessionTimer);
+        this.sessionTimer = null;
       }
 
-      if (!intentionalClose) {
-        attemptReconnect();
+      if (!this.intentionalClose) {
+        this.attemptReconnect();
       } else {
-        cb.onClose();
+        this.cb.onClose();
       }
     });
   }
 
-  function attemptReconnect() {
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      log.error(`max reconnect attempts (${maxReconnectAttempts}) reached`);
-      cb.onError('Voice session disconnected — max reconnect attempts reached.');
-      cb.onClose();
+  private attemptReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      log.error(`max reconnect attempts (${this.maxReconnectAttempts}) reached`);
+      this.cb.onError('Voice session disconnected — max reconnect attempts reached.');
+      this.cb.onClose();
       return;
     }
 
-    reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 16_000);
-    log.info(`reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    this.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 16_000);
+    log.info(
+      `reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
 
     setTimeout(() => {
-      connect();
+      this.connect();
     }, delay);
   }
 
-  function reconnect() {
-    const oldWs = ws;
-    ws = null;
-    intentionalClose = true;
+  private reconnect(): void {
+    const oldWs = this.ws;
+    this.ws = null;
+    this.intentionalClose = true;
     try {
       oldWs?.close();
     } catch {
       /* ignore */
     }
-    connect();
+    this.connect();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleMessage(msg: any) {
+  private handleMessage(msg: any): void {
     if (msg.type !== 'response.output_audio.delta' && msg.type !== 'ping') {
       log.debug('event', { type: msg.type });
     }
@@ -216,30 +228,30 @@ export function createGrokVoiceSession(
         break;
       case 'session.updated':
         log.info('session configured');
-        if (!readyFired) {
-          readyFired = true;
-          cb.onReady();
+        if (!this.readyFired) {
+          this.readyFired = true;
+          this.cb.onReady();
         }
         break;
       case 'response.audio.delta':
       case 'response.output_audio.delta':
-        if (msg.delta) cb.onAudio(msg.delta);
+        if (msg.delta) this.cb.onAudio(msg.delta);
         break;
       case 'response.audio_transcript.delta':
       case 'response.output_audio_transcript.delta':
-        if (msg.delta) cb.onOutputTranscript(msg.delta);
+        if (msg.delta) this.cb.onOutputTranscript(msg.delta);
         break;
       case 'conversation.item.input_audio_transcription.completed':
         if (msg.transcript) {
-          cb.onInputTranscript(msg.transcript);
-          pushTranscript('user', msg.transcript);
+          this.cb.onInputTranscript(msg.transcript);
+          this.pushTranscript('user', msg.transcript);
         }
         break;
       case 'input_audio_buffer.speech_started':
-        cb.onInterrupted();
+        this.cb.onInterrupted();
         break;
       case 'response.done': {
-        cb.onTurnComplete();
+        this.cb.onTurnComplete();
         const outputItems = msg.response?.output;
         const fullParts: string[] = [];
         if (Array.isArray(outputItems)) {
@@ -247,7 +259,7 @@ export function createGrokVoiceSession(
             if (item.type === 'message' && Array.isArray(item.content)) {
               for (const part of item.content) {
                 if (part.transcript) {
-                  pushTranscript('assistant', part.transcript);
+                  this.pushTranscript('assistant', part.transcript);
                   fullParts.push(part.transcript);
                 }
               }
@@ -255,22 +267,22 @@ export function createGrokVoiceSession(
           }
         }
         if (fullParts.length > 0) {
-          cb.onOutputTranscriptComplete(fullParts.join(''));
+          this.cb.onOutputTranscriptComplete(fullParts.join(''));
         }
         break;
       }
       case 'response.function_call_arguments.done':
-        void handleFunctionCallDone(msg);
+        void this.handleFunctionCallDone(msg);
         break;
       case 'error':
         log.error('api error', { error: msg.error });
-        cb.onError(msg.error?.message || 'Unknown error');
+        this.cb.onError(msg.error?.message || 'Unknown error');
         break;
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function handleFunctionCallDone(msg: any) {
+  private async handleFunctionCallDone(msg: any): Promise<void> {
     const name: string = msg.name ?? '';
     let args: Record<string, unknown> = {};
     try {
@@ -279,19 +291,19 @@ export function createGrokVoiceSession(
       /* malformed args */
     }
 
-    const currentWs = ws;
+    const currentWs = this.ws;
     const callId = msg.call_id;
 
-    cb.onToolCall(name, args);
+    this.cb.onToolCall(name, args);
     const result = await handleToolCall(name, args, {
-      queryWatcher: cb.queryWatcher,
-      memoryTools: config.memoryTools,
-      enterMode: config.enterMode,
-      taskTools: config.taskTools,
+      queryWatcher: this.cb.queryWatcher,
+      memoryTools: this.config.memoryTools,
+      enterMode: this.config.enterMode,
+      taskTools: this.config.taskTools,
     });
-    cb.onToolResult(name, result);
+    this.cb.onToolResult(name, result);
 
-    if (currentWs && currentWs === ws && currentWs.readyState === WebSocket.OPEN) {
+    if (currentWs && currentWs === this.ws && currentWs.readyState === WebSocket.OPEN) {
       currentWs.send(
         JSON.stringify({
           type: 'conversation.item.create',
@@ -306,16 +318,16 @@ export function createGrokVoiceSession(
     }
   }
 
-  function sendAudio(base64: string) {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: base64 }));
+  sendAudio(base64: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: base64 }));
     }
   }
 
-  function sendText(text: string) {
-    if (ws?.readyState !== WebSocket.OPEN) return;
-    pushTranscript('user', text);
-    ws.send(
+  sendText(text: string): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.pushTranscript('user', text);
+    this.ws.send(
       JSON.stringify({
         type: 'conversation.item.create',
         item: {
@@ -325,12 +337,12 @@ export function createGrokVoiceSession(
         },
       })
     );
-    ws.send(JSON.stringify({ type: 'response.create' }));
+    this.ws.send(JSON.stringify({ type: 'response.create' }));
   }
 
-  function sendSystemEvent(text: string) {
-    if (ws?.readyState !== WebSocket.OPEN) return;
-    ws.send(
+  sendSystemEvent(text: string): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(
       JSON.stringify({
         type: 'conversation.item.create',
         item: {
@@ -342,19 +354,17 @@ export function createGrokVoiceSession(
     );
   }
 
-  function close() {
-    intentionalClose = true;
-    if (sessionTimer) {
-      clearTimeout(sessionTimer);
-      sessionTimer = null;
+  close(): void {
+    this.intentionalClose = true;
+    if (this.sessionTimer) {
+      clearTimeout(this.sessionTimer);
+      this.sessionTimer = null;
     }
     try {
-      ws?.close();
+      this.ws?.close();
     } catch {
       /* ignore */
     }
-    ws = null;
+    this.ws = null;
   }
-
-  return { connect, sendAudio, sendText, sendSystemEvent, close };
 }
