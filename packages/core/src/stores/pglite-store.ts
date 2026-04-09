@@ -22,6 +22,7 @@ import type {
   EntityRelationship,
   TimelineEntry,
   MemoryStats,
+  TranscriptChunkEntry,
 } from '@neura/types';
 
 /** Raw DB row shape for facts table (snake_case column names). */
@@ -41,6 +42,17 @@ interface FactRow {
   valid_to?: string | null;
   superseded_by?: string | null;
   tag_path?: string | null;
+}
+
+/** Raw DB row shape for transcript_chunks table. */
+interface TranscriptChunkRow {
+  id: string;
+  session_id: string;
+  chunk_text: string;
+  start_transcript_id: number;
+  end_transcript_id: number;
+  created_at: string;
+  embedding?: string | null;
 }
 
 export class PgliteStore implements DataStore {
@@ -304,6 +316,22 @@ export class PgliteStore implements DataStore {
       'CREATE INDEX IF NOT EXISTS idx_fact_entities_entity ON fact_entities(entity_id)'
     );
     await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_tag_path ON facts(tag_path)');
+
+    // Transcript chunks table (replaces per-row midpoint embedding)
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS transcript_chunks (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id),
+        chunk_text TEXT NOT NULL,
+        embedding vector(3072),
+        start_transcript_id INTEGER NOT NULL,
+        end_transcript_id INTEGER NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_transcript_chunks_session ON transcript_chunks(session_id)'
+    );
 
     // Seed default identity if table is empty
     const identityCount = await this.db.query<{ count: string }>(
@@ -1074,6 +1102,11 @@ export class PgliteStore implements DataStore {
       entityId: r.entity_id,
     }));
 
+    const chunkResult = await this.db.query<TranscriptChunkRow>(
+      'SELECT id, session_id, chunk_text, start_transcript_id, end_transcript_id, created_at, embedding::text FROM transcript_chunks ORDER BY created_at'
+    );
+    const transcriptChunks = chunkResult.rows.map((r) => this.mapTranscriptChunk(r));
+
     return {
       version: 2,
       exportedAt: new Date().toISOString(),
@@ -1085,6 +1118,7 @@ export class PgliteStore implements DataStore {
       entities,
       entityRelationships,
       factEntities,
+      transcriptChunks,
     };
   }
 
@@ -1303,6 +1337,36 @@ export class PgliteStore implements DataStore {
       }
     }
 
+    // Transcript chunks — create stub session rows for FK constraint (same pattern as session_summaries)
+    for (const entry of backup.transcriptChunks ?? []) {
+      try {
+        await this.db.query(
+          `INSERT INTO sessions (id, voice_provider, vision_provider)
+           VALUES ($1, 'restored', 'restored')
+           ON CONFLICT (id) DO NOTHING`,
+          [entry.sessionId]
+        );
+        const embeddingStr = entry.embedding ? `[${entry.embedding.join(',')}]` : null;
+        await this.db.query(
+          `INSERT INTO transcript_chunks (id, session_id, chunk_text, embedding, start_transcript_id, end_transcript_id, created_at)
+           VALUES ($1, $2, $3, $4::vector, $5, $6, $7)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            entry.id,
+            entry.sessionId,
+            entry.chunkText,
+            embeddingStr,
+            entry.startTranscriptId,
+            entry.endTranscriptId,
+            entry.createdAt,
+          ]
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
     log.info('import complete', { imported, skipped });
     return { imported, skipped };
   }
@@ -1384,61 +1448,87 @@ export class PgliteStore implements DataStore {
     embedding: number[],
     limit = 10,
     sessionId?: string
-  ): Promise<TranscriptEntry[]> {
+  ): Promise<TranscriptChunkEntry[]> {
     const embeddingStr = `[${embedding.join(',')}]`;
+
+    // Primary: search the transcript_chunks table
+    const params: (string | number)[] = [embeddingStr];
+    let where = 'WHERE embedding IS NOT NULL';
     if (sessionId) {
-      const result = await this.db.query<{
+      params.push(sessionId);
+      where += ` AND session_id = $${params.length}`;
+    }
+    params.push(limit);
+    const result = await this.db.query<TranscriptChunkRow>(
+      `SELECT id, session_id, chunk_text, start_transcript_id, end_transcript_id, created_at
+       FROM transcript_chunks
+       ${where}
+       ORDER BY embedding <=> $1::vector
+       LIMIT $${params.length}`,
+      params
+    );
+
+    const chunkResults: TranscriptChunkEntry[] = result.rows.map((r) => this.mapTranscriptChunk(r));
+
+    // Also search legacy per-row embeddings (pre-chunks data from upgraded databases)
+    const remaining = limit - chunkResults.length;
+    if (remaining > 0) {
+      const legacyParams: (string | number)[] = [embeddingStr];
+      let legacyWhere = 'WHERE embedding IS NOT NULL';
+      if (sessionId) {
+        legacyParams.push(sessionId);
+        legacyWhere += ` AND session_id = $${legacyParams.length}`;
+      }
+      legacyParams.push(remaining);
+      const legacy = await this.db.query<{
         id: number;
         session_id: string;
-        role: 'user' | 'assistant';
         text: string;
         created_at: string;
       }>(
-        `SELECT id, session_id, role, text, created_at FROM transcripts
-         WHERE session_id = $2 AND embedding IS NOT NULL
+        `SELECT id, session_id, text, created_at FROM transcripts
+         ${legacyWhere}
          ORDER BY embedding <=> $1::vector
-         LIMIT $3`,
-        [embeddingStr, sessionId, limit]
+         LIMIT $${legacyParams.length}`,
+        legacyParams
       );
-      return result.rows.map((r) => ({
-        id: r.id,
+      const legacyResults: TranscriptChunkEntry[] = legacy.rows.map((r) => ({
+        id: `legacy-${r.id}`,
         sessionId: r.session_id,
-        role: r.role,
-        text: r.text,
+        chunkText: r.text,
+        startTranscriptId: r.id,
+        endTranscriptId: r.id,
         createdAt: r.created_at,
       }));
+      chunkResults.push(...legacyResults);
     }
-    const result = await this.db.query<{
-      id: number;
-      session_id: string;
-      role: 'user' | 'assistant';
-      text: string;
-      created_at: string;
-    }>(
-      `SELECT id, session_id, role, text, created_at FROM transcripts
-       WHERE embedding IS NOT NULL
-       ORDER BY embedding <=> $1::vector
-       LIMIT $2`,
-      [embeddingStr, limit]
-    );
-    return result.rows.map((r) => ({
-      id: r.id,
-      sessionId: r.session_id,
-      role: r.role,
-      text: r.text,
-      createdAt: r.created_at,
-    }));
+
+    return chunkResults;
   }
 
-  async indexTranscriptEmbeddings(
+  async insertTranscriptChunks(
     sessionId: string,
-    embeddings: Map<number, number[]>
+    chunks: {
+      chunkText: string;
+      embedding: number[];
+      startTranscriptId: number;
+      endTranscriptId: number;
+    }[]
   ): Promise<void> {
-    for (const [transcriptId, embedding] of embeddings) {
-      const embeddingStr = `[${embedding.join(',')}]`;
+    for (const chunk of chunks) {
+      const id = crypto.randomUUID();
+      const embeddingStr = `[${chunk.embedding.join(',')}]`;
       await this.db.query(
-        'UPDATE transcripts SET embedding = $1::vector WHERE id = $2 AND session_id = $3',
-        [embeddingStr, transcriptId, sessionId]
+        `INSERT INTO transcript_chunks (id, session_id, chunk_text, embedding, start_transcript_id, end_transcript_id)
+         VALUES ($1, $2, $3, $4::vector, $5, $6)`,
+        [
+          id,
+          sessionId,
+          chunk.chunkText,
+          embeddingStr,
+          chunk.startTranscriptId,
+          chunk.endTranscriptId,
+        ]
       );
     }
   }
@@ -1664,7 +1754,7 @@ export class PgliteStore implements DataStore {
         'SELECT MIN(created_at)::TEXT as oldest, MAX(created_at)::TEXT as newest FROM facts'
       ),
       this.db.query<{ count: string }>(
-        'SELECT COUNT(*)::TEXT as count FROM transcripts WHERE embedding IS NOT NULL'
+        'SELECT ((SELECT COUNT(*) FROM transcript_chunks) + (SELECT COUNT(*) FROM transcripts WHERE embedding IS NOT NULL))::TEXT as count'
       ),
     ]);
 
@@ -1735,5 +1825,22 @@ export class PgliteStore implements DataStore {
       extractionCostUsd: r.extraction_cost_usd,
       createdAt: r.created_at,
     };
+  }
+
+  private mapTranscriptChunk(r: TranscriptChunkRow): TranscriptChunkEntry {
+    const entry: TranscriptChunkEntry = {
+      id: r.id,
+      sessionId: r.session_id,
+      chunkText: r.chunk_text,
+      startTranscriptId: r.start_transcript_id,
+      endTranscriptId: r.end_transcript_id,
+      createdAt: r.created_at,
+    };
+    // Parse embedding string from Postgres vector format for backup inclusion
+    if (r.embedding) {
+      const vecStr = r.embedding.replace(/^\[|\]$/g, '');
+      entry.embedding = vecStr.split(',').map(Number);
+    }
+    return entry;
   }
 }

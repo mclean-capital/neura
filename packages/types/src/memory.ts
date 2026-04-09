@@ -106,6 +106,19 @@ export interface MemoryBackup {
   entities?: EntityEntry[];
   entityRelationships?: EntityRelationship[];
   factEntities?: FactEntity[];
+  transcriptChunks?: TranscriptChunkEntry[];
+}
+
+/** A searchable chunk of contiguous transcript entries with a vector embedding */
+export interface TranscriptChunkEntry {
+  id: string;
+  sessionId: string;
+  chunkText: string;
+  startTranscriptId: number;
+  endTranscriptId: number;
+  createdAt: string;
+  /** Embedding vector — included in backups for restore, omitted in search results */
+  embedding?: number[];
 }
 
 /** Work item status */

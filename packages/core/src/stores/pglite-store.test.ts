@@ -824,4 +824,69 @@ describe('PgliteStore', () => {
       expect(found!.tagPath).toBe('project');
     });
   });
+
+  describe('Phase 5b: transcript chunks', () => {
+    it('insertTranscriptChunks stores chunks that are retrievable', async () => {
+      const sessionId = await store.createSession('grok', 'gemini');
+      await store.appendTranscript(sessionId, 'user', 'Hello there');
+      await store.appendTranscript(sessionId, 'assistant', 'Hi! How can I help?');
+      await store.appendTranscript(sessionId, 'user', 'Tell me about pricing');
+
+      const embedding = new Array(3072).fill(0.1);
+      await store.insertTranscriptChunks(sessionId, [
+        {
+          chunkText:
+            'user: Hello there\nassistant: Hi! How can I help?\nuser: Tell me about pricing',
+          embedding,
+          startTranscriptId: 1,
+          endTranscriptId: 3,
+        },
+      ]);
+
+      const stats = await store.getMemoryStats();
+      expect(stats.totalTranscriptsIndexed).toBe(1);
+    });
+
+    it('searchTranscripts returns chunk text not individual entries', async () => {
+      const sessionId = await store.createSession('grok', 'gemini');
+      await store.appendTranscript(sessionId, 'user', 'What about React hooks?');
+      await store.appendTranscript(
+        sessionId,
+        'assistant',
+        'React hooks let you use state in function components'
+      );
+      await store.appendTranscript(sessionId, 'user', 'Give me an example');
+
+      const embedding = new Array(3072).fill(0.2);
+      const chunkText =
+        'user: What about React hooks?\nassistant: React hooks let you use state in function components\nuser: Give me an example';
+      await store.insertTranscriptChunks(sessionId, [
+        { chunkText, embedding, startTranscriptId: 1, endTranscriptId: 3 },
+      ]);
+
+      const results = await store.searchTranscripts(embedding, 5);
+      expect(results).toHaveLength(1);
+      expect(results[0].chunkText).toBe(chunkText);
+      expect(results[0].sessionId).toBe(sessionId);
+      expect(results[0].startTranscriptId).toBe(1);
+      expect(results[0].endTranscriptId).toBe(3);
+    });
+
+    it('searchTranscripts filters by sessionId', async () => {
+      const session1 = await store.createSession('grok', 'gemini');
+      const session2 = await store.createSession('grok', 'gemini');
+
+      const embedding = new Array(3072).fill(0.3);
+      await store.insertTranscriptChunks(session1, [
+        { chunkText: 'chunk from session 1', embedding, startTranscriptId: 1, endTranscriptId: 3 },
+      ]);
+      await store.insertTranscriptChunks(session2, [
+        { chunkText: 'chunk from session 2', embedding, startTranscriptId: 4, endTranscriptId: 6 },
+      ]);
+
+      const results = await store.searchTranscripts(embedding, 10, session1);
+      expect(results).toHaveLength(1);
+      expect(results[0].chunkText).toBe('chunk from session 1');
+    });
+  });
 });
