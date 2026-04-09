@@ -1,3 +1,9 @@
+# [1.5.0](https://github.com/mclean-capital/neura/compare/v1.4.0...v1.5.0) (2026-04-09)
+
+### Features
+
+- **core,types:** implement Phase 5b advanced memory system ([#5](https://github.com/mclean-capital/neura/issues/5)) ([a440a6f](https://github.com/mclean-capital/neura/commit/a440a6fece237c03d6762cff90588ff7ef09ac91))
+
 # [1.4.0](https://github.com/mclean-capital/neura/compare/v1.3.2...v1.4.0) (2026-04-08)
 
 ### Features
