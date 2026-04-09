@@ -1,3 +1,9 @@
+# [1.6.0](https://github.com/mclean-capital/neura/compare/v1.5.0...v1.6.0) (2026-04-09)
+
+### Features
+
+- **core,types:** add transcript_chunks table for full-context deep search ([#6](https://github.com/mclean-capital/neura/issues/6)) ([66619ff](https://github.com/mclean-capital/neura/commit/66619ffac71821505d9ed39eaf0522dcf96b7185))
+
 # [1.5.0](https://github.com/mclean-capital/neura/compare/v1.4.0...v1.5.0) (2026-04-09)
 
 ### Features
