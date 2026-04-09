@@ -98,7 +98,7 @@ bun build packages/cli/src/index.ts --compile \
   --target=bun-<os>-<arch> --outfile neura-cli
 
 # Core binary
-bun build packages/core/src/server.ts --compile \
+bun build packages/core/src/server/server.ts --compile \
   --target=bun-<os>-<arch> --outfile neura-core
 ```
 
@@ -184,7 +184,7 @@ This means:
 
 ### Core Config Loading
 
-New file: `packages/core/src/config.ts`
+New file: `packages/core/src/config/config.ts`
 
 ```typescript
 import { readFileSync, existsSync } from 'fs';
@@ -308,7 +308,7 @@ WantedBy=default.target
 
 ## Health Endpoint
 
-Add to `packages/core/src/server.ts`:
+Add to `packages/core/src/server/server.ts`:
 
 ```typescript
 app.get('/health', (_req, res) => {
@@ -474,7 +474,7 @@ Core serves the web UI as an optional static file mount. This keeps core deploym
 If `~/.neura/ui/` exists and contains an `index.html`, core serves it:
 
 ```typescript
-// In server.ts
+// In server/server.ts
 const uiDir = join(config.neuraHome, 'ui');
 if (existsSync(join(uiDir, 'index.html'))) {
   app.use(express.static(uiDir));
