@@ -29,7 +29,7 @@ describe('BackupService', () => {
 
     expect(fs.existsSync(backupPath)).toBe(true);
     const data = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
-    expect(data.version).toBe(1);
+    expect(data.version).toBe(2);
     expect(data.exportedAt).toBeTruthy();
     expect(data.facts).toHaveLength(1);
     expect(data.facts[0].content).toBe('Test fact');

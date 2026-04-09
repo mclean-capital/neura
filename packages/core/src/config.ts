@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import type { NeuraConfigFile } from '@neura/types';
+import type { NeuraConfigFile, RetrievalStrategy } from '@neura/types';
 
 export interface ResolvedCoreConfig {
   port: number;
@@ -11,6 +11,7 @@ export interface ResolvedCoreConfig {
   pgDataPath: string | undefined;
   neuraHome: string;
   assistantName: string;
+  retrievalStrategy: RetrievalStrategy;
 }
 
 function tryParseInt(val: string | undefined): number | undefined {
@@ -50,5 +51,9 @@ export function loadConfig(): ResolvedCoreConfig {
       process.env.PG_DATA_PATH ?? process.env.DB_PATH ?? file.pgDataPath ?? pgDataPathDefault,
     neuraHome,
     assistantName: process.env.NEURA_ASSISTANT_NAME ?? file.assistantName ?? 'jarvis',
+    retrievalStrategy:
+      (process.env.NEURA_RETRIEVAL_STRATEGY as RetrievalStrategy | undefined) ??
+      file.retrievalStrategy ??
+      'hybrid',
   };
 }

@@ -68,7 +68,7 @@ export function createBackupService(options: BackupServiceOptions): BackupServic
     }
     const raw = readFileSync(backupPath, 'utf-8');
     const data = JSON.parse(raw) as MemoryBackup;
-    if (data.version !== 1) {
+    if (data.version !== 1 && data.version !== 2) {
       log.warn('unsupported backup version', { version: (data as { version: unknown }).version });
       return null;
     }

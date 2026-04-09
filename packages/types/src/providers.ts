@@ -9,6 +9,10 @@ import type {
   MemoryBackup,
   WorkItemEntry,
   WorkItemPriority,
+  EntityEntry,
+  EntityRelationship,
+  TimelineEntry,
+  MemoryStats,
 } from './memory.js';
 
 /** Voice provider interface — any voice backend must implement this. */
@@ -92,7 +96,8 @@ export interface DataStore {
     tags: string[],
     sourceSessionId?: string,
     confidence?: number,
-    embedding?: number[]
+    embedding?: number[],
+    tagPath?: string
   ): Promise<string>;
   touchFact(id: string): Promise<void>;
   deleteFact(id: string): Promise<void>;
@@ -122,6 +127,37 @@ export interface DataStore {
 
   // Composite context for system prompt injection
   getMemoryContext(options?: { maxTokens?: number }): Promise<MemoryContext>;
+
+  // Phase 5b: Hybrid retrieval
+  searchFactsHybrid(query: string, embedding?: number[], limit?: number): Promise<FactEntry[]>;
+  searchTranscripts(
+    embedding: number[],
+    limit?: number,
+    sessionId?: string
+  ): Promise<TranscriptEntry[]>;
+  indexTranscriptEmbeddings(sessionId: string, embeddings: Map<number, number[]>): Promise<void>;
+
+  // Phase 5b: Temporal tracking
+  invalidateFact(id: string): Promise<void>;
+  supersedeFact(oldId: string, newId: string): Promise<void>;
+  getFactHistory(content: string, category: string): Promise<FactEntry[]>;
+
+  // Phase 5b: Entities
+  upsertEntity(name: string, type: string): Promise<string>;
+  getEntities(type?: string): Promise<EntityEntry[]>;
+  linkFactEntity(factId: string, entityId: string): Promise<void>;
+  getRelatedFacts(factId: string, limit?: number): Promise<FactEntry[]>;
+  getEntityRelationships(entityId: string): Promise<EntityRelationship[]>;
+  createEntityRelationship(
+    sourceEntityId: string,
+    targetEntityId: string,
+    relationship: string,
+    sourceFactId?: string
+  ): Promise<string>;
+
+  // Phase 5b: Timeline & Stats
+  getTimeline(from: Date, to: Date, entityFilter?: string): Promise<TimelineEntry[]>;
+  getMemoryStats(): Promise<MemoryStats>;
 
   // Work items
   getOpenWorkItems(limit?: number): Promise<WorkItemEntry[]>;

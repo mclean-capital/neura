@@ -36,6 +36,14 @@ export interface FactEntry {
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;
+  /** Phase 5b: temporal validity — when this fact became true */
+  validFrom?: string;
+  /** Phase 5b: temporal validity — when this fact stopped being true (null = still valid) */
+  validTo?: string | null;
+  /** Phase 5b: ID of the fact that replaced this one */
+  supersededBy?: string | null;
+  /** Phase 5b: hierarchical tag path (dot-separated, e.g. "project.neura.memory") */
+  tagPath?: string;
 }
 
 /** Behavioral preference — corrections and confirmations */
@@ -87,13 +95,17 @@ export interface MemoryContext {
 
 /** Shape of ~/.neura/memory-backup.json */
 export interface MemoryBackup {
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   identity: IdentityEntry[];
   userProfile: UserProfileEntry[];
   facts: FactEntry[];
   preferences: PreferenceEntry[];
   sessionSummaries: SessionSummaryEntry[];
+  /** Phase 5b v2: entity data */
+  entities?: EntityEntry[];
+  entityRelationships?: EntityRelationship[];
+  factEntities?: FactEntity[];
 }
 
 /** Work item status */
@@ -119,7 +131,14 @@ export interface WorkItemEntry {
 
 /** Output from the extraction pipeline */
 export interface ExtractionResult {
-  facts: { content: string; category: string; tags: string[] }[];
+  facts: {
+    content: string;
+    category: string;
+    tags: string[];
+    tagPath?: string;
+    /** Phase 5b: entity names mentioned in this fact (for precise fact-entity linking) */
+    mentionedEntities?: string[];
+  }[];
   preferences: { preference: string; category: string }[];
   userProfile: { field: string; value: string }[];
   identityUpdates: { attribute: string; value: string }[];
@@ -129,4 +148,72 @@ export interface ExtractionResult {
     keyDecisions: string[];
     openThreads: string[];
   };
+  /** Phase 5b: extracted entities and relationships */
+  entities?: {
+    name: string;
+    type: 'person' | 'project' | 'tool' | 'company' | 'concept';
+    relationships: { target: string; relationship: string }[];
+  }[];
+}
+
+// --- Phase 5b types ---
+
+/** Retrieval strategy for memory recall */
+export type RetrievalStrategy = 'vector-only' | 'hybrid' | 'hybrid-rerank';
+
+/** Per-tier token budgets for system prompt assembly */
+export interface MemoryTierConfig {
+  l0Budget: number;
+  l1Budget: number;
+  l2Budget: number;
+}
+
+/** Entity — a person, project, tool, company, or concept mentioned in facts */
+export interface EntityEntry {
+  id: string;
+  name: string;
+  type: 'person' | 'project' | 'tool' | 'company' | 'concept';
+  canonicalName: string;
+  createdAt: string;
+}
+
+/** Relationship between two entities with temporal validity */
+export interface EntityRelationship {
+  id: string;
+  sourceEntityId: string;
+  targetEntityId: string;
+  relationship: string;
+  validFrom: string;
+  validTo: string | null;
+  sourceFactId: string | null;
+  createdAt: string;
+}
+
+/** Junction linking a fact to the entities it mentions */
+export interface FactEntity {
+  factId: string;
+  entityId: string;
+}
+
+/** Timeline event for chronological queries */
+export interface TimelineEntry {
+  type: 'fact_created' | 'fact_invalidated' | 'entity_created' | 'relationship_created';
+  timestamp: string;
+  content: string;
+  entityName?: string;
+  factId?: string;
+}
+
+/** Aggregate memory statistics */
+export interface MemoryStats {
+  totalFacts: number;
+  activeFacts: number;
+  expiredFacts: number;
+  topCategories: Record<string, number>;
+  totalEntities: number;
+  totalRelationships: number;
+  oldestFact: string | null;
+  newestFact: string | null;
+  totalTranscriptsIndexed: number;
+  storageEstimate: string;
 }

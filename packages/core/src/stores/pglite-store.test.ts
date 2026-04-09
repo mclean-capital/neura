@@ -438,7 +438,7 @@ describe('PgliteStore', () => {
 
       // Export
       const backup = await store.exportMemories();
-      expect(backup.version).toBe(1);
+      expect(backup.version).toBe(2);
       expect(backup.identity.length).toBeGreaterThanOrEqual(1);
       expect(backup.userProfile).toHaveLength(1);
       expect(backup.facts).toHaveLength(1);
@@ -687,6 +687,141 @@ describe('PgliteStore', () => {
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  // --- Phase 5b tests ---
+
+  describe('Phase 5b: temporal tracking', () => {
+    it('invalidateFact sets valid_to', async () => {
+      const id = await store.upsertFact('Temporal fact', 'general', ['test']);
+      await store.invalidateFact(id);
+      const facts = await store.getFacts();
+      expect(facts.find((f) => f.id === id)).toBeUndefined(); // filtered out
+      const history = await store.getFactHistory('Temporal fact', 'general');
+      expect(history).toHaveLength(1);
+      expect(history[0].validTo).toBeTruthy();
+    });
+
+    it('supersedeFact links old to new', async () => {
+      const oldId = await store.upsertFact('Old fact', 'general', ['v1']);
+      const newId = await store.upsertFact('New fact', 'general', ['v2']);
+      await store.supersedeFact(oldId, newId);
+      const facts = await store.getFacts();
+      expect(facts.find((f) => f.id === oldId)).toBeUndefined();
+      expect(facts.find((f) => f.id === newId)).toBeTruthy();
+    });
+
+    it('searchFacts filters out invalidated facts', async () => {
+      const id = await store.upsertFact('Search test fact', 'technical', ['search']);
+      await store.invalidateFact(id);
+      const results = await store.searchFacts('Search test fact');
+      expect(results.find((f) => f.id === id)).toBeUndefined();
+    });
+  });
+
+  describe('Phase 5b: entities', () => {
+    it('upsertEntity creates and deduplicates entities', async () => {
+      const id1 = await store.upsertEntity('Alice', 'person');
+      const id2 = await store.upsertEntity('alice', 'person'); // same canonical name
+      expect(id1).toBe(id2);
+      const entities = await store.getEntities('person');
+      expect(entities).toHaveLength(1);
+    });
+
+    it('linkFactEntity and getRelatedFacts work', async () => {
+      const factId1 = await store.upsertFact('Fact about Alice', 'personal', ['alice']);
+      const factId2 = await store.upsertFact('Another fact about Alice', 'project', ['alice']);
+      const entityId = await store.upsertEntity('Alice', 'person');
+      await store.linkFactEntity(factId1, entityId);
+      await store.linkFactEntity(factId2, entityId);
+
+      const related = await store.getRelatedFacts(factId1);
+      expect(related).toHaveLength(1);
+      expect(related[0].id).toBe(factId2);
+    });
+
+    it('createEntityRelationship stores relationships', async () => {
+      const srcId = await store.upsertEntity('Alice', 'person');
+      const tgtId = await store.upsertEntity('Neura', 'project');
+      await store.createEntityRelationship(srcId, tgtId, 'works_on');
+      const rels = await store.getEntityRelationships(srcId);
+      expect(rels).toHaveLength(1);
+      expect(rels[0].relationship).toBe('works_on');
+    });
+  });
+
+  describe('Phase 5b: hybrid search', () => {
+    it('searchFactsHybrid returns results via BM25 text search', async () => {
+      await store.upsertFact('React deployment on Vercel', 'technical', ['react', 'vercel']);
+      // No embedding, so BM25 only path
+      const results = await store.searchFactsHybrid('React deployment');
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].content).toContain('React');
+    });
+  });
+
+  describe('Phase 5b: timeline', () => {
+    it('getTimeline returns fact creation events', async () => {
+      await store.upsertFact('Timeline fact', 'general', ['timeline']);
+      // Use wide range to avoid timezone/precision issues with PGlite TIMESTAMP
+      const from = new Date('2000-01-01');
+      const to = new Date('2099-01-01');
+      const timeline = await store.getTimeline(from, to);
+      expect(timeline.length).toBeGreaterThanOrEqual(1);
+      expect(timeline.some((e) => e.type === 'fact_created' && e.content === 'Timeline fact')).toBe(
+        true
+      );
+    });
+
+    it('getTimeline returns invalidation events', async () => {
+      const id = await store.upsertFact('Soon invalid', 'general', ['temp']);
+      await store.invalidateFact(id);
+      const from = new Date('2000-01-01');
+      const to = new Date('2099-01-01');
+      const timeline = await store.getTimeline(from, to);
+      expect(timeline.some((e) => e.type === 'fact_invalidated')).toBe(true);
+    });
+  });
+
+  describe('Phase 5b: memory stats', () => {
+    it('getMemoryStats returns accurate counts', async () => {
+      await store.upsertFact('Active fact', 'general', ['active']);
+      const id = await store.upsertFact('Expired fact', 'technical', ['expired']);
+      await store.invalidateFact(id);
+      await store.upsertEntity('TestEntity', 'concept');
+
+      const stats = await store.getMemoryStats();
+      expect(stats.activeFacts).toBeGreaterThanOrEqual(1);
+      expect(stats.expiredFacts).toBeGreaterThanOrEqual(1);
+      expect(stats.totalEntities).toBeGreaterThanOrEqual(1);
+      expect(stats.topCategories).toBeTruthy();
+    });
+  });
+
+  describe('Phase 5b: tag path', () => {
+    it('upsertFact stores tagPath when provided', async () => {
+      await store.upsertFact(
+        'Tagged fact',
+        'technical',
+        ['react'],
+        undefined,
+        0.8,
+        undefined,
+        'technical.react.hooks'
+      );
+      const facts = await store.getFacts({ category: 'technical' });
+      const found = facts.find((f) => f.content === 'Tagged fact');
+      expect(found).toBeTruthy();
+      expect(found!.tagPath).toBe('technical.react.hooks');
+    });
+
+    it('upsertFact defaults tagPath to category', async () => {
+      await store.upsertFact('Default tag fact', 'project', ['test']);
+      const facts = await store.getFacts({ category: 'project' });
+      const found = facts.find((f) => f.content === 'Default tag fact');
+      expect(found).toBeTruthy();
+      expect(found!.tagPath).toBe('project');
     });
   });
 });

@@ -1,3 +1,5 @@
+import type { RetrievalStrategy, MemoryTierConfig } from './memory.js';
+
 export interface CoreConfig {
   port: number;
   xaiApiKey: string;
@@ -11,6 +13,10 @@ export interface CoreConfig {
   costUpdateIntervalMs: number;
   maxReconnectAttempts: number;
   sessionMaxMs: number;
+  /** Phase 5b: memory retrieval strategy */
+  retrievalStrategy?: RetrievalStrategy;
+  /** Phase 5b: per-tier token budgets for system prompt */
+  memoryTiers?: MemoryTierConfig;
 }
 
 export interface UIConfig {
@@ -35,4 +41,6 @@ export interface NeuraConfigFile {
   pgDataPath?: string;
   autoUpdate?: boolean;
   assistantName?: string;
+  /** Phase 5b: memory retrieval strategy */
+  retrievalStrategy?: RetrievalStrategy;
 }

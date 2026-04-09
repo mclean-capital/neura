@@ -360,6 +360,18 @@ Conversation ends → Extraction pipeline (Gemini 2.5 Flash)
 
 See [Phase 3 architecture document](phase3-memory.md) for detailed design.
 
+### Planned enhancements (Phase 5b)
+
+The current memory system works but has known gaps in recall quality, temporal awareness, and organizational structure. [Phase 5b](phase5b-advanced-memory.md) addresses these in three sub-phases (12 items total — see phase doc for full breakdown):
+
+**Sub-phase A — Recall Quality:** Hybrid BM25+cosine retrieval (A1), LLM reranking (A2), verbatim transcript indexing as deep search layer (A3), configurable retrieval pipeline (A4)
+
+**Sub-phase B — Temporal & Relational:** Temporal fact tracking with `valid_from`/`valid_to` (B1), entity-relationship graph (B2), timeline queries (B3), fact invalidation tool (B4)
+
+**Sub-phase C — Organization & Tiers:** Formalized L0-L3 memory tiers with per-tier token budgets (C1), hierarchical tags replacing flat categories (C2), cross-reference detection via shared entities (C3), memory statistics tool (C4)
+
+Inspired by analysis of [MemPalace](https://github.com/milla-jovovich/mempalace) — adopting the best architectural concepts (temporal graph, hybrid retrieval, tiered loading, spatial organization) without taking the dependency (Python, ChromaDB, 3-day-old project).
+
 ---
 
 ## Discovery Loop
@@ -557,13 +569,14 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 ### Lessons from the landscape
 
-| From               | Lesson                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| **autoresearch**   | Autonomous loop pattern — agent runs indefinitely, keeps/discards results, never stops          |
-| **OpenClaw**       | Persistent gateway, heartbeat scheduler, `~/.openclaw/` config model, CLI + desktop coexistence |
-| **LiveKit Agents** | Agent handoff patterns, proactive message generation                                            |
-| **Letta/MemGPT**   | Cross-session persistent memory architecture                                                    |
-| **CrewAI**         | YAML-based agent/task configuration, role-based delegation                                      |
+| From               | Lesson                                                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **autoresearch**   | Autonomous loop pattern — agent runs indefinitely, keeps/discards results, never stops                                                       |
+| **OpenClaw**       | Persistent gateway, heartbeat scheduler, `~/.openclaw/` config model, CLI + desktop coexistence                                              |
+| **LiveKit Agents** | Agent handoff patterns, proactive message generation                                                                                         |
+| **Letta/MemGPT**   | Cross-session persistent memory architecture                                                                                                 |
+| **CrewAI**         | YAML-based agent/task configuration, role-based delegation                                                                                   |
+| **MemPalace**      | Verbatim-first storage, temporal knowledge graph, hybrid retrieval + reranking, tiered memory loading (L0-L3), spatial organization metaphor |
 
 ---
 
@@ -723,6 +736,40 @@ PGlite (WASM Postgres) can corrupt on dirty shutdowns (force kill, crash, power 
 - [ ] Vision-triggered checks (screen context change detection)
 - [ ] Proactive voice notifications to connected clients
 - [ ] Cost-optimized isolated heartbeat sessions
+
+#### Phase 5b — Advanced Memory ([detailed architecture](phase5b-advanced-memory.md))
+
+Upgrades the Phase 3 memory system with better recall, temporal awareness, and structured organization. Three sub-phases, each independently shippable:
+
+**Sub-phase A — Recall Quality** (highest ROI)
+
+- [ ] Hybrid retrieval: BM25 keyword scoring + cosine similarity fusion
+- [ ] LLM reranking for top-K candidates before prompt injection
+- [ ] Vector-index raw transcript entries as deep search layer (L3)
+- [ ] Configurable retrieval pipeline (vector-only, hybrid, hybrid+rerank)
+
+**Sub-phase B — Temporal & Relational**
+
+- [ ] `valid_from` / `valid_to` columns on facts table, auto-set on insert
+- [ ] Fact invalidation (mark facts as no longer true, preserve history)
+- [ ] Entity-relationship edges table (person↔project, tool↔project)
+- [ ] Entity extraction from transcripts (regex + pattern-based, no ML)
+- [ ] Timeline queries ("what changed this week?")
+
+**Sub-phase C — Organization & Tiers**
+
+- [ ] Formalized memory tiers: L0 (identity, always loaded), L1 (essential context, always loaded), L2 (session context, loaded on start + topic refresh), L3 (deep transcript search, on-demand only)
+- [ ] Per-tier token budgets with explicit priority trimming
+- [ ] Hierarchical tags: project → topic → subtopic (replaces flat `category`)
+- [ ] Cross-reference detection: link facts sharing entities or topics
+- [ ] Memory statistics tool (`memory_stats` — count, categories, staleness)
+
+**Follow-up — Transcript Chunks Table**
+
+- [ ] `transcript_chunks` table: store chunked transcript segments (3-5 entries per chunk) with overlap, replacing per-row midpoint embedding
+- [ ] Return full chunk context from `searchTranscripts()` instead of single midpoint utterance
+- [ ] Chunk-level metadata: session ID, start/end transcript IDs, speaker turns
+- [ ] Improves deep search (L3) accuracy — matched content and returned text always align
 
 #### Phase 6 — Skill Registry
 
