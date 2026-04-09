@@ -8,11 +8,19 @@ const EXTRACTION_MODEL = 'gemini-2.5-flash';
 const EMBEDDING_MODEL = 'gemini-embedding-2-preview';
 const MIN_TRANSCRIPT_ENTRIES = 4;
 
+/** Descriptor for a transcript chunk with its embedding and source range. */
+export interface TranscriptChunkDescriptor {
+  chunkText: string;
+  embedding: number[];
+  startTranscriptId: number;
+  endTranscriptId: number;
+}
+
 export interface ExtractionOutput {
   result: ExtractionResult;
   factEmbeddings: (number[] | null)[];
-  /** Phase 5b: transcript chunk embeddings keyed by transcript entry ID */
-  transcriptEmbeddings: Map<number, number[]>;
+  /** Transcript chunks with embeddings and source ID ranges. */
+  transcriptChunks: TranscriptChunkDescriptor[];
 }
 
 export interface ExtractionPipeline {
@@ -205,20 +213,32 @@ export function createExtractionPipeline(googleApiKey: string): ExtractionPipeli
         result.facts.map((fact) => generateEmbedding(fact.content))
       );
 
-      // Phase 5b: Generate embeddings for transcript chunks (groups of 3, parallel)
-      const transcriptEmbeddings = new Map<number, number[]>();
+      // Generate overlapping transcript chunks (size=3, overlap=1, step=2)
       const chunkSize = 3;
-      const chunks: { text: string; targetId: number }[] = [];
-      for (let i = 0; i < transcript.length; i += chunkSize) {
-        const chunk = transcript.slice(i, i + chunkSize);
-        const chunkText = chunk.map((t) => `${t.role}: ${t.text}`).join('\n');
-        const midIdx = Math.min(i + Math.floor(chunkSize / 2), transcript.length - 1);
-        chunks.push({ text: chunkText, targetId: transcript[midIdx].id });
+      const step = 2;
+      const chunkDescriptors: { chunkText: string; startId: number; endId: number }[] = [];
+      for (let i = 0; i < transcript.length; i += step) {
+        const slice = transcript.slice(i, Math.min(i + chunkSize, transcript.length));
+        if (slice.length < 2) break; // skip single-entry tails
+        const chunkText = slice.map((t) => `${t.role}: ${t.text}`).join('\n');
+        chunkDescriptors.push({
+          chunkText,
+          startId: slice[0].id,
+          endId: slice[slice.length - 1].id,
+        });
       }
-      const chunkEmbeddings = await Promise.all(chunks.map((c) => generateEmbedding(c.text)));
-      for (let i = 0; i < chunks.length; i++) {
+      const chunkEmbeddings = await Promise.all(
+        chunkDescriptors.map((c) => generateEmbedding(c.chunkText))
+      );
+      const transcriptChunks: TranscriptChunkDescriptor[] = [];
+      for (let i = 0; i < chunkDescriptors.length; i++) {
         if (chunkEmbeddings[i]) {
-          transcriptEmbeddings.set(chunks[i].targetId, chunkEmbeddings[i]!);
+          transcriptChunks.push({
+            chunkText: chunkDescriptors[i].chunkText,
+            embedding: chunkEmbeddings[i]!,
+            startTranscriptId: chunkDescriptors[i].startId,
+            endTranscriptId: chunkDescriptors[i].endId,
+          });
         }
       }
 
@@ -228,10 +248,10 @@ export function createExtractionPipeline(googleApiKey: string): ExtractionPipeli
         profileUpdates: result.userProfile.length,
         identityUpdates: result.identityUpdates.length,
         entities: result.entities?.length ?? 0,
-        transcriptChunksEmbedded: transcriptEmbeddings.size,
+        transcriptChunks: transcriptChunks.length,
       });
 
-      return { result, factEmbeddings, transcriptEmbeddings };
+      return { result, factEmbeddings, transcriptChunks };
     } catch (err) {
       log.error('extraction failed', { err: String(err) });
       return null;

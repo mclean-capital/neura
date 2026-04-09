@@ -766,10 +766,10 @@ Upgrades the Phase 3 memory system with better recall, temporal awareness, and s
 
 **Follow-up — Transcript Chunks Table**
 
-- [ ] `transcript_chunks` table: store chunked transcript segments (3-5 entries per chunk) with overlap, replacing per-row midpoint embedding
-- [ ] Return full chunk context from `searchTranscripts()` instead of single midpoint utterance
-- [ ] Chunk-level metadata: session ID, start/end transcript IDs, speaker turns
-- [ ] Improves deep search (L3) accuracy — matched content and returned text always align
+- [x] `transcript_chunks` table: store chunked transcript segments (3 entries per chunk) with 1-entry overlap, replacing per-row midpoint embedding
+- [x] Return full chunk context from `searchTranscripts()` instead of single midpoint utterance
+- [x] Chunk-level metadata: session ID, start/end transcript IDs
+- [x] Improves deep search (L3) accuracy — matched content and returned text always align
 
 #### Phase 6 — Skill Registry
 

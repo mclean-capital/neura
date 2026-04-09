@@ -13,6 +13,7 @@ import type {
   EntityRelationship,
   TimelineEntry,
   MemoryStats,
+  TranscriptChunkEntry,
 } from './memory.js';
 
 /** Voice provider interface — any voice backend must implement this. */
@@ -134,8 +135,16 @@ export interface DataStore {
     embedding: number[],
     limit?: number,
     sessionId?: string
-  ): Promise<TranscriptEntry[]>;
-  indexTranscriptEmbeddings(sessionId: string, embeddings: Map<number, number[]>): Promise<void>;
+  ): Promise<TranscriptChunkEntry[]>;
+  insertTranscriptChunks(
+    sessionId: string,
+    chunks: {
+      chunkText: string;
+      embedding: number[];
+      startTranscriptId: number;
+      endTranscriptId: number;
+    }[]
+  ): Promise<void>;
 
   // Phase 5b: Temporal tracking
   invalidateFact(id: string): Promise<void>;

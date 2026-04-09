@@ -102,8 +102,8 @@ describe('createExtractionPipeline', () => {
 
       expect(output!.factEmbeddings).toHaveLength(2);
       expect(output!.factEmbeddings[0]).toHaveLength(3072);
-      // 2 fact embeddings + 2 transcript chunk embeddings (6 entries / chunk size 3 = 2 chunks)
-      expect(mockEmbedContent).toHaveBeenCalledTimes(4);
+      // 2 fact embeddings + 3 overlapping transcript chunks (6 entries, step=2: [0,1,2] [2,3,4] [4,5])
+      expect(mockEmbedContent).toHaveBeenCalledTimes(5);
     });
 
     it('handles malformed JSON response gracefully', async () => {

@@ -75,7 +75,7 @@ export function createMemoryManager(options: MemoryManagerOptions): MemoryManage
         return;
       }
 
-      const { result, factEmbeddings, transcriptEmbeddings } = output;
+      const { result, factEmbeddings, transcriptChunks } = output;
       let memoriesCreated = 0;
 
       // Store extracted facts with embeddings, collecting IDs for entity linking
@@ -126,10 +126,10 @@ export function createMemoryManager(options: MemoryManagerOptions): MemoryManage
         });
       }
 
-      // Phase 5b: Index transcript embeddings
-      if (transcriptEmbeddings.size > 0) {
-        await store.indexTranscriptEmbeddings(sessionId, transcriptEmbeddings);
-        log.info('transcript embeddings indexed', { count: transcriptEmbeddings.size });
+      // Insert transcript chunks
+      if (transcriptChunks.length > 0) {
+        await store.insertTranscriptChunks(sessionId, transcriptChunks);
+        log.info('transcript chunks indexed', { count: transcriptChunks.length });
       }
 
       // Phase 5b: Store extracted entities, link to facts via mentionedEntities, create relationships
@@ -265,10 +265,10 @@ export function createMemoryManager(options: MemoryManagerOptions): MemoryManage
           factResults: results.length,
           transcriptResults: transcriptResults.length,
         });
-        // Convert transcript entries to fact-like results for the caller
+        // Convert transcript chunks to fact-like results for the caller
         const transcriptFacts: FactEntry[] = transcriptResults.map((t) => ({
-          id: `transcript-${t.id}`,
-          content: `[from transcript] ${t.text}`,
+          id: `transcript-chunk-${t.id}`,
+          content: `[from transcript] ${t.chunkText}`,
           category: 'general' as const,
           tags: ['transcript'],
           sourceSessionId: t.sessionId,
