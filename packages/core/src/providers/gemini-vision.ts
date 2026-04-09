@@ -26,39 +26,46 @@ export interface GeminiVisionConfig {
   queryTimeoutMs?: number;
 }
 
-export function createGeminiVisionWatcher(config: GeminiVisionConfig = {}): VisionProvider {
-  const label = config.label ?? 'vision';
-  const model = config.model ?? 'gemini-3.1-flash-live-preview';
-  const queryTimeoutMs = config.queryTimeoutMs ?? 15_000;
-  const maxReconnectAttempts = 5;
-  const log = new Logger(label);
-
-  const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+export class GeminiVisionProvider implements VisionProvider {
+  private readonly label: string;
+  private readonly model: string;
+  private readonly queryTimeoutMs: number;
+  private readonly maxReconnectAttempts = 5;
+  private readonly log: Logger;
+  private readonly googleApiKey: string | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let session: any = null;
-  let resumeHandle: string | null = null;
-  let connected = false;
-  let intentionalClose = false;
-  let reconnectAttempts = 0;
+  private session: any = null;
+  private resumeHandle: string | null = null;
+  private connected = false;
+  private intentionalClose = false;
+  private reconnectAttempts = 0;
 
   // Query queue — sequential processing, concurrent queuing
-  const queryQueue = new Map<string, PendingQuery>();
-  let activeQueryId: string | null = null;
-  let responseBuffer = '';
+  private readonly queryQueue = new Map<string, PendingQuery>();
+  private activeQueryId: string | null = null;
+  private responseBuffer = '';
 
-  async function connect() {
-    if (!GOOGLE_API_KEY) {
-      log.error('GOOGLE_API_KEY is required — set it in .env');
+  constructor(config: GeminiVisionConfig = {}) {
+    this.label = config.label ?? 'vision';
+    this.model = config.model ?? 'gemini-3.1-flash-live-preview';
+    this.queryTimeoutMs = config.queryTimeoutMs ?? 15_000;
+    this.log = new Logger(this.label);
+    this.googleApiKey = process.env.GOOGLE_API_KEY;
+  }
+
+  async connect(): Promise<void> {
+    if (!this.googleApiKey) {
+      this.log.error('GOOGLE_API_KEY is required — set it in .env');
       return;
     }
 
-    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-    intentionalClose = false;
+    const ai = new GoogleGenAI({ apiKey: this.googleApiKey });
+    this.intentionalClose = false;
 
     try {
-      session = await ai.live.connect({
-        model,
+      this.session = await ai.live.connect({
+        model: this.model,
         config: {
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {},
@@ -75,118 +82,121 @@ export function createGeminiVisionWatcher(config: GeminiVisionConfig = {}): Visi
             ],
           },
           contextWindowCompression: { slidingWindow: {} },
-          sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
+          sessionResumption: this.resumeHandle ? { handle: this.resumeHandle } : {},
         },
         callbacks: {
-          onopen() {
-            connected = true;
-            reconnectAttempts = 0;
-            log.info('connected');
+          onopen: () => {
+            this.connected = true;
+            this.reconnectAttempts = 0;
+            this.log.info('connected');
           },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onmessage(msg: any) {
-            handleMessage(msg);
+          onmessage: (msg: any) => {
+            this.handleMessage(msg);
           },
-          onerror(err: unknown) {
-            log.error('error', { err: String(err) });
+          onerror: (err: unknown) => {
+            this.log.error('error', { err: String(err) });
           },
-          onclose() {
-            connected = false;
-            log.info('disconnected');
-            if (!intentionalClose) {
-              attemptReconnect();
+          onclose: () => {
+            this.connected = false;
+            this.log.info('disconnected');
+            if (!this.intentionalClose) {
+              this.attemptReconnect();
             }
           },
         },
       });
 
       // If close() was called while connect() was in-flight, tear down immediately
-      if (intentionalClose) {
+      if (this.intentionalClose) {
         try {
-          session?.close();
+          this.session?.close();
         } catch {
           /* ignore */
         }
-        session = null;
-        connected = false;
+        this.session = null;
+        this.connected = false;
         return;
       }
     } catch (err) {
-      log.error('connection failed', { err: String(err) });
+      this.log.error('connection failed', { err: String(err) });
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleMessage(msg: any) {
+  private handleMessage(msg: any): void {
     if (msg.sessionResumptionUpdate?.newHandle) {
-      resumeHandle = msg.sessionResumptionUpdate.newHandle;
+      this.resumeHandle = msg.sessionResumptionUpdate.newHandle;
     }
 
     if (msg.goAway) {
-      log.info('goAway — reconnecting...');
-      connected = false;
+      this.log.info('goAway — reconnecting...');
+      this.connected = false;
       try {
-        session?.close();
+        this.session?.close();
       } catch {
         /* ignore */
       }
-      session = null;
-      attemptReconnect();
+      this.session = null;
+      this.attemptReconnect();
       return;
     }
 
     if (msg.serverContent?.outputTranscription?.text) {
-      responseBuffer += msg.serverContent.outputTranscription.text;
+      this.responseBuffer += msg.serverContent.outputTranscription.text;
     }
 
-    if (msg.serverContent?.turnComplete && activeQueryId) {
-      const pending = queryQueue.get(activeQueryId);
+    if (msg.serverContent?.turnComplete && this.activeQueryId) {
+      const pending = this.queryQueue.get(this.activeQueryId);
       if (pending) {
         clearTimeout(pending.timeout);
-        pending.resolve(responseBuffer || 'No visual information available.');
-        queryQueue.delete(activeQueryId);
+        pending.resolve(this.responseBuffer || 'No visual information available.');
+        this.queryQueue.delete(this.activeQueryId);
       }
-      activeQueryId = null;
-      responseBuffer = '';
-      processNextQuery();
+      this.activeQueryId = null;
+      this.responseBuffer = '';
+      this.processNextQuery();
     }
   }
 
-  function attemptReconnect() {
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      log.error(`max reconnect attempts (${maxReconnectAttempts}) reached`);
+  private attemptReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.log.error(`max reconnect attempts (${this.maxReconnectAttempts}) reached`);
       return;
     }
-    reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 16_000);
-    log.info(`reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    this.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 16_000);
+    this.log.info(
+      `reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
     setTimeout(() => {
-      void connect();
+      void this.connect();
     }, delay);
   }
 
-  function processNextQuery() {
-    if (activeQueryId || queryQueue.size === 0 || !connected || !session) return;
+  private processNextQuery(): void {
+    if (this.activeQueryId || this.queryQueue.size === 0 || !this.connected || !this.session)
+      return;
 
-    const [id, pending] = queryQueue.entries().next().value!;
-    activeQueryId = id;
-    responseBuffer = '';
+    const [id, pending] = this.queryQueue.entries().next().value!;
+    this.activeQueryId = id;
+    this.responseBuffer = '';
 
     try {
-      session.sendRealtimeInput({ text: pending.prompt });
+      this.session.sendRealtimeInput({ text: pending.prompt });
     } catch {
       clearTimeout(pending.timeout);
       pending.resolve('Failed to query vision.');
-      queryQueue.delete(id);
-      activeQueryId = null;
-      processNextQuery();
+      this.queryQueue.delete(id);
+      this.activeQueryId = null;
+      this.processNextQuery();
     }
   }
 
-  function sendFrame(base64Jpeg: string) {
-    if (!connected || !session) return;
+  sendFrame(base64Jpeg: string): void {
+    if (!this.connected || !this.session) return;
     try {
-      session.sendRealtimeInput({
+      this.session.sendRealtimeInput({
         video: { data: base64Jpeg, mimeType: 'image/jpeg' },
       });
     } catch {
@@ -194,9 +204,9 @@ export function createGeminiVisionWatcher(config: GeminiVisionConfig = {}): Visi
     }
   }
 
-  function query(prompt: string): Promise<string> {
+  query(prompt: string): Promise<string> {
     return new Promise((resolve) => {
-      if (!connected || !session) {
+      if (!this.connected || !this.session) {
         resolve('Vision not available — watcher not connected.');
         return;
       }
@@ -204,43 +214,41 @@ export function createGeminiVisionWatcher(config: GeminiVisionConfig = {}): Visi
       const id = crypto.randomUUID();
 
       const timeout = setTimeout(() => {
-        queryQueue.delete(id);
-        if (activeQueryId === id) {
-          activeQueryId = null;
-          responseBuffer = '';
-          processNextQuery();
+        this.queryQueue.delete(id);
+        if (this.activeQueryId === id) {
+          this.activeQueryId = null;
+          this.responseBuffer = '';
+          this.processNextQuery();
         }
         resolve('Vision analysis timed out.');
-      }, queryTimeoutMs);
+      }, this.queryTimeoutMs);
 
-      queryQueue.set(id, { id, prompt, resolve, timeout });
-      processNextQuery();
+      this.queryQueue.set(id, { id, prompt, resolve, timeout });
+      this.processNextQuery();
     });
   }
 
-  function isConnected() {
-    return connected;
+  isConnected(): boolean {
+    return this.connected;
   }
 
-  function close() {
-    intentionalClose = true;
+  close(): void {
+    this.intentionalClose = true;
     try {
-      session?.close();
+      this.session?.close();
     } catch {
       /* ignore */
     }
-    session = null;
-    connected = false;
-    resumeHandle = null;
+    this.session = null;
+    this.connected = false;
+    this.resumeHandle = null;
 
-    for (const [, pending] of queryQueue) {
+    for (const [, pending] of this.queryQueue) {
       clearTimeout(pending.timeout);
       pending.resolve('Session closed.');
     }
-    queryQueue.clear();
-    activeQueryId = null;
-    responseBuffer = '';
+    this.queryQueue.clear();
+    this.activeQueryId = null;
+    this.responseBuffer = '';
   }
-
-  return { connect, sendFrame, query, isConnected, close };
 }

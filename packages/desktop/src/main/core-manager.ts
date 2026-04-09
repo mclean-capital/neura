@@ -13,7 +13,7 @@ function getCoreEntryPath(): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'core', 'server.bundled.mjs');
   }
-  return path.join(__dirname, '..', '..', 'core', 'src', 'server.ts');
+  return path.join(__dirname, '..', '..', 'core', 'src', 'server', 'server.ts');
 }
 
 function getCoreCwd(): string {
@@ -23,34 +23,40 @@ function getCoreCwd(): string {
   return path.join(__dirname, '..', '..', 'core');
 }
 
-export function createCoreManager(opts: CoreManagerOptions) {
-  let child: ChildProcess | null = null;
-  let intentionalStop = false;
-  let actualPort = opts.port;
-  let portResolved = false;
+export class CoreManager {
+  private child: ChildProcess | null = null;
+  private intentionalStop = false;
+  private actualPort: number;
+  private portResolved = false;
+  private readonly opts: CoreManagerOptions;
 
-  async function start(): Promise<void> {
-    intentionalStop = false;
-    portResolved = false;
+  constructor(opts: CoreManagerOptions) {
+    this.opts = opts;
+    this.actualPort = opts.port;
+  }
+
+  async start(): Promise<void> {
+    this.intentionalStop = false;
+    this.portResolved = false;
     const pgDataPath = path.join(app.getPath('userData'), 'pgdata');
 
     const env: Record<string, string> = {
       ...process.env,
-      PORT: String(opts.port),
-      XAI_API_KEY: opts.env.xaiApiKey,
-      GOOGLE_API_KEY: opts.env.googleApiKey,
+      PORT: String(this.opts.port),
+      XAI_API_KEY: this.opts.env.xaiApiKey,
+      GOOGLE_API_KEY: this.opts.env.googleApiKey,
       PG_DATA_PATH: pgDataPath,
       NODE_ENV: app.isPackaged ? 'production' : 'development',
     };
 
     if (app.isPackaged) {
-      child = fork(getCoreEntryPath(), [], {
+      this.child = fork(getCoreEntryPath(), [], {
         cwd: getCoreCwd(),
         env,
         stdio: 'pipe',
       });
     } else {
-      child = spawn('npx', ['tsx', getCoreEntryPath()], {
+      this.child = spawn('npx', ['tsx', getCoreEntryPath()], {
         cwd: getCoreCwd(),
         env,
         stdio: 'pipe',
@@ -63,7 +69,7 @@ export function createCoreManager(opts: CoreManagerOptions) {
     fs.mkdirSync(logDir, { recursive: true });
     const logPath = path.join(logDir, 'core.log');
     const logStream = fs.createWriteStream(logPath, { flags: 'w' });
-    logStream.write(`[${new Date().toISOString()}] Core starting on port ${opts.port}\n`);
+    logStream.write(`[${new Date().toISOString()}] Core starting on port ${this.opts.port}\n`);
 
     // Line-buffered stdout parsing for structured port marker
     let stdoutBuffer = '';
@@ -72,7 +78,7 @@ export function createCoreManager(opts: CoreManagerOptions) {
         reject(new Error('Core server did not report port within 15s'));
       }, 15_000);
 
-      child!.stdout?.on('data', (data: Buffer) => {
+      this.child!.stdout?.on('data', (data: Buffer) => {
         stdoutBuffer += data.toString();
         const lines = stdoutBuffer.split('\n');
         stdoutBuffer = lines.pop() ?? '';
@@ -84,39 +90,39 @@ export function createCoreManager(opts: CoreManagerOptions) {
           logStream.write(`[stdout] ${line}\n`);
 
           const portMatch = /NEURA_PORT=(\d+)/.exec(line);
-          if (portMatch && !portResolved) {
-            actualPort = parseInt(portMatch[1], 10);
-            portResolved = true;
+          if (portMatch && !this.portResolved) {
+            this.actualPort = parseInt(portMatch[1], 10);
+            this.portResolved = true;
             clearTimeout(timeout);
-            resolve(actualPort);
+            resolve(this.actualPort);
           }
         }
       });
 
-      child!.once('exit', (code) => {
-        if (!portResolved) {
+      this.child!.once('exit', (code) => {
+        if (!this.portResolved) {
           clearTimeout(timeout);
           reject(new Error(`Core exited before starting (code ${String(code)})`));
         }
       });
     });
 
-    child.stderr?.on('data', (data: Buffer) => {
+    this.child.stderr?.on('data', (data: Buffer) => {
       const line = data.toString().trim();
       console.error(`[core] ${line}`);
       logStream.write(`[stderr] ${line}\n`);
     });
 
-    child.on('exit', (code) => {
+    this.child.on('exit', (code) => {
       console.log(`[core] exited with code ${String(code)}`);
       logStream.write(`[${new Date().toISOString()}] Core exited with code ${String(code)}\n`);
       logStream.end();
       // Only fire onCrash if port discovery already succeeded (otherwise the
       // portReady rejection path handles the error)
-      const crashed = portResolved && !intentionalStop && code !== 0 && code !== null;
-      child = null;
-      if (crashed && opts.onCrash) {
-        opts.onCrash(code);
+      const crashed = this.portResolved && !this.intentionalStop && code !== 0 && code !== null;
+      this.child = null;
+      if (crashed && this.opts.onCrash) {
+        this.opts.onCrash(code);
       }
     });
 
@@ -124,38 +130,38 @@ export function createCoreManager(opts: CoreManagerOptions) {
     console.log(`[core] ready on port ${port}`);
   }
 
-  function stop(): Promise<void> {
+  stop(): Promise<void> {
     return new Promise((resolve) => {
-      if (!child) {
+      if (!this.child) {
         resolve();
         return;
       }
-      intentionalStop = true;
-      const pid = child.pid;
-      child.on('exit', () => {
-        child = null;
+      this.intentionalStop = true;
+      const pid = this.child.pid;
+      this.child.on('exit', () => {
+        this.child = null;
         resolve();
       });
       // Safety timeout in case exit event never fires
       setTimeout(() => {
-        child = null;
+        this.child = null;
         resolve();
       }, 5_000);
       if (pid) {
         if (process.platform === 'win32') {
           spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
         } else {
-          child.kill('SIGTERM');
+          this.child.kill('SIGTERM');
         }
       }
     });
   }
 
   /** Synchronous stop for use in before-quit (where async is unreliable). */
-  function stopSync() {
-    if (!child) return;
-    intentionalStop = true;
-    const pid = child.pid;
+  stopSync(): void {
+    if (!this.child) return;
+    this.intentionalStop = true;
+    const pid = this.child.pid;
     if (pid) {
       if (process.platform === 'win32') {
         try {
@@ -164,19 +170,17 @@ export function createCoreManager(opts: CoreManagerOptions) {
           /* process may already be gone */
         }
       } else {
-        child.kill('SIGTERM');
+        this.child.kill('SIGTERM');
       }
     }
-    child = null;
+    this.child = null;
   }
 
-  function isRunning() {
-    return child !== null;
+  isRunning(): boolean {
+    return this.child !== null;
   }
 
-  function getPort() {
-    return actualPort;
+  getPort(): number {
+    return this.actualPort;
   }
-
-  return { start, stop, stopSync, isRunning, getPort };
 }

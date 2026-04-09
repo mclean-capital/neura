@@ -70,7 +70,7 @@ async function main() {
   console.log('Starting Neura desktop development environment...\n');
 
   // 1. Start core
-  run('npx', ['tsx', 'watch', 'src/server.ts'], path.join(root, 'packages', 'core'), 'core');
+  run('npx', ['tsx', 'watch', 'src/server/server.ts'], path.join(root, 'packages', 'core'), 'core');
 
   // 2. Start renderer Vite dev server (desktop's own UI)
   run('npx', ['vite', '--config', 'vite.renderer.config.ts'], desktopDir, 'renderer');

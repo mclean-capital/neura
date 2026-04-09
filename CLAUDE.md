@@ -51,11 +51,11 @@ npm run test -w @neura/core          # single package
 ```
 
 - **utils** — node env, tests for audio constants and Logger
-- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), pglite-store
+- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), pglite-store, memory, discovery
 - **cli** — node env, tests for config, health, port, service detection, download, commands
 - **design-system** — jsdom env, hook tests (`useWebSocket`) and component tests (`StatusBadge`, `CostIndicator`)
 
-Test files live in `src/__tests__/` (design-system) or alongside source (`src/*.test.ts`). Component/hook tests use `@testing-library/react`.
+Test files live in `src/__tests__/` (design-system) or co-located alongside source in domain subdirectories (`memory/memory-manager.test.ts`). Component/hook tests use `@testing-library/react`.
 
 ## Packages
 
@@ -78,22 +78,19 @@ Shared runtime utilities used by core and clients.
 
 ### core
 
-Standalone server with provider adapter layer and pluggable storage.
+Standalone server with provider adapter layer and pluggable storage. Organized into domain directories with TypeScript classes for stateful services.
 
-- `server.ts` — Express + WebSocket, typed message routing, presence-aware audio routing (passive → wake detector, active → Grok), optional PGlite persistence, memory manager lifecycle, idle timer
-- `wake-detector.ts` — Energy VAD + Gemini 2.5 Flash transcription + Levenshtein fuzzy match, pre-speech buffer, audio replay chunks for Grok
-- `presence-manager.ts` — PASSIVE/ACTIVE/IDLE state machine, 5-min idle timeout, `enterMode` for AI-driven transitions
-- `voice-session.ts` — Factory wrapper, delegates to active voice provider
-- `vision-watcher.ts` — Factory wrapper, delegates to active vision provider
-- `providers/grok-voice.ts` — Grok (xAI Realtime API) voice provider with reconnect, transcript seeding, 28-min proactive reconnect, memory-driven system prompt, `onReady` callback for audio replay
-- `providers/gemini-vision.ts` — Gemini Live vision provider, one session per source (camera/screen independent)
-- `stores/pglite-store.ts` — `PgliteStore` implementing `DataStore` (WASM PostgreSQL 17 + pgvector: sessions, transcripts, memory tables)
-- `memory-manager.ts` — Singleton orchestrator: system prompt building, extraction queuing, fact recall/storage
-- `memory-extractor.ts` — Gemini 2.5 Flash transcript extraction + Gemini Embedding 2 (3072-dim vectors)
-- `memory-prompt-builder.ts` — Formats `MemoryContext` into priority-ordered system prompt
-- `tools.ts` — `describe_camera`, `describe_screen`, `get_current_time`, `remember_fact`, `recall_memory`, `update_preference`, `enter_mode`
-- `cost-tracker.ts` — Per-source cost estimator, accepts `ProviderPricing`
-- `config.ts` — `assistantName` config (default: "jarvis"), configurable via env var or config.json
+**Directory structure:**
+
+- `server/` — Express HTTP + WebSocket server, lifecycle management, per-client state machines
+- `memory/` — `MemoryManager`, `ExtractionPipeline`, `Reranker`, `BackupService`, prompt builder
+- `presence/` — `PresenceManager` state machine (PASSIVE/ACTIVE/IDLE), `WakeDetector` (VAD + Gemini transcription)
+- `tools/` — Tool definitions and handlers split by domain (vision, time, memory, presence, tasks)
+- `providers/` — `GrokVoiceProvider` (xAI Realtime API), `GeminiVisionProvider` (Live API), delegation wrappers
+- `stores/` — `PgliteStore` facade (WASM PostgreSQL 17 + pgvector), split into query modules (migrations, mappers, session/memory/search/entity/work-item/backup queries)
+- `cost/` — `CostTracker` per-session cost estimation
+- `discovery/` — `DiscoveryLoop` proactive task notifications via Gemini
+- `config/` — `loadConfig()` with env > config.json > defaults priority
 
 ```bash
 cd packages/core
@@ -128,7 +125,7 @@ npm run dev -w @neura/ui   # http://localhost:5173 (proxies /ws → :3002)
 
 Electron desktop client with its own React renderer. Spawns core as a child process. Has its own UI independent of `packages/ui` — each client platform owns its frontend. Depends on `@neura/types`, `@neura/utils`, and `@neura/design-system`.
 
-- `src/main/` — Electron main process (core-manager, tray, hotkey, store, updater)
+- `src/main/` — Electron main process (`CoreManager`, `UIServer`, tray, hotkey, store, updater)
 - `src/renderer/` — React app (hooks, components, wizard, settings)
 - `src/preload/` — contextBridge for secure IPC
 
@@ -141,6 +138,29 @@ npm run dist:win -w @neura/desktop  # build Windows installer
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
+
+## Code Style
+
+**Classes vs Functions:**
+
+- Stateful services with lifecycle (start/stop, connect/close) → TypeScript class
+- Pure computations, config loading, utilities → plain functions
+- React components → functional (idiomatic React)
+- CLI command handlers → functions (idiomatic CLI)
+
+**Class conventions:**
+
+- `private` for internal state, `private readonly` for immutable deps
+- Constructor takes options object for >2 parameters
+- Static `async create()` factory for async initialization (private constructor)
+- Implements interface from `@neura/types` when the type crosses package boundaries
+
+**File organization:**
+
+- One class or closely related set of functions per file
+- Co-located tests: `foo.ts` + `foo.test.ts` in the same directory
+- Barrel `index.ts` in each domain directory
+- Domain directories group by concern: memory, presence, tools, providers, stores, cost, discovery, server, config
 
 ## Environment
 

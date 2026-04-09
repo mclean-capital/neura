@@ -2,7 +2,7 @@ import { builtinModules } from 'module';
 import esbuild from 'esbuild';
 
 await esbuild.build({
-  entryPoints: ['src/server.ts'],
+  entryPoints: ['src/server/server.ts'],
   bundle: true,
   outfile: 'dist/server.bundled.mjs',
   platform: 'node',

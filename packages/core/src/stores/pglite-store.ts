@@ -1,9 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite/vector';
-import crypto from 'crypto';
-import { Logger } from '@neura/utils/logger';
-
-const log = new Logger('store');
 import type {
   DataStore,
   SessionRecord,
@@ -24,36 +20,13 @@ import type {
   MemoryStats,
   TranscriptChunkEntry,
 } from '@neura/types';
-
-/** Raw DB row shape for facts table (snake_case column names). */
-interface FactRow {
-  id: string;
-  content: string;
-  category: string;
-  tags: string[];
-  source_session_id: string | null;
-  confidence: number;
-  access_count: number;
-  last_accessed_at: string | null;
-  created_at: string;
-  updated_at: string;
-  expires_at: string | null;
-  valid_from?: string | null;
-  valid_to?: string | null;
-  superseded_by?: string | null;
-  tag_path?: string | null;
-}
-
-/** Raw DB row shape for transcript_chunks table. */
-interface TranscriptChunkRow {
-  id: string;
-  session_id: string;
-  chunk_text: string;
-  start_transcript_id: number;
-  end_transcript_id: number;
-  created_at: string;
-  embedding?: string | null;
-}
+import { runMigrations } from './migrations.js';
+import * as sessionQ from './session-queries.js';
+import * as memoryQ from './memory-queries.js';
+import * as searchQ from './search-queries.js';
+import * as entityQ from './entity-queries.js';
+import * as workItemQ from './work-item-queries.js';
+import * as backupQ from './backup-queries.js';
 
 export class PgliteStore implements DataStore {
   private db: PGlite;
@@ -72,897 +45,179 @@ export class PgliteStore implements DataStore {
     });
 
     const store = new PgliteStore(db);
-    await store.migrate();
+    await runMigrations(db);
     return store;
-  }
-
-  private async migrate(): Promise<void> {
-    await this.db.exec('CREATE EXTENSION IF NOT EXISTS vector;');
-
-    // --- Session & transcript tables (Phase 2) ---
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        started_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        ended_at TIMESTAMP,
-        duration_ms INTEGER,
-        cost_usd REAL,
-        voice_provider TEXT NOT NULL,
-        vision_provider TEXT NOT NULL
-      )
-    `);
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS transcripts (
-        id SERIAL PRIMARY KEY,
-        session_id TEXT NOT NULL REFERENCES sessions(id),
-        role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-        text TEXT NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_transcripts_session ON transcripts(session_id)'
-    );
-
-    // --- Memory tables (Phase 3) ---
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS identity (
-        id TEXT PRIMARY KEY,
-        attribute TEXT NOT NULL UNIQUE,
-        value TEXT NOT NULL,
-        source TEXT NOT NULL DEFAULT 'default',
-        source_session_id TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS user_profile (
-        id TEXT PRIMARY KEY,
-        field TEXT NOT NULL,
-        value TEXT NOT NULL,
-        confidence REAL NOT NULL DEFAULT 0.8,
-        source_session_id TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        UNIQUE(field, value)
-      )
-    `);
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS facts (
-        id TEXT PRIMARY KEY,
-        content TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT 'general',
-        tags JSONB NOT NULL DEFAULT '[]',
-        embedding vector(3072),
-        source_session_id TEXT,
-        confidence REAL NOT NULL DEFAULT 0.8,
-        access_count INTEGER NOT NULL DEFAULT 0,
-        last_accessed_at TIMESTAMP,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        expires_at TIMESTAMP,
-        CONSTRAINT facts_content_category_key UNIQUE(content, category)
-      )
-    `);
-
-    // Migrate embedding column from vector(768) → vector(3072) if needed
-    const typeCheck = await this.db.query<{ col_type: string }>(
-      `SELECT format_type(atttypid, atttypmod) AS col_type FROM pg_attribute
-       WHERE attrelid = 'facts'::regclass AND attname = 'embedding'`
-    );
-    if (typeCheck.rows.length > 0 && typeCheck.rows[0].col_type !== 'vector(3072)') {
-      await this.db.exec('ALTER TABLE facts DROP COLUMN embedding');
-      await this.db.exec('ALTER TABLE facts ADD COLUMN embedding vector(3072)');
-      log.info('migrated facts.embedding to vector(3072)', { was: typeCheck.rows[0].col_type });
-    }
-
-    // Ensure unique index exists (may be missing on tables created before constraint was added)
-    await this.db.exec(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_content_category ON facts(content, category)'
-    );
-
-    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category)');
-    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at DESC)');
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS preferences (
-        id TEXT PRIMARY KEY,
-        preference TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT 'general',
-        strength REAL NOT NULL DEFAULT 1.0,
-        source_session_id TEXT,
-        reinforcement_count INTEGER NOT NULL DEFAULT 1,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        CONSTRAINT preferences_pref_category_key UNIQUE(preference, category)
-      )
-    `);
-
-    // Ensure unique index exists (may be missing on tables created before constraint was added)
-    await this.db.exec(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_preferences_pref_category ON preferences(preference, category)'
-    );
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_summaries (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),
-        summary TEXT NOT NULL,
-        topics JSONB NOT NULL DEFAULT '[]',
-        key_decisions JSONB NOT NULL DEFAULT '[]',
-        open_threads JSONB NOT NULL DEFAULT '[]',
-        extraction_model TEXT NOT NULL,
-        extraction_cost_usd REAL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS memory_extractions (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL REFERENCES sessions(id),
-        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-        memories_created INTEGER NOT NULL DEFAULT 0,
-        error TEXT,
-        started_at TIMESTAMP,
-        completed_at TIMESTAMP,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_extractions_status ON memory_extractions(status)'
-    );
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS work_items (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        description TEXT,
-        status TEXT NOT NULL DEFAULT 'pending'
-          CHECK (status IN ('pending', 'in_progress', 'done', 'cancelled', 'failed')),
-        priority TEXT NOT NULL DEFAULT 'medium'
-          CHECK (priority IN ('low', 'medium', 'high')),
-        due_at TIMESTAMP,
-        parent_id TEXT REFERENCES work_items(id) ON DELETE SET NULL,
-        source_session_id TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        completed_at TIMESTAMP
-      )
-    `);
-    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status)');
-    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_due ON work_items(due_at)');
-
-    // --- Phase 5b: Advanced Memory ---
-
-    // Temporal tracking columns on facts
-    await this.db.exec(
-      'ALTER TABLE facts ADD COLUMN IF NOT EXISTS valid_from TIMESTAMP DEFAULT NOW()'
-    );
-    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS valid_to TIMESTAMP');
-    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS superseded_by TEXT');
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_facts_valid ON facts (valid_to) WHERE valid_to IS NULL'
-    );
-
-    // Hierarchical tag path
-    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS tag_path TEXT');
-    // Backfill tag_path from category for existing facts
-    await this.db.exec(
-      'UPDATE facts SET tag_path = category WHERE tag_path IS NULL AND category IS NOT NULL'
-    );
-
-    // Full-text search (application-managed tsvector)
-    await this.db.exec('ALTER TABLE facts ADD COLUMN IF NOT EXISTS tsv tsvector');
-    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_tsv ON facts USING GIN (tsv)');
-    // Backfill tsvector for existing facts
-    await this.db.exec(`
-      UPDATE facts SET tsv = to_tsvector('english',
-        content || ' ' || COALESCE((SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags)), '')
-      ) WHERE tsv IS NULL
-    `);
-
-    // Transcript embeddings
-    await this.db.exec('ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS embedding vector(3072)');
-
-    // Entity tables
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS entities (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        type TEXT NOT NULL,
-        canonical_name TEXT NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        UNIQUE(canonical_name, type)
-      )
-    `);
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS entity_relationships (
-        id TEXT PRIMARY KEY,
-        source_entity_id TEXT NOT NULL REFERENCES entities(id),
-        target_entity_id TEXT NOT NULL REFERENCES entities(id),
-        relationship TEXT NOT NULL,
-        valid_from TIMESTAMP NOT NULL DEFAULT NOW(),
-        valid_to TIMESTAMP,
-        source_fact_id TEXT REFERENCES facts(id),
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS fact_entities (
-        fact_id TEXT NOT NULL REFERENCES facts(id),
-        entity_id TEXT NOT NULL REFERENCES entities(id),
-        PRIMARY KEY (fact_id, entity_id)
-      )
-    `);
-
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_entity_rels_source ON entity_relationships(source_entity_id)'
-    );
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_entity_rels_target ON entity_relationships(target_entity_id)'
-    );
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_fact_entities_entity ON fact_entities(entity_id)'
-    );
-    await this.db.exec('CREATE INDEX IF NOT EXISTS idx_facts_tag_path ON facts(tag_path)');
-
-    // Transcript chunks table (replaces per-row midpoint embedding)
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS transcript_chunks (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL REFERENCES sessions(id),
-        chunk_text TEXT NOT NULL,
-        embedding vector(3072),
-        start_transcript_id INTEGER NOT NULL,
-        end_transcript_id INTEGER NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-    await this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_transcript_chunks_session ON transcript_chunks(session_id)'
-    );
-
-    // Seed default identity if table is empty
-    const identityCount = await this.db.query<{ count: string }>(
-      'SELECT COUNT(*)::TEXT as count FROM identity'
-    );
-    if (identityCount.rows[0].count === '0') {
-      await this.seedIdentity();
-    }
-  }
-
-  /** Update the tsvector column for a fact (application-managed full-text search). */
-  private async updateFactTsv(factId: string): Promise<void> {
-    await this.db.query(
-      `UPDATE facts SET tsv = to_tsvector('english',
-        content || ' ' || COALESCE((SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags)), '')
-      ) WHERE id = $1`,
-      [factId]
-    );
-  }
-
-  private async seedIdentity(): Promise<void> {
-    const defaults = [
-      [
-        'base_personality',
-        'You are Neura, a helpful voice assistant with camera and screen vision.',
-      ],
-      ['tone', 'direct and conversational'],
-      ['verbosity', 'concise — 1-2 sentences unless asked for detail'],
-      ['filler_words', 'avoid — no filler, no hedging'],
-    ];
-    for (const [attribute, value] of defaults) {
-      await this.db.query(
-        'INSERT INTO identity (id, attribute, value, source) VALUES ($1, $2, $3, $4)',
-        [crypto.randomUUID(), attribute, value, 'default']
-      );
-    }
   }
 
   // --- Session methods ---
 
-  async createSession(voiceProvider: string, visionProvider: string): Promise<string> {
-    const id = crypto.randomUUID();
-    await this.db.query(
-      'INSERT INTO sessions (id, voice_provider, vision_provider) VALUES ($1, $2, $3)',
-      [id, voiceProvider, visionProvider]
-    );
-    return id;
+  createSession(voiceProvider: string, visionProvider: string): Promise<string> {
+    return sessionQ.createSession(this.db, voiceProvider, visionProvider);
   }
 
-  async endSession(sessionId: string, costUsd: number): Promise<void> {
-    await this.db.query(
-      `UPDATE sessions
-       SET ended_at = NOW(),
-           duration_ms = (EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000)::INTEGER,
-           cost_usd = $1
-       WHERE id = $2`,
-      [costUsd, sessionId]
-    );
+  endSession(sessionId: string, costUsd: number): Promise<void> {
+    return sessionQ.endSession(this.db, sessionId, costUsd);
   }
 
-  async appendTranscript(
-    sessionId: string,
-    role: 'user' | 'assistant',
-    text: string
-  ): Promise<void> {
-    await this.db.query('INSERT INTO transcripts (session_id, role, text) VALUES ($1, $2, $3)', [
-      sessionId,
-      role,
-      text,
-    ]);
+  appendTranscript(sessionId: string, role: 'user' | 'assistant', text: string): Promise<void> {
+    return sessionQ.appendTranscript(this.db, sessionId, role, text);
   }
 
-  async getSessions(limit = 50): Promise<SessionRecord[]> {
-    const result = await this.db.query<{
-      id: string;
-      started_at: string;
-      ended_at: string | null;
-      duration_ms: number | null;
-      cost_usd: number | null;
-      voice_provider: string;
-      vision_provider: string;
-    }>('SELECT * FROM sessions ORDER BY started_at DESC LIMIT $1', [limit]);
-
-    return result.rows.map((r) => ({
-      id: r.id,
-      startedAt: r.started_at,
-      endedAt: r.ended_at,
-      durationMs: r.duration_ms,
-      costUsd: r.cost_usd,
-      voiceProvider: r.voice_provider,
-      visionProvider: r.vision_provider,
-    }));
+  getSessions(limit?: number): Promise<SessionRecord[]> {
+    return sessionQ.getSessions(this.db, limit);
   }
 
-  async getTranscript(sessionId: string): Promise<TranscriptEntry[]> {
-    const result = await this.db.query<{
-      id: number;
-      session_id: string;
-      role: 'user' | 'assistant';
-      text: string;
-      created_at: string;
-    }>('SELECT * FROM transcripts WHERE session_id = $1 ORDER BY id ASC', [sessionId]);
-
-    return result.rows.map((r) => ({
-      id: r.id,
-      sessionId: r.session_id,
-      role: r.role,
-      text: r.text,
-      createdAt: r.created_at,
-    }));
+  getTranscript(sessionId: string): Promise<TranscriptEntry[]> {
+    return sessionQ.getTranscript(this.db, sessionId);
   }
 
   // --- Identity methods ---
 
-  async getIdentity(): Promise<IdentityEntry[]> {
-    const result = await this.db.query<{
-      id: string;
-      attribute: string;
-      value: string;
-      source: 'default' | 'user_feedback';
-      source_session_id: string | null;
-      created_at: string;
-      updated_at: string;
-    }>('SELECT * FROM identity ORDER BY created_at ASC');
-
-    return result.rows.map((r) => ({
-      id: r.id,
-      attribute: r.attribute,
-      value: r.value,
-      source: r.source,
-      sourceSessionId: r.source_session_id,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+  getIdentity(): Promise<IdentityEntry[]> {
+    return memoryQ.getIdentity(this.db);
   }
 
-  async upsertIdentity(
+  upsertIdentity(
     attribute: string,
     value: string,
     source: 'default' | 'user_feedback',
     sourceSessionId?: string
   ): Promise<void> {
-    await this.db.query(
-      `INSERT INTO identity (id, attribute, value, source, source_session_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (attribute) DO UPDATE
-       SET value = EXCLUDED.value,
-           source = EXCLUDED.source,
-           source_session_id = EXCLUDED.source_session_id,
-           updated_at = NOW()`,
-      [crypto.randomUUID(), attribute, value, source, sourceSessionId ?? null]
-    );
+    return memoryQ.upsertIdentity(this.db, attribute, value, source, sourceSessionId);
   }
 
   // --- User profile methods ---
 
-  async getUserProfile(): Promise<UserProfileEntry[]> {
-    const result = await this.db.query<{
-      id: string;
-      field: string;
-      value: string;
-      confidence: number;
-      source_session_id: string | null;
-      created_at: string;
-      updated_at: string;
-    }>('SELECT * FROM user_profile ORDER BY confidence DESC, updated_at DESC');
-
-    return result.rows.map((r) => ({
-      id: r.id,
-      field: r.field,
-      value: r.value,
-      confidence: r.confidence,
-      sourceSessionId: r.source_session_id,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+  getUserProfile(): Promise<UserProfileEntry[]> {
+    return memoryQ.getUserProfile(this.db);
   }
 
-  async upsertUserProfile(
+  upsertUserProfile(
     field: string,
     value: string,
     confidence: number,
     sourceSessionId?: string
   ): Promise<void> {
-    await this.db.query(
-      `INSERT INTO user_profile (id, field, value, confidence, source_session_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (field, value) DO UPDATE
-       SET confidence = GREATEST(user_profile.confidence, EXCLUDED.confidence),
-           source_session_id = EXCLUDED.source_session_id,
-           updated_at = NOW()`,
-      [crypto.randomUUID(), field, value, confidence, sourceSessionId ?? null]
-    );
+    return memoryQ.upsertUserProfile(this.db, field, value, confidence, sourceSessionId);
   }
 
   // --- Facts methods ---
 
-  async getFacts(
-    options: { category?: string; limit?: number; minConfidence?: number } = {}
-  ): Promise<FactEntry[]> {
-    const { category, limit = 50, minConfidence = 0 } = options;
-
-    let sql =
-      'SELECT * FROM facts WHERE confidence >= $1 AND (expires_at IS NULL OR expires_at > NOW()) AND valid_to IS NULL';
-    const params: (string | number)[] = [minConfidence];
-
-    if (category) {
-      params.push(category);
-      sql += ` AND category = $${params.length}`;
-    }
-
-    params.push(limit);
-    sql += ` ORDER BY updated_at DESC LIMIT $${params.length}`;
-
-    const result = await this.db.query<FactRow>(sql, params);
-
-    return result.rows.map((r) => this.mapFact(r));
+  getFacts(options?: {
+    category?: string;
+    limit?: number;
+    minConfidence?: number;
+  }): Promise<FactEntry[]> {
+    return memoryQ.getFacts(this.db, options);
   }
 
-  async searchFacts(query: string, embedding?: number[], limit = 10): Promise<FactEntry[]> {
-    if (embedding?.length === 3072) {
-      const vecStr = `[${embedding.join(',')}]`;
-      const result = await this.db.query<FactRow>(
-        `SELECT * FROM facts
-         WHERE embedding IS NOT NULL
-           AND valid_to IS NULL
-           AND (expires_at IS NULL OR expires_at > NOW())
-         ORDER BY embedding <=> $1::vector
-         LIMIT $2`,
-        [vecStr, limit]
-      );
-      return result.rows.map((r) => this.mapFact(r));
-    }
-
-    // Fallback: ILIKE text search
-    const result = await this.db.query<FactRow>(
-      `SELECT * FROM facts
-       WHERE content ILIKE $1
-         AND (expires_at IS NULL OR expires_at > NOW())
-         AND valid_to IS NULL
-       ORDER BY confidence DESC, updated_at DESC
-       LIMIT $2`,
-      [`%${query}%`, limit]
-    );
-    return result.rows.map((r) => this.mapFact(r));
+  searchFacts(query: string, embedding?: number[], limit?: number): Promise<FactEntry[]> {
+    return memoryQ.searchFacts(this.db, query, embedding, limit);
   }
 
-  async upsertFact(
+  upsertFact(
     content: string,
     category: string,
     tags: string[],
     sourceSessionId?: string,
-    confidence = 0.8,
+    confidence?: number,
     embedding?: number[],
     tagPath?: string
   ): Promise<string> {
-    if (embedding && embedding.length !== 3072) {
-      throw new Error(`Embedding must be 3072-dimensional, got ${embedding.length}`);
-    }
-    const id = crypto.randomUUID();
-    const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
-    const resolvedTagPath = tagPath ?? category;
-    const result = await this.db.query<{ id: string }>(
-      `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, embedding, tag_path, valid_from)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, NOW())
-       ON CONFLICT (content, category) DO UPDATE
-       SET tags = EXCLUDED.tags,
-           source_session_id = EXCLUDED.source_session_id,
-           confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
-           embedding = COALESCE(EXCLUDED.embedding, facts.embedding),
-           tag_path = COALESCE(EXCLUDED.tag_path, facts.tag_path),
-           valid_to = NULL,
-           superseded_by = NULL,
-           valid_from = CASE WHEN facts.valid_to IS NOT NULL THEN NOW() ELSE facts.valid_from END,
-           updated_at = NOW()
-       RETURNING id`,
-      [
-        id,
-        content,
-        category,
-        JSON.stringify(tags),
-        sourceSessionId ?? null,
-        confidence,
-        embeddingStr,
-        resolvedTagPath,
-      ]
-    );
-    const factId = result.rows[0].id;
-    await this.updateFactTsv(factId);
-    return factId;
-  }
-
-  async touchFact(id: string): Promise<void> {
-    await this.db.query(
-      'UPDATE facts SET access_count = access_count + 1, last_accessed_at = NOW() WHERE id = $1',
-      [id]
+    return memoryQ.upsertFact(
+      this.db,
+      content,
+      category,
+      tags,
+      sourceSessionId,
+      confidence,
+      embedding,
+      tagPath
     );
   }
 
-  async deleteFact(id: string): Promise<void> {
-    await this.db.query('DELETE FROM facts WHERE id = $1', [id]);
+  touchFact(id: string): Promise<void> {
+    return memoryQ.touchFact(this.db, id);
+  }
+
+  deleteFact(id: string): Promise<void> {
+    return memoryQ.deleteFact(this.db, id);
   }
 
   // --- Preferences methods ---
 
-  async getPreferences(
-    options: { category?: string; minStrength?: number } = {}
-  ): Promise<PreferenceEntry[]> {
-    const { category, minStrength = 0 } = options;
-
-    let sql = 'SELECT * FROM preferences WHERE strength >= $1';
-    const params: (string | number)[] = [minStrength];
-
-    if (category) {
-      params.push(category);
-      sql += ` AND category = $${params.length}`;
-    }
-
-    sql += ' ORDER BY strength DESC, updated_at DESC';
-
-    const result = await this.db.query<{
-      id: string;
-      preference: string;
-      category: string;
-      strength: number;
-      source_session_id: string | null;
-      reinforcement_count: number;
-      created_at: string;
-      updated_at: string;
-    }>(sql, params);
-
-    return result.rows.map((r) => ({
-      id: r.id,
-      preference: r.preference,
-      category: r.category as PreferenceEntry['category'],
-      strength: r.strength,
-      sourceSessionId: r.source_session_id,
-      reinforcementCount: r.reinforcement_count,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+  getPreferences(options?: {
+    category?: string;
+    minStrength?: number;
+  }): Promise<PreferenceEntry[]> {
+    return memoryQ.getPreferences(this.db, options);
   }
 
-  async upsertPreference(
-    preference: string,
-    category: string,
-    sourceSessionId?: string
-  ): Promise<void> {
-    await this.db.query(
-      `INSERT INTO preferences (id, preference, category, source_session_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (preference, category) DO UPDATE
-       SET source_session_id = EXCLUDED.source_session_id,
-           reinforcement_count = preferences.reinforcement_count + 1,
-           strength = LEAST(preferences.strength + 0.1, 2.0),
-           updated_at = NOW()`,
-      [crypto.randomUUID(), preference, category, sourceSessionId ?? null]
-    );
+  upsertPreference(preference: string, category: string, sourceSessionId?: string): Promise<void> {
+    return memoryQ.upsertPreference(this.db, preference, category, sourceSessionId);
   }
 
-  async reinforcePreference(id: string): Promise<void> {
-    await this.db.query(
-      `UPDATE preferences
-       SET reinforcement_count = reinforcement_count + 1,
-           strength = LEAST(strength + 0.1, 2.0),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [id]
-    );
+  reinforcePreference(id: string): Promise<void> {
+    return memoryQ.reinforcePreference(this.db, id);
   }
 
   // --- Session summaries ---
 
-  async getSessionSummary(sessionId: string): Promise<SessionSummaryEntry | null> {
-    const result = await this.db.query<{
-      id: string;
-      session_id: string;
-      summary: string;
-      topics: string[];
-      key_decisions: string[];
-      open_threads: string[];
-      extraction_model: string;
-      extraction_cost_usd: number | null;
-      created_at: string;
-    }>('SELECT * FROM session_summaries WHERE session_id = $1', [sessionId]);
-
-    if (result.rows.length === 0) return null;
-    return this.mapSummary(result.rows[0]);
+  getSessionSummary(sessionId: string): Promise<SessionSummaryEntry | null> {
+    return memoryQ.getSessionSummary(this.db, sessionId);
   }
 
-  async getRecentSummaries(limit = 5): Promise<SessionSummaryEntry[]> {
-    const result = await this.db.query<{
-      id: string;
-      session_id: string;
-      summary: string;
-      topics: string[];
-      key_decisions: string[];
-      open_threads: string[];
-      extraction_model: string;
-      extraction_cost_usd: number | null;
-      created_at: string;
-    }>('SELECT * FROM session_summaries ORDER BY created_at DESC LIMIT $1', [limit]);
-
-    return result.rows.map((r) => this.mapSummary(r));
+  getRecentSummaries(limit?: number): Promise<SessionSummaryEntry[]> {
+    return memoryQ.getRecentSummaries(this.db, limit);
   }
 
-  async createSessionSummary(
+  createSessionSummary(
     sessionId: string,
     summary: Omit<SessionSummaryEntry, 'id' | 'sessionId' | 'createdAt'>
   ): Promise<void> {
-    await this.db.query(
-      `INSERT INTO session_summaries (id, session_id, summary, topics, key_decisions, open_threads, extraction_model, extraction_cost_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        crypto.randomUUID(),
-        sessionId,
-        summary.summary,
-        JSON.stringify(summary.topics),
-        JSON.stringify(summary.keyDecisions),
-        JSON.stringify(summary.openThreads),
-        summary.extractionModel,
-        summary.extractionCostUsd,
-      ]
-    );
+    return memoryQ.createSessionSummary(this.db, sessionId, summary);
   }
 
   // --- Extraction tracking ---
 
-  async createExtraction(sessionId: string): Promise<string> {
-    const id = crypto.randomUUID();
-    await this.db.query('INSERT INTO memory_extractions (id, session_id) VALUES ($1, $2)', [
-      id,
-      sessionId,
-    ]);
-    return id;
+  createExtraction(sessionId: string): Promise<string> {
+    return memoryQ.createExtraction(this.db, sessionId);
   }
 
-  async updateExtraction(
+  updateExtraction(
     id: string,
     status: 'pending' | 'processing' | 'completed' | 'failed',
     memoriesCreated?: number,
     error?: string
   ): Promise<void> {
-    if (status === 'processing') {
-      await this.db.query(
-        `UPDATE memory_extractions
-         SET status = $1, started_at = NOW()
-         WHERE id = $2`,
-        [status, id]
-      );
-    } else {
-      await this.db.query(
-        `UPDATE memory_extractions
-         SET status = $1,
-             memories_created = COALESCE($2, memories_created),
-             error = $3,
-             completed_at = NOW()
-         WHERE id = $4`,
-        [status, memoriesCreated ?? null, error ?? null, id]
-      );
-    }
+    return memoryQ.updateExtraction(this.db, id, status, memoriesCreated, error);
   }
 
-  async getPendingExtractions(): Promise<MemoryExtractionRecord[]> {
-    const result = await this.db.query<{
-      id: string;
-      session_id: string;
-      status: 'pending' | 'processing' | 'completed' | 'failed';
-      memories_created: number;
-      error: string | null;
-      started_at: string | null;
-      completed_at: string | null;
-      created_at: string;
-    }>("SELECT * FROM memory_extractions WHERE status = 'pending' ORDER BY created_at ASC");
-
-    return result.rows.map((r) => ({
-      id: r.id,
-      sessionId: r.session_id,
-      status: r.status,
-      memoriesCreated: r.memories_created,
-      error: r.error,
-      startedAt: r.started_at,
-      completedAt: r.completed_at,
-      createdAt: r.created_at,
-    }));
+  getPendingExtractions(): Promise<MemoryExtractionRecord[]> {
+    return memoryQ.getPendingExtractions(this.db);
   }
 
   // --- Composite memory context ---
 
-  async getMemoryContext(options: { maxTokens?: number } = {}): Promise<MemoryContext> {
-    const maxTokens = options.maxTokens ?? 2000;
-
-    const [identity, userProfile, preferences, recentFacts, recentSummaries] = await Promise.all([
-      this.getIdentity(),
-      this.getUserProfile(),
-      this.getPreferences(),
-      this.getFacts({ limit: 20, minConfidence: 0.2 }),
-      this.getRecentSummaries(3),
-    ]);
-
-    // Estimate tokens (~4 chars per token)
-    const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-
-    const estimateArrayTokens = (items: unknown[]): number =>
-      items.reduce<number>((sum, i) => sum + estimateTokens(JSON.stringify(i)), 0);
-
-    // Priority order: identity > preferences > profile > facts > summaries
-    let totalTokens = 0;
-    totalTokens += estimateArrayTokens(identity);
-    totalTokens += estimateArrayTokens(preferences);
-    totalTokens += estimateArrayTokens(userProfile);
-
-    // Trim facts if over budget
-    let trimmedFacts = recentFacts;
-    const factTokens = estimateArrayTokens(recentFacts);
-    totalTokens += factTokens;
-    if (totalTokens > maxTokens && factTokens > 0) {
-      trimmedFacts = [];
-      totalTokens -= factTokens;
-      for (const fact of recentFacts) {
-        const ft = estimateTokens(JSON.stringify(fact));
-        if (totalTokens + ft > maxTokens) break;
-        trimmedFacts.push(fact);
-        totalTokens += ft;
-      }
-    }
-
-    // Trim summaries — same approach as facts
-    let trimmedSummaries = recentSummaries;
-    const summaryTokens = estimateArrayTokens(recentSummaries);
-    totalTokens += summaryTokens;
-    if (totalTokens > maxTokens && summaryTokens > 0) {
-      trimmedSummaries = [];
-      totalTokens -= summaryTokens;
-      for (const summary of recentSummaries) {
-        const st = estimateTokens(JSON.stringify(summary));
-        if (totalTokens + st > maxTokens) break;
-        trimmedSummaries.push(summary);
-        totalTokens += st;
-      }
-    }
-
-    return {
-      identity,
-      userProfile,
-      recentFacts: trimmedFacts,
-      preferences,
-      recentSummaries: trimmedSummaries,
-      tokenEstimate: totalTokens,
-    };
+  getMemoryContext(options?: { maxTokens?: number }): Promise<MemoryContext> {
+    return memoryQ.getMemoryContext(this.db, options);
   }
 
   // --- Work items ---
 
-  async getOpenWorkItems(limit = 50): Promise<WorkItemEntry[]> {
-    const result = await this.db.query<{
-      id: string;
-      title: string;
-      description: string | null;
-      status: string;
-      priority: string;
-      due_at: string | null;
-      parent_id: string | null;
-      source_session_id: string | null;
-      created_at: string;
-      updated_at: string;
-      completed_at: string | null;
-    }>(
-      `SELECT * FROM work_items
-       WHERE status IN ('pending', 'in_progress')
-       ORDER BY
-         CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 END,
-         due_at ASC NULLS LAST,
-         created_at ASC
-       LIMIT $1`,
-      [limit]
-    );
-    return result.rows.map((r) => this.mapWorkItem(r));
+  getOpenWorkItems(limit?: number): Promise<WorkItemEntry[]> {
+    return workItemQ.getOpenWorkItems(this.db, limit);
   }
 
-  async getWorkItems(options?: { status?: string; limit?: number }): Promise<WorkItemEntry[]> {
-    const limit = options?.limit ?? 100;
-    const status = options?.status;
-
-    let query: string;
-    let params: unknown[];
-
-    if (status && status !== 'all') {
-      query = `SELECT * FROM work_items WHERE status = $1
-               ORDER BY created_at DESC LIMIT $2`;
-      params = [status, limit];
-    } else {
-      query = `SELECT * FROM work_items
-               ORDER BY created_at DESC LIMIT $1`;
-      params = [limit];
-    }
-
-    const result = await this.db.query<{
-      id: string;
-      title: string;
-      description: string | null;
-      status: string;
-      priority: string;
-      due_at: string | null;
-      parent_id: string | null;
-      source_session_id: string | null;
-      created_at: string;
-      updated_at: string;
-      completed_at: string | null;
-    }>(query, params);
-    return result.rows.map((r) => this.mapWorkItem(r));
+  getWorkItems(options?: { status?: string; limit?: number }): Promise<WorkItemEntry[]> {
+    return workItemQ.getWorkItems(this.db, options);
   }
 
-  async getWorkItem(id: string): Promise<WorkItemEntry | null> {
-    const result = await this.db.query<{
-      id: string;
-      title: string;
-      description: string | null;
-      status: string;
-      priority: string;
-      due_at: string | null;
-      parent_id: string | null;
-      source_session_id: string | null;
-      created_at: string;
-      updated_at: string;
-      completed_at: string | null;
-    }>('SELECT * FROM work_items WHERE id = $1', [id]);
-    return result.rows.length > 0 ? this.mapWorkItem(result.rows[0]) : null;
+  getWorkItem(id: string): Promise<WorkItemEntry | null> {
+    return workItemQ.getWorkItem(this.db, id);
   }
 
-  async createWorkItem(
+  createWorkItem(
     title: string,
     priority: WorkItemPriority,
     options?: {
@@ -972,541 +227,45 @@ export class PgliteStore implements DataStore {
       sourceSessionId?: string;
     }
   ): Promise<string> {
-    const id = crypto.randomUUID();
-    await this.db.query(
-      `INSERT INTO work_items (id, title, priority, description, due_at, parent_id, source_session_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        id,
-        title,
-        priority,
-        options?.description ?? null,
-        options?.dueAt ?? null,
-        options?.parentId ?? null,
-        options?.sourceSessionId ?? null,
-      ]
-    );
-    return id;
+    return workItemQ.createWorkItem(this.db, title, priority, options);
   }
 
-  async updateWorkItem(
+  updateWorkItem(
     id: string,
     updates: Partial<Pick<WorkItemEntry, 'status' | 'priority' | 'title' | 'description' | 'dueAt'>>
   ): Promise<void> {
-    const sets: string[] = ['updated_at = NOW()'];
-    const values: unknown[] = [];
-    let paramIdx = 1;
-
-    if (updates.title !== undefined) {
-      sets.push(`title = $${paramIdx++}`);
-      values.push(updates.title);
-    }
-    if (updates.description !== undefined) {
-      sets.push(`description = $${paramIdx++}`);
-      values.push(updates.description);
-    }
-    if (updates.status !== undefined) {
-      sets.push(`status = $${paramIdx++}`);
-      values.push(updates.status);
-      if (
-        updates.status === 'done' ||
-        updates.status === 'cancelled' ||
-        updates.status === 'failed'
-      ) {
-        sets.push('completed_at = NOW()');
-      }
-    }
-    if (updates.priority !== undefined) {
-      sets.push(`priority = $${paramIdx++}`);
-      values.push(updates.priority);
-    }
-    if (updates.dueAt !== undefined) {
-      sets.push(`due_at = $${paramIdx++}`);
-      values.push(updates.dueAt);
-    }
-
-    values.push(id);
-    await this.db.query(`UPDATE work_items SET ${sets.join(', ')} WHERE id = $${paramIdx}`, values);
+    return workItemQ.updateWorkItem(this.db, id, updates);
   }
 
-  async deleteWorkItem(id: string): Promise<void> {
-    await this.db.query('DELETE FROM work_items WHERE id = $1', [id]);
-  }
-
-  private mapWorkItem(r: {
-    id: string;
-    title: string;
-    description: string | null;
-    status: string;
-    priority: string;
-    due_at: string | null;
-    parent_id: string | null;
-    source_session_id: string | null;
-    created_at: string;
-    updated_at: string;
-    completed_at: string | null;
-  }): WorkItemEntry {
-    return {
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      status: r.status as WorkItemEntry['status'],
-      priority: r.priority as WorkItemEntry['priority'],
-      dueAt: r.due_at,
-      parentId: r.parent_id,
-      sourceSessionId: r.source_session_id,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      completedAt: r.completed_at,
-    };
+  deleteWorkItem(id: string): Promise<void> {
+    return workItemQ.deleteWorkItem(this.db, id);
   }
 
   // --- Backup & recovery ---
 
-  async exportMemories(): Promise<MemoryBackup> {
-    const identity = await this.getIdentity();
-    const userProfile = await this.getUserProfile();
-    // Export ALL facts including invalidated ones (for temporal history preservation)
-    const allFactsResult = await this.db.query<FactRow>('SELECT * FROM facts ORDER BY created_at');
-    const facts = allFactsResult.rows.map((r) => this.mapFact(r));
-    const preferences = await this.getPreferences();
-    const sessionSummaries = await this.getRecentSummaries(1000);
-    const entities = await this.getEntities();
-    const relResult = await this.db.query<{
-      id: string;
-      source_entity_id: string;
-      target_entity_id: string;
-      relationship: string;
-      valid_from: string;
-      valid_to: string | null;
-      source_fact_id: string | null;
-      created_at: string;
-    }>('SELECT * FROM entity_relationships');
-    const entityRelationships: EntityRelationship[] = relResult.rows.map((r) => ({
-      id: r.id,
-      sourceEntityId: r.source_entity_id,
-      targetEntityId: r.target_entity_id,
-      relationship: r.relationship,
-      validFrom: r.valid_from,
-      validTo: r.valid_to,
-      sourceFactId: r.source_fact_id,
-      createdAt: r.created_at,
-    }));
-
-    const factEntitiesResult = await this.db.query<{
-      fact_id: string;
-      entity_id: string;
-    }>('SELECT * FROM fact_entities');
-    const factEntities = factEntitiesResult.rows.map((r) => ({
-      factId: r.fact_id,
-      entityId: r.entity_id,
-    }));
-
-    const chunkResult = await this.db.query<TranscriptChunkRow>(
-      'SELECT id, session_id, chunk_text, start_transcript_id, end_transcript_id, created_at, embedding::text FROM transcript_chunks ORDER BY created_at'
-    );
-    const transcriptChunks = chunkResult.rows.map((r) => this.mapTranscriptChunk(r));
-
-    return {
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      identity,
-      userProfile,
-      facts,
-      preferences,
-      sessionSummaries,
-      entities,
-      entityRelationships,
-      factEntities,
-      transcriptChunks,
-    };
+  exportMemories(): Promise<MemoryBackup> {
+    return backupQ.exportMemories(this.db);
   }
 
-  async importMemories(backup: MemoryBackup): Promise<{ imported: number; skipped: number }> {
-    let imported = 0;
-    let skipped = 0;
-
-    // Identity — direct SQL to preserve all fields
-    for (const entry of backup.identity ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO identity (id, attribute, value, source, source_session_id, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (attribute) DO UPDATE SET
-             value = EXCLUDED.value,
-             source = EXCLUDED.source,
-             updated_at = EXCLUDED.updated_at`,
-          [
-            entry.id,
-            entry.attribute,
-            entry.value,
-            entry.source,
-            entry.sourceSessionId,
-            entry.createdAt,
-            entry.updatedAt,
-          ]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // User profile — direct SQL to preserve confidence
-    for (const entry of backup.userProfile ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO user_profile (id, field, value, confidence, source_session_id, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (field, value) DO UPDATE SET
-             confidence = EXCLUDED.confidence,
-             updated_at = EXCLUDED.updated_at`,
-          [
-            entry.id,
-            entry.field,
-            entry.value,
-            entry.confidence,
-            entry.sourceSessionId,
-            entry.createdAt,
-            entry.updatedAt,
-          ]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Facts — direct SQL to preserve all fields including Phase 5b temporal/tag columns
-    for (const entry of backup.facts ?? []) {
-      try {
-        const validFrom = entry.validFrom ?? entry.createdAt;
-        const validTo = entry.validTo ?? null;
-        const tagPath = entry.tagPath ?? entry.category;
-        const factResult = await this.db.query<{ id: string }>(
-          `INSERT INTO facts (id, content, category, tags, source_session_id, confidence, access_count, last_accessed_at, created_at, updated_at, expires_at, valid_from, valid_to, superseded_by, tag_path)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           ON CONFLICT (content, category) DO UPDATE SET
-             tags = EXCLUDED.tags,
-             confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
-             access_count = GREATEST(facts.access_count, EXCLUDED.access_count),
-             last_accessed_at = COALESCE(EXCLUDED.last_accessed_at, facts.last_accessed_at),
-             expires_at = COALESCE(EXCLUDED.expires_at, facts.expires_at),
-             valid_from = COALESCE(facts.valid_from, EXCLUDED.valid_from),
-             valid_to = EXCLUDED.valid_to,
-             tag_path = COALESCE(EXCLUDED.tag_path, facts.tag_path),
-             updated_at = EXCLUDED.updated_at
-           RETURNING id`,
-          [
-            entry.id,
-            entry.content,
-            entry.category,
-            JSON.stringify(entry.tags),
-            entry.sourceSessionId,
-            entry.confidence,
-            entry.accessCount,
-            entry.lastAccessedAt,
-            entry.createdAt,
-            entry.updatedAt,
-            entry.expiresAt,
-            validFrom,
-            validTo,
-            entry.supersededBy ?? null,
-            tagPath,
-          ]
-        );
-        // Use the surviving row ID (may differ from entry.id on conflict)
-        const survivingId = factResult.rows[0].id;
-        await this.updateFactTsv(survivingId);
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Preferences — direct SQL to preserve strength and reinforcementCount
-    for (const entry of backup.preferences ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO preferences (id, preference, category, strength, source_session_id, reinforcement_count, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (preference, category) DO UPDATE SET
-             strength = GREATEST(preferences.strength, EXCLUDED.strength),
-             reinforcement_count = GREATEST(preferences.reinforcement_count, EXCLUDED.reinforcement_count),
-             updated_at = EXCLUDED.updated_at`,
-          [
-            entry.id,
-            entry.preference,
-            entry.category,
-            entry.strength,
-            entry.sourceSessionId,
-            entry.reinforcementCount,
-            entry.createdAt,
-            entry.updatedAt,
-          ]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Session summaries — need stub session rows for FK constraint
-    for (const entry of backup.sessionSummaries ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO sessions (id, voice_provider, vision_provider)
-           VALUES ($1, 'restored', 'restored')
-           ON CONFLICT (id) DO NOTHING`,
-          [entry.sessionId]
-        );
-        await this.db.query(
-          `INSERT INTO session_summaries (id, session_id, summary, topics, key_decisions, open_threads, extraction_model, extraction_cost_usd)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (session_id) DO UPDATE SET
-             summary = EXCLUDED.summary,
-             topics = EXCLUDED.topics,
-             key_decisions = EXCLUDED.key_decisions,
-             open_threads = EXCLUDED.open_threads`,
-          [
-            entry.id,
-            entry.sessionId,
-            entry.summary,
-            JSON.stringify(entry.topics),
-            JSON.stringify(entry.keyDecisions),
-            JSON.stringify(entry.openThreads),
-            entry.extractionModel,
-            entry.extractionCostUsd,
-          ]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Phase 5b: Entities (v2 backups only)
-    for (const entry of backup.entities ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO entities (id, name, type, canonical_name, created_at)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (canonical_name, type) DO UPDATE SET name = EXCLUDED.name`,
-          [entry.id, entry.name, entry.type, entry.canonicalName, entry.createdAt]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Phase 5b: Entity relationships (v2 backups only)
-    for (const entry of backup.entityRelationships ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO entity_relationships (id, source_entity_id, target_entity_id, relationship, valid_from, valid_to, source_fact_id, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT DO NOTHING`,
-          [
-            entry.id,
-            entry.sourceEntityId,
-            entry.targetEntityId,
-            entry.relationship,
-            entry.validFrom,
-            entry.validTo,
-            entry.sourceFactId,
-            entry.createdAt,
-          ]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Phase 5b: Fact-entity links (v2 backups only)
-    for (const entry of backup.factEntities ?? []) {
-      try {
-        await this.db.query(
-          'INSERT INTO fact_entities (fact_id, entity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-          [entry.factId, entry.entityId]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    // Transcript chunks — create stub session rows for FK constraint (same pattern as session_summaries)
-    for (const entry of backup.transcriptChunks ?? []) {
-      try {
-        await this.db.query(
-          `INSERT INTO sessions (id, voice_provider, vision_provider)
-           VALUES ($1, 'restored', 'restored')
-           ON CONFLICT (id) DO NOTHING`,
-          [entry.sessionId]
-        );
-        const embeddingStr = entry.embedding ? `[${entry.embedding.join(',')}]` : null;
-        await this.db.query(
-          `INSERT INTO transcript_chunks (id, session_id, chunk_text, embedding, start_transcript_id, end_transcript_id, created_at)
-           VALUES ($1, $2, $3, $4::vector, $5, $6, $7)
-           ON CONFLICT (id) DO NOTHING`,
-          [
-            entry.id,
-            entry.sessionId,
-            entry.chunkText,
-            embeddingStr,
-            entry.startTranscriptId,
-            entry.endTranscriptId,
-            entry.createdAt,
-          ]
-        );
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    log.info('import complete', { imported, skipped });
-    return { imported, skipped };
+  importMemories(backup: MemoryBackup): Promise<{ imported: number; skipped: number }> {
+    return backupQ.importMemories(this.db, backup);
   }
 
   // --- Phase 5b: Hybrid Retrieval ---
 
-  async searchFactsHybrid(query: string, embedding?: number[], limit = 10): Promise<FactEntry[]> {
-    const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
-
-    // If we have an embedding, use RRF fusion of vector + BM25
-    if (embeddingStr) {
-      const result = await this.db.query<FactRow>(
-        `WITH vector_results AS (
-          SELECT id, content, category, tags, source_session_id, confidence,
-                 access_count, last_accessed_at, created_at, updated_at, expires_at,
-                 valid_from, valid_to, superseded_by, tag_path,
-                 ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector) AS vec_rank
-          FROM facts
-          WHERE embedding IS NOT NULL
-            AND confidence >= 0.2
-            AND valid_to IS NULL
-            AND (expires_at IS NULL OR expires_at > NOW())
-          ORDER BY embedding <=> $1::vector
-          LIMIT $2
-        ),
-        text_results AS (
-          SELECT id, content, category, tags, source_session_id, confidence,
-                 access_count, last_accessed_at, created_at, updated_at, expires_at,
-                 valid_from, valid_to, superseded_by, tag_path,
-                 ROW_NUMBER() OVER (ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $3)) DESC) AS text_rank
-          FROM facts
-          WHERE tsv @@ plainto_tsquery('english', $3)
-            AND confidence >= 0.2
-            AND valid_to IS NULL
-            AND (expires_at IS NULL OR expires_at > NOW())
-          ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $3)) DESC
-          LIMIT $2
-        )
-        SELECT COALESCE(v.id, t.id) AS id,
-               COALESCE(v.content, t.content) AS content,
-               COALESCE(v.category, t.category) AS category,
-               COALESCE(v.tags, t.tags) AS tags,
-               COALESCE(v.source_session_id, t.source_session_id) AS source_session_id,
-               COALESCE(v.confidence, t.confidence) AS confidence,
-               COALESCE(v.access_count, t.access_count) AS access_count,
-               COALESCE(v.last_accessed_at, t.last_accessed_at) AS last_accessed_at,
-               COALESCE(v.created_at, t.created_at) AS created_at,
-               COALESCE(v.updated_at, t.updated_at) AS updated_at,
-               COALESCE(v.expires_at, t.expires_at) AS expires_at,
-               COALESCE(v.valid_from, t.valid_from) AS valid_from,
-               COALESCE(v.valid_to, t.valid_to) AS valid_to,
-               COALESCE(v.superseded_by, t.superseded_by) AS superseded_by,
-               COALESCE(v.tag_path, t.tag_path) AS tag_path,
-               (1.0 / (60 + COALESCE(v.vec_rank, 999))) +
-               (1.0 / (60 + COALESCE(t.text_rank, 999))) AS rrf_score
-        FROM vector_results v
-        FULL OUTER JOIN text_results t ON v.id = t.id
-        ORDER BY rrf_score DESC
-        LIMIT $2`,
-        [embeddingStr, limit, query]
-      );
-      return result.rows.map((r) => this.mapFact(r));
-    }
-
-    // Fallback: text-only BM25 search
-    const result = await this.db.query<FactRow>(
-      `SELECT * FROM facts
-       WHERE tsv @@ plainto_tsquery('english', $1)
-         AND valid_to IS NULL
-         AND (expires_at IS NULL OR expires_at > NOW())
-       ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $1)) DESC
-       LIMIT $2`,
-      [query, limit]
-    );
-    return result.rows.map((r) => this.mapFact(r));
+  searchFactsHybrid(query: string, embedding?: number[], limit?: number): Promise<FactEntry[]> {
+    return searchQ.searchFactsHybrid(this.db, query, embedding, limit);
   }
 
-  async searchTranscripts(
+  searchTranscripts(
     embedding: number[],
-    limit = 10,
+    limit?: number,
     sessionId?: string
   ): Promise<TranscriptChunkEntry[]> {
-    const embeddingStr = `[${embedding.join(',')}]`;
-
-    // Primary: search the transcript_chunks table
-    const params: (string | number)[] = [embeddingStr];
-    let where = 'WHERE embedding IS NOT NULL';
-    if (sessionId) {
-      params.push(sessionId);
-      where += ` AND session_id = $${params.length}`;
-    }
-    params.push(limit);
-    const result = await this.db.query<TranscriptChunkRow>(
-      `SELECT id, session_id, chunk_text, start_transcript_id, end_transcript_id, created_at
-       FROM transcript_chunks
-       ${where}
-       ORDER BY embedding <=> $1::vector
-       LIMIT $${params.length}`,
-      params
-    );
-
-    const chunkResults: TranscriptChunkEntry[] = result.rows.map((r) => this.mapTranscriptChunk(r));
-
-    // Also search legacy per-row embeddings (pre-chunks data from upgraded databases)
-    const remaining = limit - chunkResults.length;
-    if (remaining > 0) {
-      const legacyParams: (string | number)[] = [embeddingStr];
-      let legacyWhere = 'WHERE embedding IS NOT NULL';
-      if (sessionId) {
-        legacyParams.push(sessionId);
-        legacyWhere += ` AND session_id = $${legacyParams.length}`;
-      }
-      legacyParams.push(remaining);
-      const legacy = await this.db.query<{
-        id: number;
-        session_id: string;
-        text: string;
-        created_at: string;
-      }>(
-        `SELECT id, session_id, text, created_at FROM transcripts
-         ${legacyWhere}
-         ORDER BY embedding <=> $1::vector
-         LIMIT $${legacyParams.length}`,
-        legacyParams
-      );
-      const legacyResults: TranscriptChunkEntry[] = legacy.rows.map((r) => ({
-        id: `legacy-${r.id}`,
-        sessionId: r.session_id,
-        chunkText: r.text,
-        startTranscriptId: r.id,
-        endTranscriptId: r.id,
-        createdAt: r.created_at,
-      }));
-      chunkResults.push(...legacyResults);
-    }
-
-    return chunkResults;
+    return searchQ.searchTranscripts(this.db, embedding, limit, sessionId);
   }
 
-  async insertTranscriptChunks(
+  insertTranscriptChunks(
     sessionId: string,
     chunks: {
       chunkText: string;
@@ -1515,332 +274,71 @@ export class PgliteStore implements DataStore {
       endTranscriptId: number;
     }[]
   ): Promise<void> {
-    for (const chunk of chunks) {
-      const id = crypto.randomUUID();
-      const embeddingStr = `[${chunk.embedding.join(',')}]`;
-      await this.db.query(
-        `INSERT INTO transcript_chunks (id, session_id, chunk_text, embedding, start_transcript_id, end_transcript_id)
-         VALUES ($1, $2, $3, $4::vector, $5, $6)`,
-        [
-          id,
-          sessionId,
-          chunk.chunkText,
-          embeddingStr,
-          chunk.startTranscriptId,
-          chunk.endTranscriptId,
-        ]
-      );
-    }
+    return searchQ.insertTranscriptChunks(this.db, sessionId, chunks);
   }
 
   // --- Phase 5b: Temporal Tracking ---
 
-  async invalidateFact(id: string): Promise<void> {
-    await this.db.query('UPDATE facts SET valid_to = NOW(), updated_at = NOW() WHERE id = $1', [
-      id,
-    ]);
+  invalidateFact(id: string): Promise<void> {
+    return entityQ.invalidateFact(this.db, id);
   }
 
-  async supersedeFact(oldId: string, newId: string): Promise<void> {
-    await this.db.query(
-      'UPDATE facts SET valid_to = NOW(), superseded_by = $2, updated_at = NOW() WHERE id = $1',
-      [oldId, newId]
-    );
+  supersedeFact(oldId: string, newId: string): Promise<void> {
+    return entityQ.supersedeFact(this.db, oldId, newId);
   }
 
-  async getFactHistory(content: string, category: string): Promise<FactEntry[]> {
-    const result = await this.db.query<FactRow>(
-      `SELECT * FROM facts WHERE content = $1 AND category = $2 ORDER BY created_at DESC`,
-      [content, category]
-    );
-    return result.rows.map((r) => this.mapFact(r));
+  getFactHistory(content: string, category: string): Promise<FactEntry[]> {
+    return entityQ.getFactHistory(this.db, content, category);
   }
 
   // --- Phase 5b: Entities ---
 
-  async upsertEntity(name: string, type: string): Promise<string> {
-    const id = crypto.randomUUID();
-    const canonicalName = name.toLowerCase().trim();
-    const result = await this.db.query<{ id: string }>(
-      `INSERT INTO entities (id, name, type, canonical_name)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (canonical_name, type) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id`,
-      [id, name, type, canonicalName]
-    );
-    return result.rows[0].id;
+  upsertEntity(name: string, type: string): Promise<string> {
+    return entityQ.upsertEntity(this.db, name, type);
   }
 
-  async getEntities(type?: string): Promise<EntityEntry[]> {
-    if (type) {
-      const result = await this.db.query<{
-        id: string;
-        name: string;
-        type: string;
-        canonical_name: string;
-        created_at: string;
-      }>('SELECT * FROM entities WHERE type = $1 ORDER BY name', [type]);
-      return result.rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        type: r.type as EntityEntry['type'],
-        canonicalName: r.canonical_name,
-        createdAt: r.created_at,
-      }));
-    }
-    const result = await this.db.query<{
-      id: string;
-      name: string;
-      type: string;
-      canonical_name: string;
-      created_at: string;
-    }>('SELECT * FROM entities ORDER BY name');
-    return result.rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: r.type as EntityEntry['type'],
-      canonicalName: r.canonical_name,
-      createdAt: r.created_at,
-    }));
+  getEntities(type?: string): Promise<EntityEntry[]> {
+    return entityQ.getEntities(this.db, type);
   }
 
-  async linkFactEntity(factId: string, entityId: string): Promise<void> {
-    await this.db.query(
-      'INSERT INTO fact_entities (fact_id, entity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [factId, entityId]
-    );
+  linkFactEntity(factId: string, entityId: string): Promise<void> {
+    return entityQ.linkFactEntity(this.db, factId, entityId);
   }
 
-  async getRelatedFacts(factId: string, limit = 5): Promise<FactEntry[]> {
-    const result = await this.db.query<FactRow>(
-      `SELECT DISTINCT f2.* FROM fact_entities fe1
-       JOIN fact_entities fe2 ON fe1.entity_id = fe2.entity_id
-       JOIN facts f2 ON fe2.fact_id = f2.id
-       WHERE fe1.fact_id = $1
-         AND fe2.fact_id != $1
-         AND f2.valid_to IS NULL
-         AND (f2.expires_at IS NULL OR f2.expires_at > NOW())
-       LIMIT $2`,
-      [factId, limit]
-    );
-    return result.rows.map((r) => this.mapFact(r));
+  getRelatedFacts(factId: string, limit?: number): Promise<FactEntry[]> {
+    return entityQ.getRelatedFacts(this.db, factId, limit);
   }
 
-  async getEntityRelationships(entityId: string): Promise<EntityRelationship[]> {
-    const result = await this.db.query<{
-      id: string;
-      source_entity_id: string;
-      target_entity_id: string;
-      relationship: string;
-      valid_from: string;
-      valid_to: string | null;
-      source_fact_id: string | null;
-      created_at: string;
-    }>('SELECT * FROM entity_relationships WHERE source_entity_id = $1 OR target_entity_id = $1', [
-      entityId,
-    ]);
-    return result.rows.map((r) => ({
-      id: r.id,
-      sourceEntityId: r.source_entity_id,
-      targetEntityId: r.target_entity_id,
-      relationship: r.relationship,
-      validFrom: r.valid_from,
-      validTo: r.valid_to,
-      sourceFactId: r.source_fact_id,
-      createdAt: r.created_at,
-    }));
+  getEntityRelationships(entityId: string): Promise<EntityRelationship[]> {
+    return entityQ.getEntityRelationships(this.db, entityId);
   }
 
-  async createEntityRelationship(
+  createEntityRelationship(
     sourceEntityId: string,
     targetEntityId: string,
     relationship: string,
     sourceFactId?: string
   ): Promise<string> {
-    const id = crypto.randomUUID();
-    await this.db.query(
-      `INSERT INTO entity_relationships (id, source_entity_id, target_entity_id, relationship, source_fact_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, sourceEntityId, targetEntityId, relationship, sourceFactId ?? null]
+    return entityQ.createEntityRelationship(
+      this.db,
+      sourceEntityId,
+      targetEntityId,
+      relationship,
+      sourceFactId
     );
-    return id;
   }
 
   // --- Phase 5b: Timeline & Stats ---
 
-  async getTimeline(from: Date, to: Date, entityFilter?: string): Promise<TimelineEntry[]> {
-    const params: unknown[] = [from.toISOString(), to.toISOString()];
-
-    let entityJoin = '';
-    let entityWhere = '';
-    if (entityFilter) {
-      entityJoin =
-        'JOIN fact_entities fe ON f.id = fe.fact_id JOIN entities e ON fe.entity_id = e.id';
-      entityWhere = `AND e.canonical_name = $${params.length + 1}`;
-      params.push(entityFilter.toLowerCase().trim());
-    }
-
-    const query = `
-      SELECT 'fact_created' AS type, f.created_at AS timestamp, f.content, f.id AS fact_id, NULL AS entity_name
-      FROM facts f ${entityJoin}
-      WHERE f.created_at BETWEEN $1 AND $2 ${entityWhere}
-
-      UNION ALL
-
-      SELECT 'fact_invalidated' AS type, f.valid_to AS timestamp, f.content, f.id AS fact_id, NULL AS entity_name
-      FROM facts f ${entityJoin}
-      WHERE f.valid_to IS NOT NULL AND f.valid_to BETWEEN $1 AND $2 ${entityWhere}
-
-      UNION ALL
-
-      SELECT 'entity_created' AS type, e2.created_at AS timestamp, e2.name AS content, NULL AS fact_id, e2.name AS entity_name
-      FROM entities e2
-      WHERE e2.created_at BETWEEN $1 AND $2
-      ${entityFilter ? `AND e2.canonical_name = $${params.length}` : ''}
-
-      UNION ALL
-
-      SELECT 'relationship_created' AS type, er.created_at AS timestamp,
-             er.relationship AS content, er.source_fact_id AS fact_id, NULL AS entity_name
-      FROM entity_relationships er
-      ${entityFilter ? `JOIN entities esrc ON er.source_entity_id = esrc.id JOIN entities etgt ON er.target_entity_id = etgt.id` : ''}
-      WHERE er.created_at BETWEEN $1 AND $2
-      ${entityFilter ? `AND (esrc.canonical_name = $${params.length} OR etgt.canonical_name = $${params.length})` : ''}
-
-      ORDER BY timestamp ASC
-    `;
-
-    const result = await this.db.query<{
-      type: TimelineEntry['type'];
-      timestamp: string;
-      content: string;
-      fact_id: string | null;
-      entity_name: string | null;
-    }>(query, params);
-
-    return result.rows.map((r) => ({
-      type: r.type,
-      timestamp: r.timestamp,
-      content: r.content,
-      factId: r.fact_id ?? undefined,
-      entityName: r.entity_name ?? undefined,
-    }));
+  getTimeline(from: Date, to: Date, entityFilter?: string): Promise<TimelineEntry[]> {
+    return entityQ.getTimeline(this.db, from, to, entityFilter);
   }
 
-  async getMemoryStats(): Promise<MemoryStats> {
-    const [
-      totalFacts,
-      activeFacts,
-      expiredFacts,
-      categories,
-      entities,
-      relationships,
-      dateRange,
-      transcripts,
-    ] = await Promise.all([
-      this.db.query<{ count: string }>('SELECT COUNT(*)::TEXT as count FROM facts'),
-      this.db.query<{ count: string }>(
-        'SELECT COUNT(*)::TEXT as count FROM facts WHERE valid_to IS NULL'
-      ),
-      this.db.query<{ count: string }>(
-        'SELECT COUNT(*)::TEXT as count FROM facts WHERE valid_to IS NOT NULL'
-      ),
-      this.db.query<{ category: string; count: string }>(
-        'SELECT COALESCE(tag_path, category) as category, COUNT(*)::TEXT as count FROM facts WHERE valid_to IS NULL GROUP BY COALESCE(tag_path, category) ORDER BY count DESC LIMIT 10'
-      ),
-      this.db.query<{ count: string }>('SELECT COUNT(*)::TEXT as count FROM entities'),
-      this.db.query<{ count: string }>('SELECT COUNT(*)::TEXT as count FROM entity_relationships'),
-      this.db.query<{ oldest: string | null; newest: string | null }>(
-        'SELECT MIN(created_at)::TEXT as oldest, MAX(created_at)::TEXT as newest FROM facts'
-      ),
-      this.db.query<{ count: string }>(
-        'SELECT ((SELECT COUNT(*) FROM transcript_chunks) + (SELECT COUNT(*) FROM transcripts WHERE embedding IS NOT NULL))::TEXT as count'
-      ),
-    ]);
-
-    const topCategories: Record<string, number> = {};
-    for (const row of categories.rows) {
-      topCategories[row.category] = parseInt(row.count, 10);
-    }
-
-    return {
-      totalFacts: parseInt(totalFacts.rows[0].count, 10),
-      activeFacts: parseInt(activeFacts.rows[0].count, 10),
-      expiredFacts: parseInt(expiredFacts.rows[0].count, 10),
-      topCategories,
-      totalEntities: parseInt(entities.rows[0].count, 10),
-      totalRelationships: parseInt(relationships.rows[0].count, 10),
-      oldestFact: dateRange.rows[0].oldest,
-      newestFact: dateRange.rows[0].newest,
-      totalTranscriptsIndexed: parseInt(transcripts.rows[0].count, 10),
-      storageEstimate: `${totalFacts.rows[0].count} facts`,
-    };
+  getMemoryStats(): Promise<MemoryStats> {
+    return entityQ.getMemoryStats(this.db);
   }
 
   async close(): Promise<void> {
     await this.db.close();
-  }
-
-  // --- Private helpers ---
-
-  private mapFact(r: FactRow): FactEntry {
-    return {
-      id: r.id,
-      content: r.content,
-      category: r.category as FactEntry['category'],
-      tags: r.tags,
-      sourceSessionId: r.source_session_id,
-      confidence: r.confidence,
-      accessCount: r.access_count,
-      lastAccessedAt: r.last_accessed_at,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      expiresAt: r.expires_at,
-      validFrom: r.valid_from ?? undefined,
-      validTo: r.valid_to ?? undefined,
-      supersededBy: r.superseded_by ?? undefined,
-      tagPath: r.tag_path ?? undefined,
-    };
-  }
-
-  private mapSummary(r: {
-    id: string;
-    session_id: string;
-    summary: string;
-    topics: string[];
-    key_decisions: string[];
-    open_threads: string[];
-    extraction_model: string;
-    extraction_cost_usd: number | null;
-    created_at: string;
-  }): SessionSummaryEntry {
-    return {
-      id: r.id,
-      sessionId: r.session_id,
-      summary: r.summary,
-      topics: r.topics,
-      keyDecisions: r.key_decisions,
-      openThreads: r.open_threads,
-      extractionModel: r.extraction_model,
-      extractionCostUsd: r.extraction_cost_usd,
-      createdAt: r.created_at,
-    };
-  }
-
-  private mapTranscriptChunk(r: TranscriptChunkRow): TranscriptChunkEntry {
-    const entry: TranscriptChunkEntry = {
-      id: r.id,
-      sessionId: r.session_id,
-      chunkText: r.chunk_text,
-      startTranscriptId: r.start_transcript_id,
-      endTranscriptId: r.end_transcript_id,
-      createdAt: r.created_at,
-    };
-    // Parse embedding string from Postgres vector format for backup inclusion
-    if (r.embedding) {
-      const vecStr = r.embedding.replace(/^\[|\]$/g, '');
-      entry.embedding = vecStr.split(',').map(Number);
-    }
-    return entry;
   }
 }
