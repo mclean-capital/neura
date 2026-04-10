@@ -725,9 +725,48 @@ PGlite (WASM Postgres) can corrupt on dirty shutdowns (force kill, crash, power 
 - [x] Log warning when backup is stale (> 1 hour old)
 - [x] CLI command: `neura backup` / `neura restore` for manual export/import
 
+#### Phase 5b — Advanced Memory ([detailed architecture](phase5b-advanced-memory.md))
+
+- [x] Sub-phase A — Recall Quality: hybrid BM25+cosine retrieval, LLM reranking, configurable pipeline
+- [x] Sub-phase B — Temporal & Relational: valid_from/valid_to, entity graph, timeline queries, fact invalidation
+- [x] Sub-phase C — Organization & Tiers: L0-L3 memory tiers with token budgets, hierarchical tags, cross-references, memory stats
+- [x] Transcript chunks table: chunked segments with overlap for deep search accuracy
+
 ### Upcoming
 
-#### Phase 5 — Discovery Loop
+#### Phase 5 — CLI Client
+
+Make the CLI a full voice/text client, proving the WebSocket protocol is truly client-agnostic. Currently `@neura/cli` only manages the core service (install, start, stop, config). This phase adds interactive conversation capabilities.
+
+- [ ] `neura chat` — text-mode client (stdin/stdout, WebSocket to core)
+- [ ] `neura listen` — voice-mode client (mic/speaker via system audio)
+- [ ] Presence integration (PASSIVE/ACTIVE states in terminal)
+- [ ] Streaming transcript display (input + output)
+- [ ] Cost indicator in terminal
+- [ ] Validate protocol works for headless/scriptable clients
+
+#### Phase 6 — Skill Framework & Self-Extension
+
+Standardize how tools/skills are defined, loaded, and created. This is the foundation for everything that follows — Discovery Loop triggers skills, self-extension creates skills.
+
+**6a — Skill Template & Runtime**
+
+- [ ] Skill directory structure (`SKILL.md` with YAML frontmatter)
+- [ ] Runtime skill loading (no recompilation)
+- [ ] Skill discovery: scan `~/.neura/skills/` at startup
+- [ ] Extract existing tools (vision, time, memory, presence, tasks) into skill format
+- [ ] User-installable skills from `~/.neura/skills/`
+
+**6b — Self-Extension**
+
+- [ ] `create_skill` tool: Neura writes new skills autonomously via voice/text
+- [ ] Skill validation (syntax check, dry-run before activation)
+- [ ] Skill testing framework (verify new skills work before committing)
+- [ ] Bootstrap: ship enough base skills that Neura can extend itself for common use cases
+
+#### Phase 7 — Discovery Loop
+
+Now with skills infrastructure in place, the Discovery Loop can trigger skills and new integrations can be created on-demand.
 
 - [ ] Heartbeat scheduler (configurable interval, default 30min)
 - [ ] Heartbeat checklist (DB-stored, configurable via CLI or voice)
@@ -738,50 +777,7 @@ PGlite (WASM Postgres) can corrupt on dirty shutdowns (force kill, crash, power 
 - [ ] Proactive voice notifications to connected clients
 - [ ] Cost-optimized isolated heartbeat sessions
 
-#### Phase 5b — Advanced Memory ([detailed architecture](phase5b-advanced-memory.md))
-
-Upgrades the Phase 3 memory system with better recall, temporal awareness, and structured organization. Three sub-phases, each independently shippable:
-
-**Sub-phase A — Recall Quality** (highest ROI)
-
-- [ ] Hybrid retrieval: BM25 keyword scoring + cosine similarity fusion
-- [ ] LLM reranking for top-K candidates before prompt injection
-- [ ] Vector-index raw transcript entries as deep search layer (L3)
-- [ ] Configurable retrieval pipeline (vector-only, hybrid, hybrid+rerank)
-
-**Sub-phase B — Temporal & Relational**
-
-- [ ] `valid_from` / `valid_to` columns on facts table, auto-set on insert
-- [ ] Fact invalidation (mark facts as no longer true, preserve history)
-- [ ] Entity-relationship edges table (person↔project, tool↔project)
-- [ ] Entity extraction from transcripts (regex + pattern-based, no ML)
-- [ ] Timeline queries ("what changed this week?")
-
-**Sub-phase C — Organization & Tiers**
-
-- [ ] Formalized memory tiers: L0 (identity, always loaded), L1 (essential context, always loaded), L2 (session context, loaded on start + topic refresh), L3 (deep transcript search, on-demand only)
-- [ ] Per-tier token budgets with explicit priority trimming
-- [ ] Hierarchical tags: project → topic → subtopic (replaces flat `category`)
-- [ ] Cross-reference detection: link facts sharing entities or topics
-- [ ] Memory statistics tool (`memory_stats` — count, categories, staleness)
-
-**Follow-up — Transcript Chunks Table**
-
-- [x] `transcript_chunks` table: store chunked transcript segments (3 entries per chunk) with 1-entry overlap, replacing per-row midpoint embedding
-- [x] Return full chunk context from `searchTranscripts()` instead of single midpoint utterance
-- [x] Chunk-level metadata: session ID, start/end transcript IDs
-- [x] Improves deep search (L3) accuracy — matched content and returned text always align
-
-#### Phase 6 — Skill Registry
-
-- [ ] Skill directory structure (`SKILL.md` with YAML frontmatter)
-- [ ] Runtime skill loading (no recompilation)
-- [ ] Extract existing tools into skill format
-- [ ] User-installable skills from `~/.neura/skills/`
-- [ ] Skill marketplace foundation
-- [ ] Self-extensible: agent writes new skills autonomously
-
-#### Phase 7 — Workers & Execution Loop
+#### Phase 8 — Workers & Execution Loop
 
 - [ ] Worker runtime and lifecycle management
 - [ ] Execution loop (autonomous task completion)
@@ -792,7 +788,7 @@ Upgrades the Phase 3 memory system with better recall, temporal awareness, and s
 - [ ] Enable Grok's `web_search` and `x_search` tools
 - [ ] File/document upload
 
-#### Phase 8 — Cloud & Clients
+#### Phase 9 — Cloud & Clients
 
 - [ ] Cloud-hosted core (managed deployment, auth, teams)
 - [ ] WebSocket auth (bearer token on upgrade handshake)
@@ -802,9 +798,10 @@ Upgrades the Phase 3 memory system with better recall, temporal awareness, and s
 - [ ] `packages/relay` for hybrid mode (local A/V proxy to cloud core)
 - [ ] React Native mobile (`packages/mobile`)
 - [ ] Browser extension (`packages/extension`)
+- [ ] Skill marketplace
 - [ ] Worker marketplace
 
-#### Phase 9 — Real-time Video & Specialized
+#### Phase 10 — Real-time Video & Specialized
 
 - [ ] Real-time video mode (adaptive FPS, system audio, push-to-talk)
 - [ ] VS Code extension (voice coding assistant)
