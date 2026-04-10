@@ -1,5 +1,6 @@
 import Store from 'electron-store';
 import { safeStorage } from 'electron';
+import { randomBytes } from 'crypto';
 
 interface StoredConfig {
   setupComplete: boolean;
@@ -12,6 +13,7 @@ interface StoredConfig {
   launchAtStartup: boolean;
   startMinimized: boolean;
   globalHotkey: string;
+  authToken: string;
 }
 
 // Lazy-initialized — electron-store calls app.getPath('userData') which fails before app.ready
@@ -27,6 +29,7 @@ function store(): Store<StoredConfig> {
         launchAtStartup: false,
         startMinimized: false,
         globalHotkey: 'CommandOrControl+Shift+N',
+        authToken: '',
       },
     });
   }
@@ -79,5 +82,37 @@ export function getStore() {
     getHotkey: () => store().get('globalHotkey'),
     getLaunchAtStartup: () => store().get('launchAtStartup'),
     getStartMinimized: () => store().get('startMinimized'),
+
+    /** Get or generate a persistent auth token for core ↔ client communication. */
+    getAuthToken: (): string => {
+      const stored = store().get('authToken');
+
+      // Generate new token if none stored
+      if (!stored) {
+        const token = randomBytes(32).toString('hex');
+        try {
+          store().set('authToken', encrypt(token));
+        } catch {
+          // safeStorage unavailable — store plaintext as fallback
+          store().set('authToken', token);
+        }
+        return token;
+      }
+
+      // Decrypt existing token
+      const decrypted = decrypt(stored);
+      if (decrypted) return decrypted;
+
+      // Decrypt failed (keychain reset) — regenerate
+      console.error('[store] auth token decryption failed — regenerating');
+      store().set('authToken', '');
+      const token = randomBytes(32).toString('hex');
+      try {
+        store().set('authToken', encrypt(token));
+      } catch {
+        store().set('authToken', token);
+      }
+      return token;
+    },
   };
 }

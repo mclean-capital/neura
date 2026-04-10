@@ -2,12 +2,21 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import express from 'express';
 import { Logger } from '@neura/utils/logger';
+import { verifyToken } from './auth.js';
 import type { CoreServices } from './lifecycle.js';
 
 const log = new Logger('server');
 
 export function createApp(services: CoreServices, getPort: () => number): express.Express {
   const app = express();
+  const { authToken } = services.config;
+
+  // Security headers
+  app.use((_req, res, next) => {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
 
   app.get('/health', (_req, res) => {
     res.json({
@@ -18,6 +27,25 @@ export function createApp(services: CoreServices, getPort: () => number): expres
     });
   });
 
+  // Auth middleware for sensitive endpoints — skipped if no token configured (dev mode)
+  function requireAuth(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ): void {
+    if (!authToken) {
+      next();
+      return;
+    }
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
+    if (!token || !verifyToken(token, authToken)) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    next();
+  }
+
   // Serve web UI from ~/.neura/ui/ if it exists (optional static mount)
   const uiDir = join(services.config.neuraHome, 'ui');
   const uiAvailable = existsSync(join(uiDir, 'index.html'));
@@ -26,7 +54,7 @@ export function createApp(services: CoreServices, getPort: () => number): expres
     log.info('web UI mounted', { path: uiDir });
   }
 
-  app.post('/backup', (_req, res) => {
+  app.post('/backup', requireAuth, (_req, res) => {
     if (!services.backupService) {
       res.status(503).json({ error: 'backup not available (no store)' });
       return;
@@ -37,7 +65,7 @@ export function createApp(services: CoreServices, getPort: () => number): expres
       .catch((err) => res.status(500).json({ error: String(err) }));
   });
 
-  app.post('/restore', (_req, res) => {
+  app.post('/restore', requireAuth, (_req, res) => {
     if (!services.backupService) {
       res.status(503).json({ error: 'backup not available (no store)' });
       return;

@@ -48,7 +48,14 @@ export async function listenCommand(options: { port?: string; debug?: boolean })
     process.exit(1);
   }
 
-  const wsUrl = `ws://localhost:${port}/ws`;
+  // Auth token is required after the security hardening update. Load it from
+  // config (or NEURA_AUTH_TOKEN env var) and pass via ?token= query string —
+  // same pattern the web UI uses. If no token is set, connect unauthenticated
+  // which only works if the core was started without auth.
+  const token = config.authToken;
+  const wsUrl = token
+    ? `ws://localhost:${port}/ws?token=${encodeURIComponent(token)}`
+    : `ws://localhost:${port}/ws`;
   const ws = new WebSocket(wsUrl);
 
   let presenceState = '';

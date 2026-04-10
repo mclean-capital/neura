@@ -53,6 +53,7 @@ describe('backupCommand', () => {
 
     expect(mockFetch).toHaveBeenCalledWith('http://localhost:3002/backup', {
       method: 'POST',
+      headers: {},
       signal: expect.any(AbortSignal),
     });
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('memory-backup.json'));
@@ -105,6 +106,7 @@ describe('restoreCommand', () => {
 
     expect(mockFetch).toHaveBeenCalledWith('http://localhost:3002/restore', {
       method: 'POST',
+      headers: {},
       signal: expect.any(AbortSignal),
     });
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Restore complete'));

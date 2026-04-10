@@ -16,6 +16,12 @@ export async function logsCommand(options: { lines?: string; follow?: boolean })
 
   const lines = options.lines ?? '50';
 
+  // Validate --lines is a positive integer to prevent command injection
+  if (!/^\d+$/.test(lines) || parseInt(lines, 10) < 1) {
+    console.log(chalk.red('--lines must be a positive integer'));
+    return;
+  }
+
   if (options.follow) {
     // Tail with follow — pass through to OS tail command
     const cmd = platform() === 'win32' ? 'powershell' : 'tail';

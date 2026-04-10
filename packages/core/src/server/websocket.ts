@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import type { Server } from 'http';
+import type { Server, IncomingMessage } from 'http';
+import { URL } from 'url';
 import type { ClientMessage, ServerMessage, VoiceProvider } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import { createVoiceSession } from '../providers/voice-session.js';
@@ -10,6 +11,7 @@ import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { OnnxWakeDetector } from '../presence/onnx-wake-detector.js';
 import { PresenceManager } from '../presence/presence-manager.js';
+import { verifyToken } from './auth.js';
 import type { CoreServices } from './lifecycle.js';
 
 const log = new Logger('server');
@@ -33,8 +35,29 @@ function getAvailableWakeWords(modelsDir: string): string[] {
 }
 
 export function attachWebSocket(httpServer: Server, services: CoreServices): WebSocketServer {
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   const { store, memoryManager, config, connectedClients, pendingCleanups } = services;
+  const { authToken } = config;
+
+  const wss = new WebSocketServer({
+    server: httpServer,
+    path: '/ws',
+    maxPayload: 10 * 1024 * 1024, // 10 MB — accommodates 4K screen share frames
+    verifyClient: authToken
+      ? (
+          info: { req: IncomingMessage },
+          done: (ok: boolean, code?: number, msg?: string) => void
+        ) => {
+          const url = new URL(info.req.url ?? '', 'http://localhost');
+          const token = url.searchParams.get('token');
+          if (token && verifyToken(token, authToken)) {
+            done(true);
+          } else {
+            log.warn('websocket auth rejected');
+            done(false, 401, 'Unauthorized');
+          }
+        }
+      : undefined,
+  });
 
   wss.on('connection', (ws: WebSocket) => {
     log.info('client connected');

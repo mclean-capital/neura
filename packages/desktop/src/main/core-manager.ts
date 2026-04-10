@@ -6,6 +6,7 @@ import { app } from 'electron';
 interface CoreManagerOptions {
   port: number;
   env: { xaiApiKey: string; googleApiKey: string };
+  authToken?: string;
   onCrash?: (code: number | null) => void;
 }
 
@@ -47,6 +48,7 @@ export class CoreManager {
       GOOGLE_API_KEY: this.opts.env.googleApiKey,
       PG_DATA_PATH: pgDataPath,
       NODE_ENV: app.isPackaged ? 'production' : 'development',
+      ...(this.opts.authToken ? { NEURA_AUTH_TOKEN: this.opts.authToken } : {}),
     };
 
     if (app.isPackaged) {

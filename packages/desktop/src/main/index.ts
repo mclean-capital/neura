@@ -146,6 +146,7 @@ app.on('ready', () => {
     }
 
     const appStore = getStore();
+    const authToken = appStore.getAuthToken();
 
     // NEURA_DESKTOP_DEV is set by scripts/dev.ts — more reliable than app.isPackaged
     // which can misdetect when running `electron dist-main/index.mjs`
@@ -161,6 +162,7 @@ app.on('ready', () => {
       coreManager = new CoreManager({
         port: corePort,
         env: apiKeys,
+        authToken,
         onCrash: (code) => {
           const logPath = path.join(app.getPath('userData'), 'logs', 'core.log');
           void dialog
@@ -179,7 +181,7 @@ app.on('ready', () => {
 
     async function startUIServer(): Promise<void> {
       if (uiServer) return;
-      uiServer = new UIServer({ corePort });
+      uiServer = new UIServer({ corePort, authToken });
       const uiPort = await uiServer.start();
       rendererUrl = `http://127.0.0.1:${uiPort}`;
     }

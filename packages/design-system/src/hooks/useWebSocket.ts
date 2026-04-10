@@ -6,7 +6,7 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 
 type MessageHandler = (msg: ServerMessage) => void;
 
-export function useWebSocket(url: string) {
+export function useWebSocket(url: string, authToken?: string) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
   const handlersRef = useRef(new Set<MessageHandler>());
@@ -28,7 +28,14 @@ export function useWebSocket(url: string) {
     intentionalCloseRef.current = false;
     setStatus('connecting');
 
-    const ws = new WebSocket(url);
+    // Append auth token as query param if provided
+    let wsUrl = url;
+    if (authToken) {
+      const sep = url.includes('?') ? '&' : '?';
+      wsUrl = `${url}${sep}token=${encodeURIComponent(authToken)}`;
+    }
+
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -66,7 +73,7 @@ export function useWebSocket(url: string) {
         setStatus('disconnected');
       }
     };
-  }, [url]);
+  }, [url, authToken]);
 
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
