@@ -13,6 +13,14 @@
 </tr>
 </table>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@mclean-capital/neura"><img alt="npm version" src="https://img.shields.io/npm/v/@mclean-capital/neura?style=flat-square&color=D4940A&labelColor=1a1a1a&label=npm"></a>
+  <a href="https://www.npmjs.com/package/@mclean-capital/neura"><img alt="npm downloads" src="https://img.shields.io/npm/dm/@mclean-capital/neura?style=flat-square&color=888888&labelColor=1a1a1a&label=downloads"></a>
+  <a href="https://github.com/mclean-capital/neura/actions/workflows/release.yml"><img alt="Release CI" src="https://img.shields.io/github/actions/workflow/status/mclean-capital/neura/release.yml?branch=main&style=flat-square&labelColor=1a1a1a&label=release"></a>
+  <a href="./LICENSE"><img alt="License MIT" src="https://img.shields.io/github/license/mclean-capital/neura?style=flat-square&color=888888&labelColor=1a1a1a"></a>
+  <a href="https://nodejs.org"><img alt="Node ≥22" src="https://img.shields.io/badge/node-%3E%3D22-888888?style=flat-square&labelColor=1a1a1a"></a>
+</p>
+
 ## How It Works
 
 Neura uses a hybrid multi-model architecture: **Grok** handles voice conversation (Eve voice) while **Gemini** runs as a continuous vision watcher that builds temporal visual context. The two are bridged via tool calls — when you ask "what do you see?", the voice model queries the watcher, which has been watching your camera or screen the entire time.
