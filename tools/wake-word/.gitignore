@@ -1,0 +1,8 @@
+# Python venv
+.venv/
+
+# Training data (downloaded via setup.sh)
+data/
+
+# Training output (models, features, audio clips)
+output/

@@ -272,8 +272,73 @@ Tested NVIDIA Parakeet as a free/local alternative (via sherpa-onnx-node, int8 q
 - Pre-speech buffer (150ms) needed to capture word onset
 - Default wake word changed to "jarvis" (common word, transcribes perfectly) — configurable via `NEURA_ASSISTANT_NAME` env var or `assistantName` in config.json
 
-**Future optimizations:**
+**Future optimizations (completed — see Prototype 4 below):**
 
-- openWakeWord for fixed/default wake word (free, <1ms, ~2MB) with Gemini fallback for custom names
+- ~~openWakeWord for fixed/default wake word (free, <1ms, ~2MB) with Gemini fallback for custom names~~ → Replaced by livekit-wakeword ONNX pipeline
 - Silero VAD to replace energy-based VAD for better speech boundary detection
 - Client-side VAD for cloud deployments (reduce bandwidth)
+
+---
+
+## Prototype 4: ONNX-Based Wake Detection (final, replaces Prototype 3)
+
+**Key insight:** [livekit-wakeword](https://github.com/livekit/livekit-wakeword) (Apache 2.0) provides a complete pipeline for training and deploying custom wake word models. Unlike openWakeWord (which was evaluated but lacked Node.js/browser support), livekit-wakeword's ONNX models run directly in Node.js via `onnxruntime-node` — no Python sidecar needed.
+
+**Architecture:**
+
+```
+Client streams audio (24kHz PCM) → Core
+                                    ↓
+                              [Resample 24kHz → 16kHz]
+                                    ↓
+                              [2-second sliding window ring buffer]
+                                    ↓  (every ~320ms)
+                              [Energy gate: skip if silent]
+                                    ↓
+                              [Mel spectrogram ONNX (1 MB)]
+                                    ↓
+                              [Speech embedding ONNX (1.3 MB)]
+                                    ↓
+                              [Classifier ONNX (~170 KB)]
+                                    ↓
+                              [Score ≥ 0.5 → WAKE DETECTED]
+                                    ↓
+                              [Replay buffered audio to Grok]
+```
+
+**Why this replaced Gemini transcription:**
+
+| Metric            | Gemini (Prototype 3)          | ONNX (Prototype 4)                 |
+| ----------------- | ----------------------------- | ---------------------------------- |
+| Latency           | ~2-5s (API round-trip)        | ~5-20ms (local inference)          |
+| Cost/wake         | $0.000115                     | $0                                 |
+| Offline           | No (requires internet)        | Yes                                |
+| False positives   | 0 in testing (14/14 rejected) | 0.17 FPPH at optimal threshold     |
+| Custom wake words | Any word, no training         | Requires ~45 min training per word |
+| Dependencies      | Google API key                | onnxruntime-node (~2.5 MB models)  |
+
+**Training pipeline (via livekit-wakeword):**
+
+1. VITS TTS synthesizes 10,000 audio clips (positive + adversarial negatives) with 904 speaker blending
+2. Augmentation adds room reverb, background noise, EQ distortion (2 rounds)
+3. Feature extraction: mel spectrogram → Google CNN speech embeddings (both frozen ONNX)
+4. 3-phase adaptive training of Conv-Attention classifier (30K steps)
+5. Export to ONNX (~170 KB per wake word)
+6. Deploy to `~/.neura/models/{name}.onnx`
+
+**Trained models:**
+
+| Model  | Accuracy | Recall | FPPH                   | Size   |
+| ------ | -------- | ------ | ---------------------- | ------ |
+| jarvis | 91.7%    | 83.5%  | 1.9 (0.17 at optimal)  | 172 KB |
+| neura  | 95.1%    | 90.4%  | 1.46 (0.17 at optimal) | 172 KB |
+
+**Files created/modified:**
+
+- `packages/core/src/presence/onnx-wake-detector.ts` — NEW: ONNX 3-stage pipeline (mel → embedding → classifier), ring buffer, resampling, energy gate, debounce
+- `packages/core/src/presence/onnx-wake-detector.test.ts` — NEW: 7 unit tests with mocked ONNX runtime
+- `packages/core/src/server/websocket.ts` — MODIFIED: `startWakeDetector()` loads ONNX models, scans available wake words
+- `packages/core/src/presence/wake-detector.ts` — PRESERVED: legacy Gemini-based detector (unused, kept for reference)
+- `tools/wake-word/` — NEW: training configs, setup/train/deploy scripts, full documentation
+
+**Apple Silicon gotcha:** The training environment (Python + livekit-wakeword) requires arm64-compatible native extensions. When the shell runs under Rosetta (x86_64), use `ARCHFLAGS="-arch arm64"` to rebuild webrtcvad. The setup script handles this automatically.

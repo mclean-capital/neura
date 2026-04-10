@@ -1,2 +1,2 @@
 export { PresenceManager, type PresenceCallbacks, type PresenceState } from './presence-manager.js';
-export { WakeDetector, type WakeDetectorConfig } from './wake-detector.js';
+export { OnnxWakeDetector, type OnnxWakeDetectorConfig } from './onnx-wake-detector.js';
