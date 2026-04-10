@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'path';
 
 // Mock onnxruntime-node before importing OnnxWakeDetector
 const mockRun = vi.fn();
@@ -78,9 +79,11 @@ describe('OnnxWakeDetector', () => {
 
       expect(mockCreate).toHaveBeenCalledTimes(3);
       const paths = mockCreate.mock.calls.map((c: unknown[]) => c[0]);
-      expect(paths).toContain('/tmp/models/melspectrogram.onnx');
-      expect(paths).toContain('/tmp/models/embedding_model.onnx');
-      expect(paths).toContain('/tmp/models/jarvis.onnx');
+      // Source uses path.join which normalizes to the platform separator
+      // (\\ on Windows, / elsewhere). Build expected paths the same way.
+      expect(paths).toContain(join('/tmp/models', 'melspectrogram.onnx'));
+      expect(paths).toContain(join('/tmp/models', 'embedding_model.onnx'));
+      expect(paths).toContain(join('/tmp/models', 'jarvis.onnx'));
     });
 
     it('throws when model file is missing', async () => {

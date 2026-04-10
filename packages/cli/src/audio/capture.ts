@@ -5,6 +5,8 @@
  * The implementation lazy-loads decibri so `neura chat` works without it.
  */
 
+import { audioInstallHint } from './install-hints.js';
+
 export interface AudioCapture {
   start(): void;
   stop(): void;
@@ -45,10 +47,7 @@ export async function createAudioCapture(): Promise<AudioCapture> {
       },
     };
   } catch {
-    throw new Error(
-      'Mic capture requires the "decibri" package.\n' +
-        'Install it with: npm install decibri -w @neura/cli'
-    );
+    throw new Error('Mic capture requires the "decibri" package.\n' + audioInstallHint('decibri'));
   }
 }
 

@@ -7,6 +7,7 @@
 
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
+import { audioInstallHint } from './install-hints.js';
 
 /**
  * Silence noisy mpg123 CoreAudio warnings emitted by node-speaker when the
@@ -422,15 +423,17 @@ export async function createAudioPlayback(): Promise<AudioPlayback> {
     return createSoxPlayback();
   }
 
+  const sysInstall =
+    process.platform === 'darwin'
+      ? 'brew install sox'
+      : isWindows
+        ? 'choco install sox.portable'
+        : 'sudo apt install sox';
+
   throw new Error(
-    'No audio playback backend found.\n' +
-      'Install one of:\n' +
-      '  npm install speaker -w @neura/cli\n' +
-      '  npm install @picovoice/pvspeaker-node -w @neura/cli\n' +
-      (process.platform === 'darwin'
-        ? '  brew install sox'
-        : isWindows
-          ? '  choco install sox.portable'
-          : '  sudo apt install sox')
+    'No audio playback backend found. Install one of:\n' +
+      `  ${audioInstallHint('speaker')}\n` +
+      `  ${audioInstallHint('@picovoice/pvspeaker-node')}\n` +
+      `  ${sysInstall}`
   );
 }

@@ -10,7 +10,7 @@ import {
 import { getServiceManager } from '../service/manager.js';
 import { getPlatformLabel } from '../service/detect.js';
 import { checkHealth, waitForHealthy } from '../health.js';
-import { hasCoreBinary } from '../download.js';
+import { hasCoreBinary, downloadCore, getLatestVersion } from '../download.js';
 import { findFreePort } from '../port.js';
 
 export async function installCommand(): Promise<void> {
@@ -102,18 +102,24 @@ export async function installCommand(): Promise<void> {
   console.log(chalk.dim('  Config saved to ' + home + '/config.json'));
   console.log(chalk.dim('  Auth token: ' + chalk.bold('generated')));
 
-  // Check for core binary
+  // Download core binary if missing — first-run install needs this.
   if (!hasCoreBinary()) {
     console.log();
-    console.log(
-      chalk.yellow(
-        '  Core binary not found. Try:\n' +
-          '    neura update      Download the latest core binary\n' +
-          '    neura uninstall   Reset and start fresh'
-      )
-    );
-    console.log();
-    return;
+    console.log(chalk.dim('  Downloading core binary...'));
+    try {
+      const version = await getLatestVersion();
+      await downloadCore(version);
+      console.log(chalk.green('  ✓ Core binary installed (' + version + ')'));
+    } catch (err) {
+      console.log(
+        chalk.yellow(
+          '  Could not download core binary: ' + (err instanceof Error ? err.message : String(err))
+        )
+      );
+      console.log(chalk.dim('  You can retry with: neura update'));
+      console.log();
+      return;
+    }
   }
 
   // Register service

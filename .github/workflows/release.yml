@@ -89,3 +89,15 @@ jobs:
       tag: ${{ needs.release.outputs.tag }}
     permissions:
       contents: write
+
+  cli-publish:
+    name: CLI Publish
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    uses: ./.github/workflows/cli-publish.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

@@ -1,9 +1,8 @@
 import chalk from 'chalk';
+import { CLI_VERSION } from '../version.js';
 import { loadConfig } from '../config.js';
 import { checkHealth } from '../health.js';
 import { hasCoreBinary, getInstalledCoreVersion } from '../download.js';
-
-const CLI_VERSION = process.env.NEURA_VERSION ?? '0.0.0-dev';
 
 export async function versionCommand(): Promise<void> {
   const config = loadConfig();

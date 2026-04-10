@@ -1,0 +1,71 @@
+name: CLI Publish
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.9.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance attestation
+
+jobs:
+  publish:
+    name: Publish @mclean-capital/neura
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      - name: Skip if version already published
+        id: check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if npm view "@mclean-capital/neura@$VERSION" version >/dev/null 2>&1; then
+            echo "Already published @mclean-capital/neura@$VERSION, skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync CLI version from root package.json
+        if: steps.check.outputs.skip != 'true'
+        run: npm run cli:version-sync
+
+      - name: Build CLI (and workspace deps)
+        if: steps.check.outputs.skip != 'true'
+        run: npx turbo run build --filter=@mclean-capital/neura
+
+      # Remove devDependencies from the tarball. `@neura/types` is a private
+      # workspace package used only at build time for type erasure; it must
+      # not ship to npm where it would 404 for any tool that tries to resolve
+      # the dependency graph.
+      - name: Strip devDependencies before publish
+        if: steps.check.outputs.skip != 'true'
+        working-directory: packages/cli
+        run: npm pkg delete devDependencies
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        working-directory: packages/cli
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

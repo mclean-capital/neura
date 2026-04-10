@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { CLI_VERSION } from './version.js';
 import { installCommand } from './commands/install.js';
 import { statusCommand } from './commands/status.js';
 import { startCommand } from './commands/start.js';
@@ -23,7 +24,7 @@ import { listenCommand } from './commands/listen.js';
 
 const program = new Command();
 
-program.name('neura').description('Neura — AI assistant core service manager').version('0.0.0');
+program.name('neura').description('Neura — AI assistant core service manager').version(CLI_VERSION);
 
 // Install & setup
 program

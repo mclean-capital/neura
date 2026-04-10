@@ -1,14 +1,45 @@
 {
-  "name": "@neura/cli",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@mclean-capital/neura",
+  "version": "1.9.0",
+  "description": "Neura — CLI for installing and managing the Neura AI assistant core service. Includes text chat and voice listen clients.",
+  "keywords": [
+    "neura",
+    "ai",
+    "voice-assistant",
+    "cli",
+    "grok",
+    "gemini",
+    "llm",
+    "voice",
+    "speech",
+    "mclean-capital"
+  ],
+  "homepage": "https://github.com/mclean-capital/neura#readme",
+  "bugs": {
+    "url": "https://github.com/mclean-capital/neura/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mclean-capital/neura.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
+  "author": "McLean Capital",
   "type": "module",
   "bin": {
     "neura": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
@@ -16,7 +47,6 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7",
-    "@neura/types": "*",
     "chalk": "^5",
     "commander": "^13",
     "ws": "^8.20.0"
@@ -27,6 +57,7 @@
     "speaker": "^0.5.5"
   },
   "devDependencies": {
+    "@neura/types": "*",
     "@types/node": "^25",
     "@types/ws": "^8.18.1",
     "tsx": "^4"
