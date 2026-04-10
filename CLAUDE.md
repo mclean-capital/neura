@@ -78,11 +78,12 @@ Shared runtime utilities used by core and clients.
 
 ### core
 
-Standalone server with provider adapter layer and pluggable storage. Organized into domain directories with TypeScript classes for stateful services.
+Standalone server with provider adapter layer and pluggable storage. Organized into domain directories with TypeScript classes for stateful services. Includes discovery loop (proactive task notifications), shared-secret auth, and voice-managed work items.
 
 **Directory structure:**
 
 - `server/` — Express HTTP + WebSocket server, lifecycle management, per-client state machines
+- `auth/` — `auth.ts` shared-secret token verification (timing-safe comparison), `verifyClient` for WebSocket, middleware for HTTP
 - `memory/` — `MemoryManager`, `ExtractionPipeline`, `Reranker`, `BackupService`, prompt builder
 - `presence/` — `PresenceManager` state machine (PASSIVE/ACTIVE/IDLE), `OnnxWakeDetector` (on-device ONNX inference via livekit-wakeword pipeline)
 - `tools/` — Tool definitions and handlers split by domain (vision, time, memory, presence, tasks)
@@ -100,7 +101,7 @@ npm run dev             # http://localhost:3002
 
 ### cli
 
-CLI tool for installing and managing Neura Core as a persistent OS background service.
+CLI tool for installing and managing Neura Core as a persistent OS background service. Auto-generates 256-bit auth token on install.
 
 - `src/index.ts` — Commander.js entry point, 15 commands
 - `src/config.ts` — Load/save `~/.neura/config.json`

@@ -8,7 +8,7 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 
 ## Current State
 
-Phase 4 (Storage Hardening) is complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, PGlite backup/recovery, and 100+ unit tests.
+Phase 5 Discovery Loop MVP and Security Hardening are complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, PGlite backup/recovery, voice-managed tasks with deadline checking, shared-secret auth, and 270+ unit tests.
 
 ### What's built
 
@@ -22,6 +22,8 @@ Phase 4 (Storage Hardening) is complete. The platform is a fully functional mono
 - **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
 - **Memory & Identity** — Cross-session memory via extraction pipeline (Gemini 2.5 Flash), semantic recall (Gemini Embedding 2, 3072-dim vectors), voice-callable memory tools, token-budgeted system prompt injection
 - **Presence & Wake** — On-device ONNX wake word detection (~5-20ms, zero cost, via livekit-wakeword pipeline), PASSIVE/ACTIVE/IDLE state machine, audio replay to Grok, multiple trained wake words (jarvis, neura), manual start fallback
+- **Discovery Loop (MVP)** — Voice-managed task CRUD, 15-min deadline checking with Gemini Flash summaries, presence-aware notifications (calendar/webhook/vision triggers upcoming)
+- **Security Hardening** — Shared-secret token auth on WebSocket and HTTP, localhost binding, maxPayload limits, security headers, timing-safe comparison
 - **`neura update`** — Downloads core bundles from GitHub releases, atomic extraction, background auto-update check with local cache
 - **CI/CD** — Semantic release, desktop builds (Electron), core bundle builds for 5 platforms, auto-changelog
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
@@ -550,7 +552,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 | Project             | Stars | Voice         | Continuous Vision | Workers | Proactive  | Transport        |
 | ------------------- | ----- | ------------- | ----------------- | ------- | ---------- | ---------------- |
-| **Neura**           | —     | Native (Grok) | **Yes (watcher)** | Planned | Planned    | WebSocket        |
+| **Neura**           | —     | Native (Grok) | **Yes (watcher)** | Planned | **Yes**    | WebSocket        |
 | OpenAI Realtime     | —     | Native        | No                | No      | No         | WebSocket/WebRTC |
 | LiveKit Agents      | ~10k  | Native        | Partial           | Yes     | Yes        | WebRTC           |
 | Pipecat             | ~11k  | Native S2S    | No                | Limited | Possible   | WebRTC           |
@@ -700,7 +702,7 @@ The current architecture is session-based: a client connects, starts a session, 
 
 **Not in scope for 3b:**
 
-- Proactive initiation (AI speaks first without being asked) — that's Phase 4 Discovery Loop
+- Proactive initiation (AI speaks first without being asked) — that's Phase 5 Discovery Loop (now complete)
 - Multi-room/multi-device presence — future work
 
 - [x] Wake word detection — on-device ONNX inference via livekit-wakeword pipeline (~5-20ms, $0 cost)
@@ -725,17 +727,36 @@ PGlite (WASM Postgres) can corrupt on dirty shutdowns (force kill, crash, power 
 - [x] Log warning when backup is stale (> 1 hour old)
 - [x] CLI command: `neura backup` / `neura restore` for manual export/import
 
+#### Phase 5a — Discovery Loop MVP
+
+- [x] Work items table (status, priority, due dates, parent/child relationships)
+- [x] Voice-managed task CRUD (`create_task`, `list_tasks`, `get_task`, `update_task`, `delete_task`)
+- [x] Discovery loop service (15-min interval, deadline checking, Gemini Flash summaries)
+- [x] Presence-aware notifications (active → spoken via Grok, passive → silent accumulate)
+- [x] Reusable `IntervalTimer` utility (`@neura/utils`)
+- [x] `handleToolCall` refactored to `ToolCallContext` object pattern
+
+#### Security Hardening (pre-release)
+
+- [x] Shared-secret token auth on WebSocket (`verifyClient`) and HTTP endpoints
+- [x] Server binds to localhost only (prevents LAN exposure)
+- [x] WebSocket `maxPayload` limit (10 MB)
+- [x] Security headers (`Referrer-Policy`, `X-Content-Type-Options`)
+- [x] CLI: auto-generate 256-bit auth token on install
+- [x] CLI: prototype pollution fix, `--lines` validation, token redaction
+- [x] Desktop: auth token encrypted via OS keychain (`safeStorage`)
+- [x] Web UI: token from URL → sessionStorage → WS connect, stripped from address bar
+- [x] Dependency vulnerability fixes (vite, lodash, brace-expansion)
+- [x] Timing-safe token comparison (shared `auth.ts` module)
+- [x] Directory permissions hardened (`0o700` on `~/.neura/`)
+
 ### Upcoming
 
-#### Phase 5 — Discovery Loop
+#### Phase 5 — Discovery Loop (integrations & triggers)
 
-- [ ] Heartbeat scheduler (configurable interval, default 30min)
-- [ ] Heartbeat checklist (DB-stored, configurable via CLI or voice)
-- [ ] Timer-based triggers
 - [ ] Calendar integration (meeting prep, reminders)
 - [ ] Webhook triggers (GitHub, email, external APIs)
 - [ ] Vision-triggered checks (screen context change detection)
-- [ ] Proactive voice notifications to connected clients
 - [ ] Cost-optimized isolated heartbeat sessions
 
 #### Phase 5b — Advanced Memory ([detailed architecture](phase5b-advanced-memory.md))
@@ -795,7 +816,6 @@ Upgrades the Phase 3 memory system with better recall, temporal awareness, and s
 #### Phase 8 — Cloud & Clients
 
 - [ ] Cloud-hosted core (managed deployment, auth, teams)
-- [ ] WebSocket auth (bearer token on upgrade handshake)
 - [ ] Docker + docker-compose packaging
 - [ ] Fly.io / Railway deployment guides
 - [ ] Mode toggle: local / cloud / hybrid
