@@ -31,8 +31,11 @@ export async function openCommand(): Promise<void> {
     return;
   }
 
-  const url = `http://localhost:${health.port}`;
-  console.log(`Opening ${url}...`);
+  const token = config.authToken;
+  const url = token
+    ? `http://localhost:${health.port}?token=${encodeURIComponent(token)}`
+    : `http://localhost:${health.port}`;
+  console.log(`Opening ${url.split('?')[0]}...`);
 
   // Use spawn with explicit args to avoid shell interpolation
   const os = platform();

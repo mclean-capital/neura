@@ -8,4 +8,5 @@ function defaultWsUrl(): string {
 
 export const config: UIConfig = {
   wsUrl: (import.meta.env.VITE_WS_URL as string | undefined) ?? defaultWsUrl(),
+  // Desktop renderer connects via UIServer proxy which handles auth — no token needed
 };

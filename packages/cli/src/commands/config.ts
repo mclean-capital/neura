@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { loadConfig, getConfigValue, setConfigValue, getNeuraHome } from '../config.js';
 
-const REDACTED_KEYS = new Set(['apiKeys.xai', 'apiKeys.google']);
+const REDACTED_KEYS = new Set(['apiKeys.xai', 'apiKeys.google', 'authToken']);
 
 export function configGetCommand(key: string): void {
   const value = getConfigValue(key);

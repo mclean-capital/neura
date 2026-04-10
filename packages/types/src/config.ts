@@ -21,6 +21,7 @@ export interface CoreConfig {
 
 export interface UIConfig {
   wsUrl: string;
+  authToken?: string;
 }
 
 /**
@@ -43,4 +44,6 @@ export interface NeuraConfigFile {
   assistantName?: string;
   /** Phase 5b: memory retrieval strategy */
   retrievalStrategy?: RetrievalStrategy;
+  /** Shared-secret token for WebSocket and HTTP auth */
+  authToken?: string;
 }

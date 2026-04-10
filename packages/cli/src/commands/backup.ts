@@ -3,6 +3,10 @@ import { confirm } from '@inquirer/prompts';
 import { loadConfig } from '../config.js';
 import { checkHealth } from '../health.js';
 
+function authHeaders(token?: string): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function backupCommand(): Promise<void> {
   const config = loadConfig();
   const health = await checkHealth(config.port);
@@ -17,6 +21,7 @@ export async function backupCommand(): Promise<void> {
 
     const response = await fetch(`http://localhost:${config.port}/backup`, {
       method: 'POST',
+      headers: authHeaders(config.authToken),
       signal: AbortSignal.timeout(60_000),
     });
 
@@ -59,6 +64,7 @@ export async function restoreCommand(options: { force?: boolean }): Promise<void
 
     const response = await fetch(`http://localhost:${config.port}/restore`, {
       method: 'POST',
+      headers: authHeaders(config.authToken),
       signal: AbortSignal.timeout(60_000),
     });
 

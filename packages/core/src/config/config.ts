@@ -12,6 +12,7 @@ export interface ResolvedCoreConfig {
   neuraHome: string;
   assistantName: string;
   retrievalStrategy: RetrievalStrategy;
+  authToken: string;
 }
 
 function tryParseInt(val: string | undefined): number | undefined {
@@ -55,5 +56,6 @@ export function loadConfig(): ResolvedCoreConfig {
       (process.env.NEURA_RETRIEVAL_STRATEGY as RetrievalStrategy | undefined) ??
       file.retrievalStrategy ??
       'hybrid',
+    authToken: process.env.NEURA_AUTH_TOKEN ?? file.authToken ?? '',
   };
 }

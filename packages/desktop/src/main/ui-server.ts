@@ -6,6 +6,7 @@ import { app } from 'electron';
 
 interface UIServerOptions {
   corePort: number;
+  authToken?: string;
 }
 
 function getRendererDistPath(): string {
@@ -19,8 +20,11 @@ export class UIServer {
   private server: Server | null = null;
   private readonly corePort: number;
 
+  private readonly authToken: string | undefined;
+
   constructor(opts: UIServerOptions) {
     this.corePort = opts.corePort;
+    this.authToken = opts.authToken;
   }
 
   start(): Promise<number> {
@@ -34,11 +38,13 @@ export class UIServer {
         next();
       });
 
-      // Proxy /ws to core WebSocket server
+      // Proxy /ws to core WebSocket server (forward auth token)
+      const tokenQuery = this.authToken ? `?token=${encodeURIComponent(this.authToken)}` : '';
       const wsProxy = createProxyMiddleware({
         target: `http://127.0.0.1:${this.corePort}`,
         ws: true,
         changeOrigin: true,
+        pathRewrite: { '^/ws': `/ws${tokenQuery}` },
       });
       ex.use('/ws', wsProxy);
 

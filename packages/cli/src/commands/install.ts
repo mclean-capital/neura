@@ -1,6 +1,12 @@
 import { input, password, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { ensureNeuraHome, loadConfig, saveConfig, getNeuraHome } from '../config.js';
+import {
+  ensureNeuraHome,
+  loadConfig,
+  saveConfig,
+  getNeuraHome,
+  generateAuthToken,
+} from '../config.js';
 import { getServiceManager } from '../service/manager.js';
 import { getPlatformLabel } from '../service/detect.js';
 import { checkHealth, waitForHealthy } from '../health.js';
@@ -80,6 +86,11 @@ export async function installCommand(): Promise<void> {
     default: config.voice,
   });
 
+  // Generate auth token if not already set
+  if (!config.authToken) {
+    config.authToken = generateAuthToken();
+  }
+
   // Save config
   config.apiKeys.xai = xaiKey;
   config.apiKeys.google = googleKey;
@@ -89,6 +100,7 @@ export async function installCommand(): Promise<void> {
 
   console.log();
   console.log(chalk.dim('  Config saved to ' + home + '/config.json'));
+  console.log(chalk.dim('  Auth token: ' + chalk.bold('generated')));
 
   // Check for core binary
   if (!hasCoreBinary()) {

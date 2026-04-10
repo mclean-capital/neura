@@ -26,7 +26,10 @@ function nextId() {
 }
 
 export function App() {
-  const { status, connect, disconnect, sendMessage, subscribe } = useWebSocket(config.wsUrl);
+  const { status, connect, disconnect, sendMessage, subscribe } = useWebSocket(
+    config.wsUrl,
+    config.authToken
+  );
   const { playChunk, clearQueue, close: closePlayback } = useAudioPlayback();
   const { cost, handleCostUpdate } = useCostTracker();
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { homedir, platform } from 'os';
 import type { NeuraConfigFile } from '@neura/types';
@@ -29,7 +30,7 @@ export function ensureNeuraHome(): void {
     join(home, 'service'),
     join(home, 'pgdata'),
   ]) {
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 }
 
@@ -52,6 +53,7 @@ export function loadConfig(): NeuraConfigFile {
       },
       pgDataPath: raw.pgDataPath,
       autoUpdate: raw.autoUpdate,
+      authToken: process.env.NEURA_AUTH_TOKEN ?? raw.authToken,
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -69,6 +71,13 @@ export function saveConfig(config: NeuraConfigFile): void {
   }
 }
 
+/** Generate a cryptographically random 256-bit auth token. */
+export function generateAuthToken(): string {
+  return randomBytes(32).toString('hex');
+}
+
+const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
 export function getConfigValue(key: string): string | undefined {
   const config = loadConfig();
@@ -85,6 +94,11 @@ export function getConfigValue(key: string): string | undefined {
 export function setConfigValue(key: string, value: string): void {
   const config = loadConfig();
   const parts = key.split('.');
+
+  if (parts.some((p) => BLOCKED_KEYS.has(p))) {
+    throw new Error(`Invalid config key: ${key}`);
+  }
+
   const last = parts.pop()!;
 
   let current: any = config;

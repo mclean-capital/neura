@@ -37,7 +37,7 @@ function startServer(port: number, maxRetries = 10) {
     }
   });
 
-  httpServer.listen(port);
+  httpServer.listen(port, 'localhost');
 }
 
 startServer(services.config.port);
