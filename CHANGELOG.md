@@ -1,3 +1,9 @@
+# [1.8.0](https://github.com/mclean-capital/neura/compare/v1.7.0...v1.8.0) (2026-04-10)
+
+### Features
+
+- **core,cli,desktop:** add shared-secret auth, localhost binding, and security hardening ([7a768f4](https://github.com/mclean-capital/neura/commit/7a768f438b3a26ac49e93fb1a82a00d08cd17237))
+
 # [1.7.0](https://github.com/mclean-capital/neura/compare/v1.6.0...v1.7.0) (2026-04-10)
 
 ### Features
