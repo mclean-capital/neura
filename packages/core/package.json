@@ -20,6 +20,7 @@
     "@neura/utils": "*",
     "dotenv": "^16",
     "express": "^4",
+    "onnxruntime-node": "^1.24.3",
     "ws": "^8"
   },
   "devDependencies": {
