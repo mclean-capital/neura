@@ -84,7 +84,7 @@ Standalone server with provider adapter layer and pluggable storage. Organized i
 
 - `server/` — Express HTTP + WebSocket server, lifecycle management, per-client state machines
 - `memory/` — `MemoryManager`, `ExtractionPipeline`, `Reranker`, `BackupService`, prompt builder
-- `presence/` — `PresenceManager` state machine (PASSIVE/ACTIVE/IDLE), `WakeDetector` (VAD + Gemini transcription)
+- `presence/` — `PresenceManager` state machine (PASSIVE/ACTIVE/IDLE), `OnnxWakeDetector` (on-device ONNX inference via livekit-wakeword pipeline)
 - `tools/` — Tool definitions and handlers split by domain (vision, time, memory, presence, tasks)
 - `providers/` — `GrokVoiceProvider` (xAI Realtime API), `GeminiVisionProvider` (Live API), delegation wrappers
 - `stores/` — `PgliteStore` facade (WASM PostgreSQL 17 + pgvector), split into query modules (migrations, mappers, session/memory/search/entity/work-item/backup queries)
@@ -115,7 +115,7 @@ Config lives at `~/.neura/config.json`. Port priority: `PORT` env var > config.j
 
 ### ui
 
-React 19 + Vite 6 + Tailwind v4 app. Connects to core in PASSIVE mode with auto-mic. Wake word activates voice session; manual Start button as fallback. Presence indicator (PASSIVE/ACTIVE). Independent media toggles (camera, screen share). Real-time cost indicator with voice/vision breakdown.
+React 19 + Vite 6 + Tailwind v4 app. Connects to core in PASSIVE mode with auto-mic. On-device ONNX wake word detection activates voice session; manual Start button as fallback. Presence indicator (PASSIVE/ACTIVE). Independent media toggles (camera, screen share). Real-time cost indicator with voice/vision breakdown.
 
 ```bash
 npm run dev -w @neura/ui   # http://localhost:5173 (proxies /ws → :3002)

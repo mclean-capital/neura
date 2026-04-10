@@ -21,7 +21,7 @@ Phase 4 (Storage Hardening) is complete. The platform is a fully functional mono
 - **Provider adapter layer** — Pluggable voice/vision providers behind typed interfaces
 - **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
 - **Memory & Identity** — Cross-session memory via extraction pipeline (Gemini 2.5 Flash), semantic recall (Gemini Embedding 2, 3072-dim vectors), voice-callable memory tools, token-budgeted system prompt injection
-- **Presence & Wake** — Ambient wake word detection (VAD + Gemini transcription + fuzzy match), PASSIVE/ACTIVE/IDLE state machine, audio replay to Grok, configurable assistant name (default: "jarvis"), manual start fallback
+- **Presence & Wake** — On-device ONNX wake word detection (~5-20ms, zero cost, via livekit-wakeword pipeline), PASSIVE/ACTIVE/IDLE state machine, audio replay to Grok, multiple trained wake words (jarvis, neura), manual start fallback
 - **`neura update`** — Downloads core bundles from GitHub releases, atomic extraction, background auto-update check with local cache
 - **CI/CD** — Semantic release, desktop builds (Electron), core bundle builds for 5 platforms, auto-changelog
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
@@ -703,14 +703,15 @@ The current architecture is session-based: a client connects, starts a session, 
 - Proactive initiation (AI speaks first without being asked) — that's Phase 4 Discovery Loop
 - Multi-room/multi-device presence — future work
 
-- [x] Wake word detection (VAD + Gemini transcription + fuzzy match)
+- [x] Wake word detection — on-device ONNX inference via livekit-wakeword pipeline (~5-20ms, $0 cost)
 - [x] Active/Passive/Idle state machine in server (`presence-manager.ts`)
 - [x] AI-driven state transitions (`enter_mode` tool)
 - [x] Protocol additions for state transitions (`presenceState`, `manualStart`)
 - [x] Client UI for presence state indicator + manual Start button
-- [x] Cost-optimized: $0 in passive (VAD only), Grok session only in active mode
+- [x] Cost-optimized: $0 in passive (ONNX inference only), Grok session only in active mode
 - [x] Audio replay to Grok on wake (buffered PCM, no lost context)
-- [x] Auto-mic on connect, configurable wake word (default: "jarvis")
+- [x] Auto-mic on connect, multiple trained wake words (jarvis, neura)
+- [x] Custom wake word training pipeline (`tools/wake-word/`)
 
 #### Phase 4 — Storage Hardening (PGlite backup & recovery)
 
