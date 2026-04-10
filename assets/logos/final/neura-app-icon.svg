@@ -1,0 +1,10 @@
+<svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded dark container (22.5% corner radius, matches iOS/macOS app icon standard) -->
+  <rect width="240" height="240" rx="54" ry="54" fill="#0a0a0a"/>
+  <!-- N Mark inside, scaled up to fill the container with proper presence -->
+  <g stroke-width="22" stroke-linecap="square">
+    <line x1="60" y1="50" x2="60" y2="190" stroke="#E8E4DE"/>
+    <line x1="180" y1="50" x2="180" y2="190" stroke="#E8E4DE"/>
+    <line x1="60" y1="50" x2="180" y2="190" stroke="#D4940A"/>
+  </g>
+</svg>

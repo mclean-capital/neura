@@ -20,6 +20,7 @@
     "release:win": "npm run build && npm run dist:win -w @neura/desktop",
     "release:mac": "npm run build && npm run dist:mac -w @neura/desktop",
     "release:linux": "npm run build && npm run dist:linux -w @neura/desktop",
+    "logos:export": "node tools/logos/export-rasters.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

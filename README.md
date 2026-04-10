@@ -1,6 +1,17 @@
-# Neura
-
-A proactive, autonomous AI operating system. Real-time voice conversation, continuous visual understanding, and autonomous worker agents — driven by discovery and execution loops that think and act on their own.
+<table border="0">
+<tr>
+<td width="160" align="center" valign="middle">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="assets/logos/final/neura-app-icon.svg">
+<img alt="Neura" src="assets/logos/final/neura-app-icon-light.svg" width="140">
+</picture>
+</td>
+<td valign="middle">
+<h1>Neura</h1>
+<p><strong>A proactive, autonomous AI operating system.</strong> Real-time voice conversation, continuous visual understanding, and autonomous worker agents — driven by discovery and execution loops that think and act on their own.</p>
+</td>
+</tr>
+</table>
 
 ## How It Works
 
@@ -153,3 +164,14 @@ See [docs/roadmap.md](docs/roadmap.md) for the full roadmap covering:
 ## License
 
 MIT
+
+---
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logos/final/mclean-wordmark.svg">
+  <img alt="McLean Capital" src="assets/logos/final/mclean-wordmark-light.svg" width="240">
+</picture>
+
+</div>
