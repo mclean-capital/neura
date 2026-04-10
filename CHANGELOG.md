@@ -1,3 +1,9 @@
+# [1.7.0](https://github.com/mclean-capital/neura/compare/v1.6.0...v1.7.0) (2026-04-10)
+
+### Features
+
+- **core:** on-device ONNX wake word detection ([#8](https://github.com/mclean-capital/neura/issues/8)) ([b59f79e](https://github.com/mclean-capital/neura/commit/b59f79e9ff57565ede7fc5abc44417e2fdb91aad))
+
 # [1.6.0](https://github.com/mclean-capital/neura/compare/v1.5.0...v1.6.0) (2026-04-09)
 
 ### Features
