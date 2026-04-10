@@ -1,3 +1,9 @@
+# [1.9.0](https://github.com/mclean-capital/neura/compare/v1.8.0...v1.9.0) (2026-04-10)
+
+### Features
+
+- **cli:** add text chat and voice listen client commands ([#9](https://github.com/mclean-capital/neura/issues/9)) ([86b60ac](https://github.com/mclean-capital/neura/commit/86b60acce9cf518408cd0ea87a5b656db6d598f8))
+
 # [1.8.0](https://github.com/mclean-capital/neura/compare/v1.7.0...v1.8.0) (2026-04-10)
 
 ### Features
