@@ -9,14 +9,14 @@ export const presenceToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'enter_mode',
     description:
-      "Transition the presence mode. Call with 'passive' when the conversation has naturally ended, when the user says goodbye/thanks, or when you detect the user is no longer speaking to you. Call with 'active' only if needed to re-engage.",
+      "Transition the presence mode. Only call with 'passive' when the user has EXPLICITLY signaled the conversation is over — phrases like 'goodbye', 'bye', 'thanks, that's all', 'I'm done', 'see you later', or similar clear end-of-conversation markers. Do NOT call 'passive' for ordinary pauses, brief silence, turn boundaries, one-word replies, or when the user is simply thinking. Default behavior between turns is to stay active and wait — the user will keep talking. Call with 'active' only if needed to re-engage.",
     parameters: {
       type: 'object',
       properties: {
         mode: {
           type: 'string',
           enum: ['passive', 'active'],
-          description: "'passive' to stop listening actively, 'active' to re-engage",
+          description: "'passive' ONLY on explicit end-of-conversation, 'active' to re-engage",
         },
       },
       required: ['mode'],

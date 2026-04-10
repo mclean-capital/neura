@@ -56,6 +56,10 @@ export class GrokVoiceProvider implements VoiceProvider {
   // Transcript history for context seeding on reconnect
   private readonly transcript: { role: 'user' | 'assistant'; text: string }[] = [];
 
+  // Per-turn audio telemetry for debugging choppy playback
+  private turnAudioChunks = 0;
+  private turnAudioBytes = 0;
+
   constructor(cb: VoiceProviderCallbacks, config: GrokVoiceConfig = {}) {
     this.cb = cb;
     this.config = config;
@@ -235,7 +239,13 @@ export class GrokVoiceProvider implements VoiceProvider {
         break;
       case 'response.audio.delta':
       case 'response.output_audio.delta':
-        if (msg.delta) this.cb.onAudio(msg.delta);
+        if (msg.delta) {
+          this.turnAudioChunks++;
+          // base64 → bytes: length * 3/4 approximately
+          const delta = msg.delta as string;
+          this.turnAudioBytes += Math.floor((delta.length * 3) / 4);
+          this.cb.onAudio(delta);
+        }
         break;
       case 'response.audio_transcript.delta':
       case 'response.output_audio_transcript.delta':
@@ -251,6 +261,18 @@ export class GrokVoiceProvider implements VoiceProvider {
         this.cb.onInterrupted();
         break;
       case 'response.done': {
+        // Log per-turn audio telemetry so we can correlate chopped playback
+        // with what xAI actually sent.
+        // At 24 kHz int16 mono: 48_000 bytes per second → bytes / 48 = ms
+        const audioMs = Math.round(this.turnAudioBytes / 48);
+        log.info('turn audio', {
+          chunks: this.turnAudioChunks,
+          bytes: this.turnAudioBytes,
+          ms: audioMs,
+        });
+        this.turnAudioChunks = 0;
+        this.turnAudioBytes = 0;
+
         this.cb.onTurnComplete();
         const outputItems = msg.response?.output;
         const fullParts: string[] = [];

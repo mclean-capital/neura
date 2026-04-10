@@ -93,6 +93,7 @@ program
   .command('listen')
   .description('Voice chat with Neura (mic + speaker)')
   .option('-p, --port <port>', 'Core server port (default: config or 3002)')
+  .option('--debug', 'Print audio pipeline stats every 2s')
   .action(listenCommand);
 
 program.parse();

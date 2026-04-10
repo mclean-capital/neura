@@ -22,7 +22,9 @@
     "ws": "^8.20.0"
   },
   "optionalDependencies": {
-    "decibri": "^1.0.0"
+    "@picovoice/pvspeaker-node": "^1.0.3",
+    "decibri": "^1.0.0",
+    "speaker": "^0.5.5"
   },
   "devDependencies": {
     "@types/node": "^25",
