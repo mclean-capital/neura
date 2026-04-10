@@ -6,7 +6,9 @@ import { createVoiceSession } from '../providers/voice-session.js';
 import { createVisionWatcher } from '../providers/vision-watcher.js';
 import { CostTracker } from '../cost/index.js';
 import type { MemoryToolHandler, TaskToolHandler } from '../tools/index.js';
-import { WakeDetector } from '../presence/wake-detector.js';
+import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { OnnxWakeDetector } from '../presence/onnx-wake-detector.js';
 import { PresenceManager } from '../presence/presence-manager.js';
 import type { CoreServices } from './lifecycle.js';
 
@@ -14,6 +16,21 @@ const log = new Logger('server');
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const COST_UPDATE_INTERVAL_MS = 30_000;
+
+/** Infrastructure models that are not wake word classifiers */
+const INFRA_MODELS = new Set(['melspectrogram', 'embedding_model']);
+
+/** Scan models directory for available wake word classifiers */
+function getAvailableWakeWords(modelsDir: string): string[] {
+  try {
+    return readdirSync(modelsDir)
+      .filter((f) => f.endsWith('.onnx'))
+      .map((f) => f.replace('.onnx', ''))
+      .filter((name) => !INFRA_MODELS.has(name));
+  } catch {
+    return [];
+  }
+}
 
 export function attachWebSocket(httpServer: Server, services: CoreServices): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
@@ -181,7 +198,7 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     // ── Presence state machine ─────────────────────────────────────
     let session: VoiceProvider | null = null;
     let connectionClosed = false;
-    let wakeDetector: WakeDetector | null = null;
+    let wakeDetector: OnnxWakeDetector | null = null;
 
     function send(msg: ServerMessage) {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -333,22 +350,47 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
       session = null;
 
       // Resume wake word detection
-      startWakeDetector();
+      void startWakeDetector();
     }
 
-    function startWakeDetector() {
-      if (!config.googleApiKey || connectionClosed) return;
-      wakeDetector = new WakeDetector({
-        assistantName: config.assistantName,
-        googleApiKey: config.googleApiKey,
-        onWake: (audioChunks) => {
-          pendingWakeAudio = audioChunks;
-          presence.wake('(detected via gemini)');
-        },
-        onDebug: (info) => {
-          log.debug('wake check', info);
-        },
-      });
+    async function startWakeDetector() {
+      if (connectionClosed) return;
+
+      const modelsDir = join(config.neuraHome, 'models');
+      const melPath = join(modelsDir, 'melspectrogram.onnx');
+      const embPath = join(modelsDir, 'embedding_model.onnx');
+      const classifierPath = join(modelsDir, `${config.assistantName}.onnx`);
+
+      if (!existsSync(melPath) || !existsSync(embPath)) {
+        log.warn('ONNX base models not found, wake detection disabled', { modelsDir });
+        return;
+      }
+
+      if (!existsSync(classifierPath)) {
+        const available = getAvailableWakeWords(modelsDir);
+        log.warn('no wake word model for configured name', {
+          assistantName: config.assistantName,
+          available,
+        });
+        return;
+      }
+
+      try {
+        wakeDetector = await OnnxWakeDetector.create({
+          assistantName: config.assistantName,
+          modelsDir,
+          onWake: (audioChunks) => {
+            pendingWakeAudio = audioChunks;
+            presence.wake('(detected via onnx)');
+          },
+          onDebug: (info) => {
+            log.debug('onnx wake check', info);
+          },
+        });
+        log.info('wake word detection active', { assistantName: config.assistantName });
+      } catch (err) {
+        log.error('ONNX wake detector failed to start', { err: String(err) });
+      }
     }
 
     const presence = new PresenceManager({
@@ -365,7 +407,7 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     });
 
     // Start in passive mode with wake detection
-    startWakeDetector();
+    void startWakeDetector();
 
     ws.on('message', (raw: Buffer) => {
       try {
