@@ -5,6 +5,7 @@ import type { ServerMessage } from '@neura/types';
 import { loadConfig } from '../config.js';
 import { checkHealth } from '../health.js';
 import { DEV_PORT } from '../constants.js';
+import { formatToolCall, formatToolResult } from '../format/tools.js';
 
 const COMMANDS: Record<string, string> = {
   '/start': 'Re-activate session (if idle timeout moved to PASSIVE)',
@@ -87,7 +88,11 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
         break;
 
       case 'toolCall':
-        console.log(chalk.dim(`  [tool: ${msg.name}]`));
+        console.log(formatToolCall(msg.name, msg.args));
+        break;
+
+      case 'toolResult':
+        console.log(formatToolResult(msg.name, msg.result));
         break;
 
       case 'error':

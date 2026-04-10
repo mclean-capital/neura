@@ -9,14 +9,15 @@ export const presenceToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'enter_mode',
     description:
-      "Transition the presence mode. Only call with 'passive' when the user has EXPLICITLY signaled the conversation is over — phrases like 'goodbye', 'bye', 'thanks, that's all', 'I'm done', 'see you later', or similar clear end-of-conversation markers. Do NOT call 'passive' for ordinary pauses, brief silence, turn boundaries, one-word replies, or when the user is simply thinking. Default behavior between turns is to stay active and wait — the user will keep talking. Call with 'active' only if needed to re-engage.",
+      "Transition the presence mode. You MUST call this tool (not just respond with a farewell message) when the user EXPLICITLY signals the conversation is over — phrases like 'goodbye', 'bye', 'thanks, that's all', 'I'm done', 'see you later', 'talk to you later', 'I'll be back later', 'catch you later', or similar clear end-of-conversation markers. When you hear these signals, respond with a brief farewell AND call enter_mode('passive') in the same turn — the tool call is how you actually release the session; a farewell message alone does not end the session. Do NOT call 'passive' for ordinary pauses, brief silence, turn boundaries, one-word replies, or when the user is simply thinking. Default behavior between turns is to stay active and wait — the user will keep talking. Call with 'active' only if needed to re-engage.",
     parameters: {
       type: 'object',
       properties: {
         mode: {
           type: 'string',
           enum: ['passive', 'active'],
-          description: "'passive' ONLY on explicit end-of-conversation, 'active' to re-engage",
+          description:
+            "'passive' ONLY on explicit end-of-conversation (required alongside farewell message), 'active' to re-engage",
         },
       },
       required: ['mode'],

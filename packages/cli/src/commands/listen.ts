@@ -6,6 +6,7 @@ import { checkHealth } from '../health.js';
 import { DEV_PORT } from '../constants.js';
 import { createAudioCapture, listInputDevices, type AudioCapture } from '../audio/capture.js';
 import { createAudioPlayback, type AudioPlayback } from '../audio/playback.js';
+import { formatToolCall, formatToolResult } from '../format/tools.js';
 
 export async function listenCommand(options: { port?: string; debug?: boolean }): Promise<void> {
   const config = loadConfig();
@@ -272,7 +273,11 @@ export async function listenCommand(options: { port?: string; debug?: boolean })
         break;
 
       case 'toolCall':
-        console.log(chalk.dim(`  [tool: ${msg.name}]`));
+        console.log(formatToolCall(msg.name, msg.args));
+        break;
+
+      case 'toolResult':
+        console.log(formatToolResult(msg.name, msg.result));
         break;
 
       case 'error':
