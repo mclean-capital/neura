@@ -1,0 +1,63 @@
+model_name: jarvis
+
+# Wake word phrase
+target_phrases: ['hey jarvis']
+
+# Data generation — 5000 samples balances quality vs training time (~45 min total)
+n_samples: 5000
+n_samples_val: 1000
+n_background_samples: 200
+n_background_samples_val: 40
+tts_batch_size: 50
+
+# Adversarial negatives — phonetically similar phrases that should NOT trigger
+custom_negative_phrases:
+  - 'jarvis'
+  - 'hey jarves'
+  - 'hey jarvie'
+  - 'hey harvey'
+  - 'hey marvis'
+  - 'hey davis'
+  - 'hey travis'
+  - 'hey service'
+  - 'hey nervous'
+  - 'hey jar'
+  - 'hey java'
+  - 'that jarvis'
+  - 'the jarvis'
+
+# TTS parameters (VITS + SLERP speaker blending across 904 speakers)
+noise_scales: [0.98]
+noise_scale_ws: [0.98]
+length_scales: [0.75, 1.0, 1.25]
+slerp_weights: [0.2, 0.35, 0.5, 0.65, 0.8]
+
+# Paths (relative to working directory, not this file)
+data_dir: ./data
+output_dir: ./output
+
+# Augmentation (reverb, background noise, EQ distortion)
+augmentation:
+  clip_duration: 2.0
+  batch_size: 16
+  rounds: 2
+  background_paths: [./data/backgrounds]
+  rir_paths: [./data/rirs]
+
+# Model architecture — Conv-Attention is the best performing
+model:
+  model_type: conv_attention
+  model_size: small
+
+# Training — 3-phase adaptive (full → refinement → fine-tuning)
+steps: 30000
+learning_rate: 0.0001
+weight_decay: 0.01
+label_smoothing: 0.05
+max_negative_weight: 1500
+target_fp_per_hour: 0.2
+
+batch_n_per_class:
+  positive: 50
+  adversarial_negative: 50
+  background_noise: 50
