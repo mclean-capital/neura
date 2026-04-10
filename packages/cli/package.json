@@ -18,10 +18,12 @@
     "@inquirer/prompts": "^7",
     "@neura/types": "*",
     "chalk": "^5",
-    "commander": "^13"
+    "commander": "^13",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^25",
+    "@types/ws": "^8.18.1",
     "tsx": "^4"
   }
 }
