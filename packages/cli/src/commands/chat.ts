@@ -29,6 +29,14 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
   let presenceState = '';
   let isStreaming = false;
   let cleaned = false;
+  // Suppress the brief initial passive flash on connect — the core sends
+  // passive before our manualStart takes effect.
+  let everActive = false;
+  // Used to detect terminal sessionClosed events: if an `error` arrives
+  // shortly before, the close is fatal (missing XAI_API_KEY, max reconnect
+  // exhausted) and we should exit rather than stay in a zombie state.
+  let lastErrorAt = 0;
+  const FATAL_ERROR_WINDOW_MS = 5000;
 
   const rl = createInterface({
     input: process.stdin,
@@ -56,9 +64,10 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
         if (msg.state !== presenceState) {
           presenceState = msg.state;
           if (msg.state === 'active') {
+            everActive = true;
             console.log(chalk.green('\n  [ACTIVE]'));
-          } else if (msg.state === 'passive') {
-            console.log(chalk.dim('\n  [PASSIVE]'));
+          } else if (msg.state === 'passive' && everActive) {
+            console.log(chalk.dim('\n  [PASSIVE] type anything to resume'));
           }
         }
         break;
@@ -97,12 +106,20 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
 
       case 'error':
         console.log(chalk.red(`\nError: ${msg.error}\n`));
+        lastErrorAt = Date.now();
         rl.prompt();
         break;
 
       case 'sessionClosed':
-        console.log(chalk.yellow('\nSession closed by server.'));
-        cleanup();
+        // Core emits this on any voice-provider close. Most of the time it's
+        // a normal transition (passive via enter_mode, proactive Grok
+        // reconnect) and chat should stay alive so the user can keep typing
+        // — chat.ts already re-sends manualStart on the next line input. Only
+        // treat as fatal if an `error` arrived recently.
+        if (Date.now() - lastErrorAt < FATAL_ERROR_WINDOW_MS) {
+          console.log(chalk.red('\nSession closed due to error. Exiting.'));
+          cleanup();
+        }
         break;
 
       default:
