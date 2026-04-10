@@ -289,6 +289,15 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
             session?.sendAudio(chunk);
           }
         }
+        // Replay any text messages that arrived during the async activation
+        // window (before the Grok session was ready to receive them).
+        if (pendingText.length > 0) {
+          const texts = pendingText;
+          pendingText = [];
+          for (const text of texts) {
+            session?.sendText(text);
+          }
+        }
       },
       onReconnected() {
         if (cameraWatcher?.isConnected()) {
@@ -312,6 +321,10 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     };
 
     let pendingWakeAudio: string[] | null = null;
+    // Text messages that arrived while the voice session was still being
+    // asynchronously activated (between presence.state=active and
+    // session.connect() completing). Replayed in onReady().
+    let pendingText: string[] = [];
 
     async function activateVoiceSession(wakeTranscript: string) {
       if (connectionClosed || session) return;
@@ -366,6 +379,7 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     function deactivateVoiceSession() {
       log.info('deactivating voice session');
       pendingWakeAudio = null;
+      pendingText = [];
       costTracker.stopInterval();
       triggerExtraction();
 
@@ -452,10 +466,17 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
             }
             break;
           case 'text':
-            if (presence.state === 'active' && session) {
+            if (presence.state === 'active') {
               resetIdleTimer();
               extractionTriggered = false;
-              session.sendText(msg.text);
+              if (session) {
+                session.sendText(msg.text);
+              } else {
+                // Session is still asynchronously activating (memoryManager
+                // prompt build + Grok WebSocket connect). Buffer the text so
+                // it isn't lost; onReady() will replay it when session is up.
+                pendingText.push(msg.text);
+              }
             }
             break;
           case 'videoFrame': {

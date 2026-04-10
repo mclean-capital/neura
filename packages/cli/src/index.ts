@@ -18,6 +18,8 @@ import { versionCommand } from './commands/version.js';
 import { openCommand } from './commands/open.js';
 import { updateCommand } from './commands/update.js';
 import { backupCommand, restoreCommand } from './commands/backup.js';
+import { chatCommand } from './commands/chat.js';
+import { listenCommand } from './commands/listen.js';
 
 const program = new Command();
 
@@ -80,5 +82,18 @@ program
   .description('Restore memories from backup')
   .option('--force', 'Skip confirmation prompt')
   .action(restoreCommand);
+
+// Interactive client
+program
+  .command('chat')
+  .description('Text chat with Neura')
+  .option('-p, --port <port>', 'Core server port (default: config or 3002)')
+  .action(chatCommand);
+program
+  .command('listen')
+  .description('Voice chat with Neura (mic + speaker)')
+  .option('-p, --port <port>', 'Core server port (default: config or 3002)')
+  .option('--debug', 'Print audio pipeline stats every 2s')
+  .action(listenCommand);
 
 program.parse();
