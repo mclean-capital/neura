@@ -20,6 +20,7 @@ declare module 'decibri' {
   class Decibri {
     constructor(options?: DecibriOptions);
     on(event: 'data', handler: (chunk: Buffer) => void): void;
+    on(event: 'error', handler: (err: Error) => void): void;
     stop(): void;
     static devices(): DeviceInfo[];
   }

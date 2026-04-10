@@ -33,6 +33,10 @@ export async function createAudioCapture(): Promise<AudioCapture> {
             onData(chunk.toString('base64'));
           }
         });
+        // Prevent unhandled 'error' from crashing the process
+        mic.on('error', (err: Error) => {
+          console.error(`Mic error: ${err.message}`);
+        });
       },
 
       stop() {

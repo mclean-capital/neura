@@ -21,6 +21,9 @@
     "commander": "^13",
     "ws": "^8.20.0"
   },
+  "optionalDependencies": {
+    "decibri": "^1.0.0"
+  },
   "devDependencies": {
     "@types/node": "^25",
     "@types/ws": "^8.18.1",

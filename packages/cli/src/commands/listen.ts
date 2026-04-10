@@ -3,10 +3,9 @@ import WebSocket from 'ws';
 import type { ServerMessage } from '@neura/types';
 import { loadConfig } from '../config.js';
 import { checkHealth } from '../health.js';
+import { DEV_PORT } from '../constants.js';
 import { createAudioCapture, type AudioCapture } from '../audio/capture.js';
 import { createAudioPlayback, type AudioPlayback } from '../audio/playback.js';
-
-const DEV_PORT = 3002;
 
 export async function listenCommand(options: { port?: string }): Promise<void> {
   const config = loadConfig();
@@ -18,7 +17,6 @@ export async function listenCommand(options: { port?: string }): Promise<void> {
     process.exit(1);
   }
 
-  // Initialize audio backends
   let capture: AudioCapture;
   let playback: AudioPlayback;
 
@@ -41,15 +39,14 @@ export async function listenCommand(options: { port?: string }): Promise<void> {
 
   let presenceState = '';
   let isStreaming = false;
+  let cleaned = false;
 
   ws.on('open', () => {
     console.log(chalk.green(`Connected to Neura on port ${port}`));
     console.log(chalk.dim('Listening... speak to interact. Ctrl+C to stop.\n'));
 
-    // Activate from passive mode
     ws.send(JSON.stringify({ type: 'manualStart' }));
 
-    // Start audio I/O
     playback.start();
     capture.onData = (base64Pcm) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -60,7 +57,12 @@ export async function listenCommand(options: { port?: string }): Promise<void> {
   });
 
   ws.on('message', (raw: Buffer) => {
-    const msg = JSON.parse(raw.toString()) as ServerMessage;
+    let msg: ServerMessage;
+    try {
+      msg = JSON.parse(raw.toString()) as ServerMessage;
+    } catch {
+      return;
+    }
 
     switch (msg.type) {
       case 'audio':
@@ -73,7 +75,9 @@ export async function listenCommand(options: { port?: string }): Promise<void> {
           if (msg.state === 'active') {
             console.log(chalk.green('  [ACTIVE]'));
           } else if (msg.state === 'passive') {
-            console.log(chalk.dim('  [PASSIVE]'));
+            // Auto re-activate after idle timeout
+            console.log(chalk.dim('  [PASSIVE] Re-activating...'));
+            ws.send(JSON.stringify({ type: 'manualStart' }));
           }
         }
         break;
@@ -116,12 +120,17 @@ export async function listenCommand(options: { port?: string }): Promise<void> {
         console.log(chalk.yellow('\nSession closed by server.'));
         cleanup();
         break;
+
+      default:
+        break;
     }
   });
 
   ws.on('close', () => {
-    console.log(chalk.dim('Disconnected.'));
-    cleanup();
+    if (!cleaned) {
+      console.log(chalk.dim('Disconnected.'));
+      cleanup();
+    }
   });
 
   ws.on('error', (err) => {
@@ -130,6 +139,8 @@ export async function listenCommand(options: { port?: string }): Promise<void> {
   });
 
   function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
     capture.stop();
     playback.stop();
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {

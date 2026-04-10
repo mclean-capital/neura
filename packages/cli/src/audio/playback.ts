@@ -13,10 +13,11 @@ export interface AudioPlayback {
   play(base64Pcm: string): void;
 }
 
-/** Check if a command exists on PATH */
+/** Check if a command exists on PATH (cross-platform) */
 function commandExists(cmd: string): boolean {
   try {
-    execSync(`which ${cmd}`, { stdio: 'ignore' });
+    const check = process.platform === 'win32' ? `where ${cmd}` : `which ${cmd}`;
+    execSync(check, { stdio: 'ignore' });
     return true;
   } catch {
     return false;

@@ -4,14 +4,13 @@ import WebSocket from 'ws';
 import type { ServerMessage } from '@neura/types';
 import { loadConfig } from '../config.js';
 import { checkHealth } from '../health.js';
+import { DEV_PORT } from '../constants.js';
 
 const COMMANDS: Record<string, string> = {
   '/start': 'Re-activate session (if idle timeout moved to PASSIVE)',
+  '/help': 'Show available commands',
   '/quit': 'Disconnect and exit',
-  '/exit': 'Disconnect and exit',
 };
-
-const DEV_PORT = 3002;
 
 export async function chatCommand(options: { port?: string }): Promise<void> {
   const config = loadConfig();
@@ -28,6 +27,7 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
 
   let presenceState = '';
   let isStreaming = false;
+  let cleaned = false;
 
   const rl = createInterface({
     input: process.stdin,
@@ -38,13 +38,17 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
   ws.on('open', () => {
     console.log(chalk.green(`Connected to Neura on port ${port}`));
     console.log(chalk.dim('Type a message to chat. /quit to exit. 5 min idle timeout.\n'));
-    // Auto-activate so text is processed immediately
     ws.send(JSON.stringify({ type: 'manualStart' }));
     rl.prompt();
   });
 
   ws.on('message', (raw: Buffer) => {
-    const msg = JSON.parse(raw.toString()) as ServerMessage;
+    let msg: ServerMessage;
+    try {
+      msg = JSON.parse(raw.toString()) as ServerMessage;
+    } catch {
+      return;
+    }
 
     switch (msg.type) {
       case 'presenceState':
@@ -64,10 +68,6 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
           process.stdout.write(chalk.green('\nNeura: '));
         }
         process.stdout.write(msg.text);
-        break;
-
-      case 'inputTranscript':
-        // Only show if we didn't type this ourselves (e.g., voice-transcribed input)
         break;
 
       case 'turnComplete':
@@ -95,20 +95,21 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
         rl.prompt();
         break;
 
-      case 'costUpdate':
-        // Silently track cost — could add a /cost command later
-        break;
-
       case 'sessionClosed':
         console.log(chalk.yellow('\nSession closed by server.'));
         cleanup();
+        break;
+
+      default:
         break;
     }
   });
 
   ws.on('close', () => {
-    console.log(chalk.dim('Disconnected.'));
-    process.exit(0);
+    if (!cleaned) {
+      console.log(chalk.dim('Disconnected.'));
+      cleanup();
+    }
   });
 
   ws.on('error', (err) => {
@@ -145,7 +146,6 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
     }
 
     if (ws.readyState === WebSocket.OPEN) {
-      // Re-activate if idle timeout moved us to passive
       if (presenceState === 'passive') {
         ws.send(JSON.stringify({ type: 'manualStart' }));
       }
@@ -162,6 +162,8 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
   });
 
   function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
     rl.close();
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
       ws.close();
@@ -169,7 +171,6 @@ export async function chatCommand(options: { port?: string }): Promise<void> {
     process.exit(0);
   }
 
-  // Handle SIGINT gracefully
   process.on('SIGINT', () => {
     console.log();
     cleanup();
