@@ -37,9 +37,14 @@ jobs:
       tag: ${{ steps.sr.outputs.tag }}
       released: ${{ steps.sr.outputs.released }}
     steps:
+      # Use NEURA_RELEASE_TOKEN (fine-grained PAT from a Repository admin)
+      # so the version-bump push from @semantic-release/git can bypass the
+      # main-branch ruleset. The default GITHUB_TOKEN cannot bypass because
+      # github-actions[bot] is not in the bypass list.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.NEURA_RELEASE_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -68,7 +73,7 @@ jobs:
             echo "tag=" >> $GITHUB_OUTPUT
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.NEURA_RELEASE_TOKEN }}
 
   core-build:
     name: Core Build
