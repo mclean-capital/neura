@@ -40,3 +40,22 @@ declare module '@picovoice/pvspeaker-node' {
     static getAvailableDevices(): string[];
   }
 }
+
+declare module 'speaker' {
+  import { Writable, WritableOptions } from 'stream';
+
+  interface SpeakerOptions extends WritableOptions {
+    channels?: number;
+    bitDepth?: number;
+    sampleRate?: number;
+    lowWaterMark?: number;
+    highWaterMark?: number;
+  }
+
+  class Speaker extends Writable {
+    constructor(opts?: SpeakerOptions);
+    close(flush: boolean): string;
+  }
+
+  export default Speaker;
+}

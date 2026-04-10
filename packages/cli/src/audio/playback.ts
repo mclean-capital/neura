@@ -237,9 +237,7 @@ function createSoxPlayback(): AudioPlayback {
  */
 function createNodeSpeakerPlayback(): Promise<AudioPlayback> {
   return (async () => {
-    const { default: Speaker } = (await import('speaker')) as {
-      default: typeof import('speaker');
-    };
+    const { default: Speaker } = await import('speaker');
     let speaker: InstanceType<typeof Speaker> | null = null;
 
     // Silence mpg123 underflow warnings that spam stderr between turns
