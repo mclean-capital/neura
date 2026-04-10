@@ -1,3 +1,9 @@
+# [1.10.0](https://github.com/mclean-capital/neura/compare/v1.9.0...v1.10.0) (2026-04-10)
+
+### Features
+
+- **cli:** rename to @mclean-capital/neura, prep for npm publish ([f03de2c](https://github.com/mclean-capital/neura/commit/f03de2c362227839ddea2d4bd17365ae1ed5766d))
+
 # [1.9.0](https://github.com/mclean-capital/neura/compare/v1.8.0...v1.9.0) (2026-04-10)
 
 ### Features
