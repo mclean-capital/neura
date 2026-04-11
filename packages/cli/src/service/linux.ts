@@ -29,6 +29,13 @@ export function isRunning(): boolean {
 export function install(): void {
   const home = getNeuraHome();
   const binaryPath = getCoreBinaryPath();
+  // The core binary is a JavaScript module (server.bundled.mjs), not an
+  // executable — systemd cannot exec it directly. Use the Node binary that's
+  // running this CLI to invoke it. Both paths are wrapped in double quotes
+  // so they survive paths containing spaces (e.g., nvm under a username
+  // with whitespace). If the user moves or upgrades Node later, re-run
+  // `neura install` to refresh ExecStart.
+  const nodePath = process.execPath;
   const unitPath = getUnitPath();
 
   mkdirSync(join(homedir(), '.config', 'systemd', 'user'), { recursive: true });
@@ -39,7 +46,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${binaryPath}
+ExecStart="${nodePath}" "${binaryPath}"
 WorkingDirectory=${home}
 Restart=on-failure
 RestartSec=5

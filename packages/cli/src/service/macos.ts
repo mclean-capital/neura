@@ -54,6 +54,12 @@ export function isRunning(): boolean {
 export function install(): void {
   const home = escapeXml(getNeuraHome());
   const binaryPath = escapeXml(getCoreBinaryPath());
+  // The core binary is a JavaScript module (server.bundled.mjs), not an
+  // executable — launchd cannot exec it directly (Input/output error 5).
+  // Use the Node binary that's running this CLI to invoke it. If the user
+  // moves or upgrades Node later, re-run `neura install` to refresh this
+  // path in the plist.
+  const nodePath = escapeXml(process.execPath);
   const plistPath = getPlistPath();
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -65,6 +71,7 @@ export function install(): void {
   <string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
+    <string>${nodePath}</string>
     <string>${binaryPath}</string>
   </array>
   <key>WorkingDirectory</key>
