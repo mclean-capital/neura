@@ -1,3 +1,9 @@
+## [1.10.1](https://github.com/mclean-capital/neura/compare/v1.10.0...v1.10.1) (2026-04-11)
+
+### Bug Fixes
+
+- **cli:** launch core via Node binary in macOS launchd and Linux systemd ([9692a5f](https://github.com/mclean-capital/neura/commit/9692a5fdc51bd02bd2b8a2bdd87cf6229268f15d))
+
 # [1.10.0](https://github.com/mclean-capital/neura/compare/v1.9.0...v1.10.0) (2026-04-10)
 
 ### Features
