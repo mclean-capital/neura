@@ -2,7 +2,7 @@
 
 Skill Framework + Agent Runtime + Clarification Loop + User-Initiated Pause/Resume.
 
-**Status:** APPROVED (v2.3, post-Codex-round-3 cleanup + scope narrowing on crash recovery, ready for implementation)
+**Status:** APPROVED (v2.3 + in-flight scope refinements, ready for implementation)
 **Branch:** `feat/phase6-os-core`
 **Repo:** `mclean-capital/neura`
 **Mode:** Builder (open source)
@@ -203,15 +203,17 @@ Pi's skill loader supports a `disable-model-invocation: true` frontmatter field 
 Every skill declares the Neura custom tools it's authorized to call via the standard `allowed-tools` frontmatter field — a space-delimited list per the Agent Skills spec:
 
 ```yaml
-allowed-tools: describe_screen create_task recall_memory
+allowed-tools: create_task recall_memory get_current_time
 ```
 
 **Why this preserves portability:**
 
 - The field is in the Agent Skills spec. Claude Code, Cursor, Codex, and pi all read it (Claude Code and Cursor currently treat it as documentation; pi reads the frontmatter but does not enforce; Neura will be the first runtime to implement enforcement).
 - A skill authored in Claude Code with `allowed-tools: edit bash` just works in Neura — Neura sees the field, enforces it in its own tool context. If the skill references tools Neura doesn't know (`edit`, `bash`), Neura logs a diagnostic naming the missing tools and the skill falls back to the equivalent Neura tools when possible, otherwise the skill runs with the tools it asked for that Neura actually has.
-- A skill authored in Neura with `allowed-tools: describe_screen create_task` works anywhere else too — other runtimes that don't know about `describe_screen` will silently ignore a tool that's not in their registry.
+- A skill authored in Neura with `allowed-tools: create_task recall_memory` works anywhere else too — other runtimes that don't know these tool names will silently ignore what's not in their registry.
 - There is no fork. The field is the spec.
+
+**What workers can and cannot do (orchestrator/worker split):** Workers do NOT have vision. `describe_screen` and `describe_camera` are orchestrator tools — Grok calls them during the voice session when the user asks to look at something on screen, and any visual context a worker needs to do its job is captured by Grok and passed into the worker's task description as text. This keeps workers stateless with respect to the user's physical environment (no per-client watcher delegate to thread through the runtime, no question about which client's camera feed the worker sees when the user reconnects mid-task) and gives the orchestrator full control over when the camera/screen watcher actually fires. If a future use case genuinely needs workers to drive vision queries, it will come back as a Phase 8+ design discussion; there's no plan to thread vision through workers in Phase 6 or 7.
 
 **One honest caveat about portability:** skills **without** an `allowed-tools` field are a Neura-specific edge case. The Agent Skills spec says `allowed-tools` is optional. In Claude Code, a skill without the field gets access to whatever tool set the session was launched with. Neura does NOT do that — see the "allowed-tools absence policy" below. A skill that omits `allowed-tools` will execute differently in Neura than in Claude Code. The portability claim is: **any skill that DECLARES `allowed-tools` explicitly will run identically across runtimes.** Skills that don't declare the field are implementation-dependent across runtimes, the same way any optional field is.
 
@@ -512,7 +514,7 @@ User-initiated pause flow (new in v2 — replaces Option C checkpoint dance):
 - `clarification-bridge.ts` (~150 lines) — the `request_clarification` pi custom tool. Its `execute` handler calls `grokSession.interject(question, { immediate: true })`, awaits the next user turn via the existing transcript pipeline, returns the answer as the tool result. Simultaneously fires `void dispatchPromotionWorker(...)` (no await) to create a draft skill from the exchange.
 - `worker-cancellation.ts` (~80 lines) — handles SIGINT/SIGTERM, user "stop" voice commands, presence transitions. Calls `session.agent.abort()` which fires the AbortSignal → propagates into active tool `execute` functions → tools clean up → agent emits `agent_end` with `stopReason: "aborted"`.
 - `promotion-templates.ts` (~100 lines) — prompt templates for skill-authoring pi sessions.
-- `neura-tools.ts` (~220 lines, revised in v2.1) — adapts Neura's existing tools into pi `AgentTool<TSchema>` objects. **Real tool names from `packages/core/src/tools/`:** `describe_screen` (vision), `recall_memory` / `store_memory` / `search_memory` (memory), `create_task` / `complete_task` / `list_tasks` (tasks), `get_current_time` (time), `enter_mode` (presence). Each tool is a TypeScript function whose `execute` calls the existing Neura tool handler. Registered via the `customTools: [...]` option when calling `createAgentSession()`.
+- `neura-tools.ts` (~220 lines, revised in v2.1, vision removed in v2.3) — adapts Neura's existing tools into pi `AgentTool<TSchema>` objects. **Worker-side tool names from `packages/core/src/tools/`:** `remember_fact` / `recall_memory` / `update_preference` / `invalidate_fact` / `get_timeline` / `memory_stats` (memory), `create_task` / `list_tasks` / `get_task` / `update_task` / `delete_task` (tasks), `get_current_time` (time), `enter_mode` (presence). **Vision tools (`describe_screen`, `describe_camera`) are deliberately NOT in the worker set** — see the "orchestrator owns vision" discussion below. Each tool is a TypeScript function whose `execute` calls the existing Neura tool handler. Registered via the `customTools: [...]` option when calling `createAgentSession()`.
 - `index.ts` — barrel export
 
 **Deleted from original design** (because pi provides them):
@@ -1154,7 +1156,9 @@ Agent Skills standard (per https://github.com/anthropics/skills):
 
 ## Available tools
 
-You have access to Neura's custom tools (describe_screen, recall_memory, store_memory, search_memory, create_task, complete_task, list_tasks, get_current_time, enter_mode, list_skills) and pi's built-in tools (read, write, edit, bash, grep, find, ls). Because this is a skill-AUTHORING task (taskType: promote_clarification), the `allowed-tools` enforcement is bypassed — you can use any tool needed to write the skill file correctly.
+You have access to Neura's worker-side tools (recall_memory, remember_fact, create_task, list_tasks, get_current_time, list_skills, request_clarification) and pi's built-in tools (read, write, edit, bash, grep, find, ls). Because this is a skill-AUTHORING task (taskType: promote_clarification), the `allowed-tools` enforcement is bypassed — you can use any tool needed to write the skill file correctly.
+
+Note: `describe_screen` and `describe_camera` are NOT in the worker tool set. Vision is an orchestrator concern — Grok is the one looking at the user's screen, and any visual context workers need is passed in via the task description as text.
 
 Stay focused on writing the skill file — do not attempt to execute it.
 ```
@@ -1166,14 +1170,15 @@ The template is stored in `packages/core/src/workers/promotion-templates.ts` and
 ```yaml
 ---
 name: red-test-triage
-description: When the user says "help me fix this", inspect visible failing test output on screen, identify the failing test and likely root cause, ask one clarifying question if needed, then create a task with the repro command and suspected file.
+description: When the user says "help me fix this", create a triage task from the failing test details the orchestrator passes in (test name, error message, suspected file, repro command) and optionally enrich with memory context. The worker does NOT access the screen — the orchestrator captures visible test output via its own describe_screen call and embeds the extracted details in the task description.
 version: 0.1.0
 
 # Pi's native trust tier field (spec-compliant, enforced by pi at formatSkillsForPrompt time)
 disable-model-invocation: false
 
 # Standard Agent Skills field (spec-compliant, enforced by Neura via beforeToolCall hook)
-allowed-tools: describe_screen create_task recall_memory
+# Workers do NOT get vision tools — describe_screen lives on the orchestrator side.
+allowed-tools: create_task recall_memory
 
 # Agent Skills spec "arbitrary key-value" extension point for custom metadata
 metadata:
@@ -1186,13 +1191,14 @@ metadata:
 
 ## When to use
 
-The user has said "help me fix this" or equivalent, and there is visible failing test output on their screen.
+The orchestrator dispatches this worker with a task description containing the captured failing test details — the user said "help me fix this" while looking at a failing test, and the orchestrator (Grok) called its own `describe_screen` tool to see what was on the user's terminal before dispatching.
 
 ## Steps
 
-1. Use `describe_screen` to capture the current screen context.
-2. Identify the failing test name and the error message from the captured output.
-3. ...
+1. Parse the task description for the failing test name, error message, suspected file, and test runner.
+2. Optionally call `recall_memory` with the suspected file or test name to surface prior context.
+3. Call `create_task` with title, description, and priority.
+4. Respond with a one-sentence confirmation.
 ```
 
 **Required frontmatter fields (Agent Skills spec, validated by pi):**

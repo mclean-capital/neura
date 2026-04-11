@@ -1,9 +1,9 @@
 ---
 name: red-test-triage
-description: When the user says "help me fix this" or "what broke" while looking at failing test output, inspect the visible screen to identify the failing test and most likely root cause, recall prior context about the codebase from memory if relevant, then create a task with a repro command and the suspected file path. Use this for any test-failure triage flow initiated via voice.
+description: When the user says "help me fix this" or "what broke" while looking at failing test output, create a triage task capturing the failing test name, error message, suspected file, and repro command. The orchestrator captures the on-screen test output via its own describe_screen call and passes the extracted details into this worker's task description — this worker does not access the screen itself. Use this for any test-failure triage flow initiated via voice.
 version: 0.1.0
 disable-model-invocation: false
-allowed-tools: describe_screen create_task recall_memory
+allowed-tools: create_task recall_memory
 metadata:
   neura_source: manual
   neura_created_by: phase6-kickoff
@@ -14,44 +14,67 @@ metadata:
 
 ## When to use
 
-The user is looking at a terminal, test runner, or CI dashboard showing failing
-tests and asks for help (phrases like "help me fix this", "what broke",
-"why did this fail", "look at this error"). This skill exists so the user can
-delegate the repetitive triage step ("copy the error message, figure out which
-file is implicated, open a task") without leaving voice.
+The orchestrator (Grok) dispatches you with a task description containing
+details about a failing test that the user is looking at. Your job is to
+create a tracked task for fixing it so the user can come back to it later,
+optionally enriching the task with any prior context from memory about the
+same file or test.
 
-Do NOT use this skill when:
+You do NOT have screen access. The orchestrator already captured what's
+on screen via its own `describe_screen` tool call before dispatching you,
+and passed the relevant details into your task description. If the task
+description is empty or doesn't mention a failing test, treat that as a
+dispatch error — the orchestrator should have populated it. In that case,
+create a generic "investigate failing test" task and flag the missing
+context in the task description.
 
-- The user wants you to actually fix the test. This skill triages; it does not
-  edit code.
-- The failing output is not on screen. If `describe_screen` returns something
-  other than test output, ask a clarifying question instead of guessing.
+## Expected task description shape
+
+The orchestrator will pass in something like:
+
+> "Failing test: `billing.test.ts` > `calculates tax on line items`. Error:
+> `AssertionError: expected 220 to equal 200`. Suspected file:
+> `src/billing/tax.ts`. Runner: vitest. User wants this triaged."
+
+Parse out:
+
+- Test name (required)
+- Error message (required if present)
+- Suspected file path (optional but preferred)
+- Test runner (to derive the repro command — vitest, jest, bun test, etc.)
 
 ## Steps
 
-1. Call `describe_screen` to capture the current visible context. Look for
-   framework-specific patterns: `FAIL`, `AssertionError`, `expect`, stack
-   traces, and file paths that end in `.test.ts` / `.test.tsx` / `.spec.ts`.
-2. Identify the single most recent failing test. If multiple tests failed,
-   pick the one with the shortest stack trace (usually the root cause).
-3. Optionally call `recall_memory` with the failing test's file path to check
-   whether Neura has prior context about this file (recent edits, known flaky
-   tests, related bugs). Only do this if the name doesn't make the failure
-   obviously new.
-4. Call `create_task` with:
+1. Read the task description carefully and extract the failing test
+   name, the error message, the suspected root-cause file, and the
+   test runner.
+
+2. Optionally call `recall_memory` with the suspected file path or
+   test name to surface any prior context Neura has about the same
+   file (recent edits, known flaky tests, related bugs). Skip this
+   step if the test name makes it obvious there's no prior history —
+   don't pad with a memory query just because the tool is available.
+
+3. Call `create_task` with:
    - `title`: "Fix failing test: <test name>"
-   - `description`: the error message verbatim plus the suspected root-cause
-     file path, and a repro command derived from the test runner (e.g.
-     `npm run test -- --filter <test name>`)
-   - `priority`: "high" if the error mentions a regression or production
-     break, "medium" otherwise.
-5. Briefly tell the user what you created and what the likely cause is
-   (~1-2 sentences). Do not lecture.
+   - `description`: the error message verbatim plus the suspected
+     root-cause file path, and a repro command derived from the test
+     runner (e.g. `npm run test -- --filter "<test name>"`, or
+     `bun test <file> -t "<test name>"` for bun test, or whatever
+     matches the runner named in the task description)
+   - `priority`: "high" if the error mentions a regression, prod
+     break, or deployment blocker. "medium" otherwise.
+
+4. Done. Respond with a one-sentence confirmation telling the user
+   what the task title is and what you think the likely cause is
+   (if the error message makes it clear). Keep it short.
 
 ## Notes for the worker
 
-- If `describe_screen` fails or returns nothing recognizable, stop and ask one
-  clarifying question: "I don't see test output on your screen right now —
-  can you switch to the terminal or give me the test name?"
-- This skill must not edit source code and must not run any shell commands.
-  The `allowed-tools` field enforces that at the runtime level.
+- This skill must not edit source code and must not run any shell
+  commands. The `allowed-tools` field enforces that at the runtime
+  level (only `create_task` and `recall_memory` are in the allowlist).
+
+- If the task description contains NO test information at all, call
+  `create_task` with a generic investigation prompt and note in the
+  description that the orchestrator did not pass test context.

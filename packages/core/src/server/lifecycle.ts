@@ -335,18 +335,21 @@ export async function initServices(): Promise<CoreServices> {
       // factory runs at createAgentSession time with the worker id,
       // so per-worker custom tools (request_clarification) can close
       // over that id for status callbacks and answer routing.
+      //
+      // Workers do NOT get vision tools — that's a deliberate design
+      // decision documented in neura-tools.ts. Vision is an
+      // orchestrator concern: grok is the one looking at the user's
+      // screen via its voice-session `describe_screen` tool call,
+      // and any visual context workers need is passed to them as
+      // text in the task description. The queryWatcher field on
+      // ToolCallContext is vestigial from the worker POV — neura-
+      // tools.ts no longer registers any tool that reads it — but
+      // we still satisfy the interface with a noop so the worker
+      // context shape doesn't fork from the orchestrator context.
       const buildTools = ({ workerId }: { workerId: string }): NeuraAgentTool[] => {
         const baseTools = buildNeuraTools({
-          queryWatcher: async () => {
-            // Workers run outside the active voice session's watcher
-            // lifecycle by default. Phase 7 will thread a per-session
-            // delegate through here; for Phase 6 workers that need
-            // vision must fail explicitly rather than silently return
-            // an empty description.
-            return Promise.resolve(
-              "vision not wired for workers yet — no active screen/camera share visible from the worker's tool context. (Phase 7)"
-            );
-          },
+          queryWatcher: () =>
+            Promise.resolve('vision is not available to workers; orchestrator owns screen access'),
           memoryTools: workerMemoryTools,
           taskTools: workerTaskTools,
         });

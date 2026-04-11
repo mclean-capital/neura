@@ -1,11 +1,22 @@
 /**
  * Phase 6 — Neura tool adapters for pi-coding-agent
  *
- * Adapts Neura's existing tools (vision, time, memory, task, presence) into
+ * Adapts Neura's existing tools (time, memory, task, presence) into
  * pi-coding-agent's `AgentTool<TSchema>` shape so they can be registered on
  * a pi `AgentSession` via `createAgentSession({ customTools })`. Each adapter
  * is a thin wrapper around the existing Neura tool handler from
  * `packages/core/src/tools/`.
+ *
+ * **Workers do not get vision tools.** `describe_screen` /
+ * `describe_camera` are intentionally excluded from the worker tool
+ * set. Vision is an orchestrator concern — the user is looking at
+ * their screen while talking to grok, and grok is the one that sees
+ * the screen via its own voice-session `describe_screen` tool call.
+ * When a worker needs visual context, grok captures the relevant
+ * information and passes it into the worker's task description as
+ * text. This keeps workers stateless with respect to the user's
+ * physical environment and avoids threading a per-client watcher
+ * delegate through the worker runtime.
  *
  * Key differences between Neura's native tool shape and pi's:
  *
@@ -18,11 +29,11 @@
  *    emits `tool_execution_end` with `isError: true`) — this is pi's
  *    documented contract in `AgentTool.execute`.
  *
- * 3. Execution context: Neura's handlers take a `ToolCallContext` (query
- *    watcher callback, memory handler, task handler, etc.) as an explicit
- *    parameter. Pi's `execute` signature is `(toolCallId, params, signal,
- *    onUpdate)` with no context argument. We close over the context in
- *    `buildNeuraTools()` and pass it to the Neura handlers internally.
+ * 3. Execution context: Neura's handlers take a `ToolCallContext` (memory
+ *    handler, task handler, etc.) as an explicit parameter. Pi's
+ *    `execute` signature is `(toolCallId, params, signal, onUpdate)` with
+ *    no context argument. We close over the context in `buildNeuraTools()`
+ *    and pass it to the Neura handlers internally.
  *
  * 4. Tool discovery: pi registers ALL tools up front on the session;
  *    per-skill filtering happens at invocation time via the
@@ -34,7 +45,6 @@
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { Logger } from '@neura/utils/logger';
-import { handleVisionTool } from '../tools/vision-tools.js';
 import { handleTimeTool } from '../tools/time-tools.js';
 import { handleMemoryTool } from '../tools/memory-tools.js';
 import { handleTaskTool } from '../tools/task-tools.js';
@@ -52,18 +62,6 @@ export type NeuraAgentTool = AgentTool<TSchema, unknown>;
 // ────────────────────────────────────────────────────────────────────
 // TypeBox parameter schemas
 // ────────────────────────────────────────────────────────────────────
-
-/** Shared vision schema — used by both `describe_screen` and `describe_camera`. */
-const VisionParams = Type.Object({
-  focus: Type.Optional(
-    Type.String({ description: "Optional focus area (e.g. 'the error message')" })
-  ),
-  detail: Type.Optional(
-    Type.Union([Type.Literal('brief'), Type.Literal('detailed')], {
-      description: "Detail level: 'brief' for 1-2 sentences, 'detailed' for a thorough explanation",
-    })
-  ),
-});
 
 const EmptyParams = Type.Object({});
 
@@ -234,29 +232,6 @@ function wrapHandler(
  */
 export function buildNeuraTools(ctx: ToolCallContext): NeuraAgentTool[] {
   const tools: NeuraAgentTool[] = [];
-
-  // ── Vision ──────────────────────────────────────────────────────
-  tools.push(
-    makeTool({
-      name: 'describe_screen',
-      label: 'Describe Screen',
-      description:
-        "Analyze the user's shared screen. Use when the user asks about what's on their screen, asks you to read text, review code, or look at their display.",
-      parameters: VisionParams,
-      execute: wrapHandler('describe_screen', handleVisionTool, ctx),
-    })
-  );
-
-  tools.push(
-    makeTool({
-      name: 'describe_camera',
-      label: 'Describe Camera',
-      description:
-        "Analyze the user's camera feed. Use when the user asks you to look at something, describe what you see, or asks any visual question about their surroundings.",
-      parameters: VisionParams,
-      execute: wrapHandler('describe_camera', handleVisionTool, ctx),
-    })
-  );
 
   // ── Time ────────────────────────────────────────────────────────
   tools.push(
@@ -442,10 +417,12 @@ function makeTool<TSchemaT extends TSchema>(spec: {
  * `pi-runtime.ts` to validate a skill's `allowed-tools` list during load
  * (unknown names emit a warning but don't block load — pi-runtime's
  * `beforeToolCall` still enforces at runtime).
+ *
+ * Note: vision tools (`describe_screen`, `describe_camera`) are NOT in
+ * this list. Vision is owned by the orchestrator (grok), not workers.
+ * See the file header for the rationale.
  */
 export const NEURA_TOOL_NAMES: readonly string[] = [
-  'describe_screen',
-  'describe_camera',
   'get_current_time',
   'remember_fact',
   'recall_memory',

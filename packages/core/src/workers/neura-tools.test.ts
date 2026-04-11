@@ -65,28 +65,23 @@ describe('buildNeuraTools', () => {
   });
 });
 
-describe('vision adapter', () => {
-  it('describe_screen calls queryWatcher with screen source', async () => {
-    const ctx = makeCtx({
-      queryWatcher: vi.fn().mockResolvedValue('a terminal window'),
-    });
-    const tool = getTool(buildNeuraTools(ctx), 'describe_screen');
-    const result = await tool.execute('call-1', { focus: 'the errors', detail: 'brief' });
-    expect(ctx.queryWatcher).toHaveBeenCalledTimes(1);
-    const [prompt, source] = (ctx.queryWatcher as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(source).toBe('screen');
-    expect(prompt).toContain('errors');
-    expect(result.content[0]).toEqual({ type: 'text', text: 'a terminal window' });
-    expect(result.details).toBe('a terminal window');
+describe('workers do not get vision tools', () => {
+  // Vision (describe_screen, describe_camera) is deliberately excluded
+  // from the worker tool set — it's an orchestrator concern. See the
+  // file header comment in neura-tools.ts for the rationale.
+  it('buildNeuraTools omits describe_screen', () => {
+    const tools = buildNeuraTools(makeCtx());
+    expect(tools.find((t) => t.name === 'describe_screen')).toBeUndefined();
   });
 
-  it('describe_camera calls queryWatcher with camera source', async () => {
-    const ctx = makeCtx({
-      queryWatcher: vi.fn().mockResolvedValue('a cat on a keyboard'),
-    });
-    const tool = getTool(buildNeuraTools(ctx), 'describe_camera');
-    await tool.execute('call-1', {});
-    expect((ctx.queryWatcher as ReturnType<typeof vi.fn>).mock.calls[0][1]).toBe('camera');
+  it('buildNeuraTools omits describe_camera', () => {
+    const tools = buildNeuraTools(makeCtx());
+    expect(tools.find((t) => t.name === 'describe_camera')).toBeUndefined();
+  });
+
+  it('NEURA_TOOL_NAMES does not include vision tool names', () => {
+    expect(NEURA_TOOL_NAMES).not.toContain('describe_screen');
+    expect(NEURA_TOOL_NAMES).not.toContain('describe_camera');
   });
 });
 
