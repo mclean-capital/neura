@@ -1,3 +1,9 @@
+# [2.1.0](https://github.com/mclean-capital/neura/compare/v2.0.0...v2.1.0) (2026-04-11)
+
+### Features
+
+- **cli:** real Windows service support via Scheduled Task + Startup fallback ([e9d5e2e](https://github.com/mclean-capital/neura/commit/e9d5e2e32b537f2ee28a0f9827fdf071679da8ba))
+
 # [2.0.0](https://github.com/mclean-capital/neura/compare/v1.10.2...v2.0.0) (2026-04-11)
 
 - feat(cli,core)!: ship core inside the CLI npm package ([c5d069a](https://github.com/mclean-capital/neura/commit/c5d069abcd370e5aede2e870b96eb8ddf2cae701))
