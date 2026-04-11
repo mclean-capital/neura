@@ -39,6 +39,24 @@ Mic audio → Grok (Eve voice)
 - A [Grok API key](https://console.x.ai/) (xAI — voice conversation)
 - A [Google API key](https://aistudio.google.com/apikey) (Gemini — vision + memory)
 
+### Supported platforms
+
+| Platform                            | Supported |
+| ----------------------------------- | :-------: |
+| macOS — Apple Silicon (M1/M2/M3/M4) |    Yes    |
+| macOS — Intel (x64)                 |  **No**   |
+| Windows — x64 / arm64               |    Yes    |
+| Linux — x64 / arm64                 |    Yes    |
+
+**Intel Macs are not supported.** Neura's wake-word detector runs on
+`onnxruntime-node`, and upstream dropped Intel Mac (darwin/x64) binaries
+starting with version 1.24. Because voice is a required feature — not an
+optional one — the `npm install -g` will fail loudly on Intel Mac rather
+than silently disabling wake-word. If you're on Intel Mac and want to try
+Neura anyway, your options are to run it on a supported platform (any
+recent Mac, Windows, or Linux box) or to self-build against an older
+onnxruntime-node.
+
 ### One command (recommended)
 
 ```bash

@@ -16,6 +16,34 @@ This fetches the CLI **plus** the bundled core service and its native dependenci
 
 Requires **Node.js >= 22**.
 
+### Supported platforms
+
+| Platform                            | Supported |
+| ----------------------------------- | :-------: |
+| macOS — Apple Silicon (M1/M2/M3/M4) |    Yes    |
+| macOS — Intel (x64)                 |  **No**   |
+| Windows — x64 / arm64               |    Yes    |
+| Linux — x64 / arm64                 |    Yes    |
+
+**Intel Macs are not supported.** Neura's wake-word detector runs on
+`onnxruntime-node`, and upstream dropped Intel Mac (`darwin/x64`) binaries
+starting with version 1.24. Because voice is a required feature — not an
+optional one — `npm install -g @mclean-capital/neura` will appear to
+succeed but core will crash at startup with
+`Cannot find module '../bin/napi-v6/darwin/x64/onnxruntime_binding.node'`.
+
+If you're on an Apple Silicon Mac but see the `darwin/x64` error, you've
+installed the Intel build of Node under Rosetta. Reinstall Node as arm64:
+
+```bash
+nvm uninstall <version>
+arch -arm64 nvm install <version>
+```
+
+For true Intel Macs, there's no workaround short of self-building against
+an older onnxruntime-node — we recommend running Neura on a supported
+machine instead.
+
 ## Quick start
 
 ```bash
