@@ -33,6 +33,7 @@ import {
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
+  type AuthStorage,
 } from '@mariozechner/pi-coding-agent';
 import type { Agent, AgentEvent, BeforeToolCallResult } from '@mariozechner/pi-agent-core';
 import type { Model } from '@mariozechner/pi-ai';
@@ -107,6 +108,15 @@ export interface PiRuntimeOptions {
    * permission check resolves it via `registry.getAllowedTools(name)`.
    */
   skillRegistry: SkillRegistry;
+
+  /**
+   * Optional auth storage override. Defaults to pi's own behavior
+   * (a file-backed `AuthStorage.create(agentDir/auth.json)`). Tests
+   * pass an `AuthStorage.inMemory()` seeded with a dummy key for the
+   * faux provider so `createAgentSession` doesn't error out on
+   * missing credentials for a fake API.
+   */
+  authStorage?: AuthStorage;
 }
 
 /**
@@ -154,6 +164,7 @@ export class PiRuntime implements WorkerRuntime {
       thinkingLevel: this.opts.thinkingLevel ?? 'low',
       sessionManager,
       customTools: tools,
+      ...(this.opts.authStorage ? { authStorage: this.opts.authStorage } : {}),
     });
 
     // Install the beforeToolCall permission hook. Resolves the currently
