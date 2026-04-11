@@ -183,4 +183,99 @@ describe('SkillRegistry', () => {
       expect(large).toBeGreaterThan(small);
     });
   });
+
+  describe('orchestrator skills', () => {
+    it('listOrchestratorSkills filters by metadata.neura_level', () => {
+      registry.replaceAll([
+        makeSkill({ name: 'worker-a', metadata: {} }),
+        makeSkill({ name: 'worker-b', metadata: { neura_level: 'worker' } }),
+        makeSkill({
+          name: 'orchestrator-a',
+          metadata: { neura_level: 'orchestrator' },
+        }),
+      ]);
+      const orchestrators = registry.listOrchestratorSkills();
+      expect(orchestrators).toHaveLength(1);
+      expect(orchestrators[0]?.name).toBe('orchestrator-a');
+    });
+
+    it('listWorkerSkills excludes orchestrator skills', () => {
+      registry.replaceAll([
+        makeSkill({ name: 'worker-a' }),
+        makeSkill({
+          name: 'orchestrator-a',
+          metadata: { neura_level: 'orchestrator' },
+        }),
+      ]);
+      const workers = registry.listWorkerSkills();
+      expect(workers).toHaveLength(1);
+      expect(workers[0]?.name).toBe('worker-a');
+    });
+
+    it('getPromptContext excludes orchestrator skills (they flow through the prefix)', () => {
+      registry.replaceAll([
+        makeSkill({ name: 'worker-a' }),
+        makeSkill({
+          name: 'orchestrator-a',
+          metadata: { neura_level: 'orchestrator' },
+        }),
+      ]);
+      const prompt = registry.getPromptContext(10_000);
+      expect(prompt).toContain('worker-a');
+      expect(prompt).not.toContain('orchestrator-a');
+    });
+
+    it('buildOrchestratorPromptPrefix returns empty string when no orchestrator skills loaded', () => {
+      registry.replaceAll([makeSkill({ name: 'worker-a' })]);
+      expect(registry.buildOrchestratorPromptPrefix()).toBe('');
+    });
+
+    it('buildOrchestratorPromptPrefix concatenates bodies of non-draft orchestrator skills', () => {
+      registry.replaceAll([
+        makeSkill({
+          name: 'worker-control',
+          body: 'When user says pause, call pause_worker.',
+          metadata: { neura_level: 'orchestrator' },
+        }),
+      ]);
+      const prefix = registry.buildOrchestratorPromptPrefix();
+      expect(prefix).toContain('Active orchestrator skills');
+      expect(prefix).toContain('worker-control');
+      expect(prefix).toContain('When user says pause, call pause_worker.');
+    });
+
+    it('buildOrchestratorPromptPrefix skips draft orchestrator skills', () => {
+      registry.replaceAll([
+        makeSkill({
+          name: 'inactive-directive',
+          body: 'This should not appear.',
+          disableModelInvocation: true,
+          metadata: { neura_level: 'orchestrator' },
+        }),
+      ]);
+      const prefix = registry.buildOrchestratorPromptPrefix();
+      expect(prefix).toBe('');
+    });
+
+    it('buildOrchestratorPromptPrefix sorts skills alphabetically for stable output', () => {
+      registry.replaceAll([
+        makeSkill({
+          name: 'zeta',
+          body: 'zeta body',
+          metadata: { neura_level: 'orchestrator' },
+        }),
+        makeSkill({
+          name: 'alpha',
+          body: 'alpha body',
+          metadata: { neura_level: 'orchestrator' },
+        }),
+      ]);
+      const prefix = registry.buildOrchestratorPromptPrefix();
+      const alphaIdx = prefix.indexOf('alpha');
+      const zetaIdx = prefix.indexOf('zeta');
+      expect(alphaIdx).toBeGreaterThan(-1);
+      expect(zetaIdx).toBeGreaterThan(-1);
+      expect(alphaIdx).toBeLessThan(zetaIdx);
+    });
+  });
 });

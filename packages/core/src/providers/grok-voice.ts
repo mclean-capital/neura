@@ -15,6 +15,7 @@ import {
   type EnterModeHandler,
   type TaskToolHandler,
   type SkillToolHandler,
+  type WorkerControlHandler,
 } from '../tools/index.js';
 
 const log = new Logger('voice');
@@ -36,6 +37,7 @@ export interface GrokVoiceConfig {
   enterMode?: EnterModeHandler;
   taskTools?: TaskToolHandler;
   skillTools?: SkillToolHandler;
+  workerControl?: WorkerControlHandler;
 }
 
 export class GrokVoiceProvider implements VoiceProvider {
@@ -156,6 +158,7 @@ export class GrokVoiceProvider implements VoiceProvider {
               includePresence: !!this.config.enterMode,
               includeTasks: !!this.config.taskTools,
               includeSkills: !!this.config.skillTools,
+              includeWorkerControl: !!this.config.workerControl,
             }),
           },
         })
@@ -334,6 +337,7 @@ export class GrokVoiceProvider implements VoiceProvider {
       enterMode: this.config.enterMode,
       taskTools: this.config.taskTools,
       skillTools: this.config.skillTools,
+      workerControl: this.config.workerControl,
     });
     this.cb.onToolResult(name, result);
 

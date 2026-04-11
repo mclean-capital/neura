@@ -44,6 +44,8 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     voiceFanoutBridge,
     clarificationBridge,
     skillToolHandler,
+    workerControlHandler,
+    skillRegistry,
   } = services;
   const { authToken } = config;
 
@@ -430,6 +432,20 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         }
       }
 
+      // Phase 6: inject every loaded orchestrator skill's markdown
+      // body into the system prompt. These are skills tagged with
+      // `metadata.neura_level: 'orchestrator'` in their frontmatter;
+      // their bodies describe always-on orchestrator behavior
+      // (pause/resume/cancel routing, clarification handling, etc.)
+      // that Grok reads at every turn. Driven by SKILL.md files so
+      // behavior can be edited without touching code.
+      if (skillRegistry) {
+        const orchestratorPrefix = skillRegistry.buildOrchestratorPromptPrefix();
+        if (orchestratorPrefix.length > 0) {
+          systemPromptPrefix = (systemPromptPrefix ?? '') + orchestratorPrefix;
+        }
+      }
+
       // Re-check state after async gap — may have gone passive/idle during await
       if (connectionClosed || presence.state !== 'active') return;
 
@@ -439,6 +455,7 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         enterMode: (mode) => presence.enterMode(mode),
         taskTools,
         skillTools: skillToolHandler ?? undefined,
+        workerControl: workerControlHandler ?? undefined,
       });
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();

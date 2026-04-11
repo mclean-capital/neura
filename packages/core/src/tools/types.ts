@@ -53,6 +53,43 @@ export interface SkillToolHandler {
   importSkill(path: string): Promise<{ imported: boolean; count: number }>;
 }
 
+/**
+ * Phase 6 — worker control handler. Surfaces pause / resume / cancel
+ * as tool calls Grok can make during a voice session, driven by the
+ * orchestrator skill's system-prompt instructions. Each method takes
+ * an optional `workerId` — if omitted, the handler resolves to the
+ * most recent non-terminal worker. Returns the actual `workerId`
+ * that was acted on so Grok can confirm the target back to the user.
+ */
+export interface WorkerControlHandler {
+  /** Steer-pause a running worker to `idle_partial`. */
+  pauseWorker(workerId?: string): Promise<{
+    paused: boolean;
+    workerId: string | null;
+    reason?: string;
+  }>;
+  /** Resume a previously paused worker via SessionManager.open(). */
+  resumeWorker(
+    workerId?: string,
+    message?: string
+  ): Promise<{ resumed: boolean; workerId: string | null; reason?: string }>;
+  /** Cancel a worker permanently via pi's AbortSignal. */
+  cancelWorker(workerId?: string): Promise<{
+    cancelled: boolean;
+    workerId: string | null;
+    reason?: string;
+  }>;
+  /** List currently-active workers so Grok can name targets. */
+  listActive(): Promise<
+    {
+      workerId: string;
+      status: string;
+      skillName: string | undefined;
+      startedAt: string;
+    }[]
+  >;
+}
+
 /** Callback for presence mode changes triggered by AI tool calls */
 export type EnterModeHandler = (mode: 'passive' | 'active') => void;
 
@@ -63,6 +100,7 @@ export interface ToolCallContext {
   enterMode?: EnterModeHandler;
   taskTools?: TaskToolHandler;
   skillTools?: SkillToolHandler;
+  workerControl?: WorkerControlHandler;
 }
 
 /** Re-export for convenience — callers depend on these along with the context. */

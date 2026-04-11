@@ -1,7 +1,8 @@
 /**
  * Phase 6 — Skill registry
  *
- * In-memory index of loaded NeuraSkills keyed by name. Serves three consumers:
+ * In-memory index of loaded NeuraSkills keyed by name. Serves four
+ * consumers:
  *
  * 1. `list_skills` / `get_skill` tools — surface what's installed, including
  *    draft skills (for introspection), via `list()` and `get()`.
@@ -14,6 +15,16 @@
  * 3. `beforeToolCall` permission enforcement — `getAllowedTools(name)`
  *    returns the parsed `allowed-tools` list (or the Neura default if the
  *    skill didn't declare it), consumed by pi-runtime's per-skill hook.
+ *
+ * 4. Orchestrator skill injection — `buildOrchestratorPromptPrefix()`
+ *    concatenates every non-draft orchestrator-level skill's markdown body
+ *    into a system-prompt prefix that gets prepended to Grok's voice
+ *    session prompt. Orchestrator skills are distinguished from worker
+ *    skills via the `metadata.neura_level: 'orchestrator'` frontmatter
+ *    field; anything else (or absent) is treated as a worker skill. Worker
+ *    skills flow through `getPromptContext()` into pi's formatter;
+ *    orchestrator skills flow through the system prompt as always-on
+ *    orchestrator behavior the LLM reads at every turn.
  *
  * MRU tracking: the registry maintains an in-memory `lastUsedAt` map. A
  * persistent skill_usage table lives separately in the store layer; the
@@ -92,6 +103,27 @@ export class SkillRegistry {
     return Array.from(this.skillsByName.values());
   }
 
+  /**
+   * Return only worker-level skills. Worker skills have no
+   * `metadata.neura_level` or have it set to anything other than
+   * `'orchestrator'`. These are the skills pi AgentSessions discover
+   * and execute.
+   */
+  listWorkerSkills(): NeuraSkill[] {
+    return this.list().filter((s) => !isOrchestratorSkill(s));
+  }
+
+  /**
+   * Return only orchestrator-level skills. Orchestrator skills have
+   * `metadata.neura_level: 'orchestrator'`. Their markdown bodies are
+   * injected into Grok's voice session system prompt as always-on
+   * behavior directives; they are NEVER executed as pi worker skills
+   * and never appear in the worker-facing catalog.
+   */
+  listOrchestratorSkills(): NeuraSkill[] {
+    return this.list().filter((s) => isOrchestratorSkill(s));
+  }
+
   /** Single skill by name, or undefined if unknown. */
   get(name: string): NeuraSkill | undefined {
     return this.skillsByName.get(name);
@@ -156,10 +188,13 @@ export class SkillRegistry {
   getPromptContext(budgetTokens: number): string {
     if (budgetTokens <= 0 || this.skillsByName.size === 0) return '';
 
-    // Skills available to the model (drop drafts — pi's formatter would
-    // filter them anyway, but ranking works on the pre-filtered list so
-    // we don't spend MRU slots on things that can't run).
-    const candidates = this.list().filter((s) => !s.disableModelInvocation);
+    // Skills available to the worker model: drop drafts AND drop
+    // orchestrator-level skills (those flow through
+    // buildOrchestratorPromptPrefix into the voice session system
+    // prompt, not through the worker catalog). Ranking works on the
+    // pre-filtered list so we don't spend MRU slots on things that
+    // can't run.
+    const candidates = this.listWorkerSkills().filter((s) => !s.disableModelInvocation);
     if (candidates.length === 0) return '';
 
     // MRU ranking: skills with a lastUsedAt counter win, descending; ties
@@ -201,6 +236,49 @@ export class SkillRegistry {
     const piSkills = accepted.map(toPiSkillShape);
     return formatSkillsForPrompt(piSkills);
   }
+
+  /**
+   * Build the orchestrator system-prompt prefix from every loaded
+   * non-draft orchestrator skill. The voice session prepends this
+   * string to Grok's system prompt so orchestrator-level behavior
+   * directives (worker control, clarification handling, future
+   * orchestrator patterns) live in editable SKILL.md files instead
+   * of being hardcoded in typescript.
+   *
+   * Draft orchestrator skills are skipped — same semantics as draft
+   * worker skills, they're loaded but not auto-applied. Skills are
+   * concatenated in alphabetical order so the prompt is stable
+   * across loads.
+   *
+   * Returns an empty string if no orchestrator skills are loaded, so
+   * the caller can unconditionally concatenate without worrying
+   * about leading whitespace.
+   */
+  buildOrchestratorPromptPrefix(): string {
+    const orchestrator = this.listOrchestratorSkills()
+      .filter((s) => !s.disableModelInvocation)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (orchestrator.length === 0) return '';
+
+    const sections = orchestrator.map((skill) => {
+      // Use a clear delimiter so the LLM sees each orchestrator
+      // skill as its own block. Include the name as a heading so
+      // the model can reference it if asked what directives are
+      // active. Trim the body to avoid trailing whitespace bloat.
+      return `## Orchestrator skill: ${skill.name}\n\n${skill.body.trim()}`;
+    });
+
+    return `\n\n# Active orchestrator skills\n\n${sections.join('\n\n')}\n`;
+  }
+}
+
+/**
+ * True if a skill is tagged as an orchestrator-level skill via its
+ * `metadata.neura_level` field. Anything else (missing, wrong type,
+ * or a different value like `'worker'`) is treated as worker-level.
+ */
+function isOrchestratorSkill(skill: NeuraSkill): boolean {
+  return skill.metadata.neura_level === 'orchestrator';
 }
 
 /**

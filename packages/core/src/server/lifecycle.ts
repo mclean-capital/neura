@@ -22,7 +22,12 @@ import {
   defaultSessionDir,
   type NeuraAgentTool,
 } from '../workers/index.js';
-import type { MemoryToolHandler, SkillToolHandler, TaskToolHandler } from '../tools/index.js';
+import type {
+  MemoryToolHandler,
+  SkillToolHandler,
+  TaskToolHandler,
+  WorkerControlHandler,
+} from '../tools/index.js';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
 
@@ -52,6 +57,7 @@ export interface CoreServices {
   voiceFanoutBridge: VoiceFanoutBridge | null;
   clarificationBridge: ClarificationBridge | null;
   skillToolHandler: SkillToolHandler | null;
+  workerControlHandler: WorkerControlHandler | null;
   version: string;
   pendingCleanups: Set<Promise<void>>;
 }
@@ -244,6 +250,7 @@ export async function initServices(): Promise<CoreServices> {
   let voiceFanoutBridge: VoiceFanoutBridge | null = null;
   let clarificationBridge: ClarificationBridge | null = null;
   let skillToolHandler: SkillToolHandler | null = null;
+  let workerControlHandler: WorkerControlHandler | null = null;
 
   if (store && config.xaiApiKey) {
     try {
@@ -399,6 +406,12 @@ export async function initServices(): Promise<CoreServices> {
         worker: agentWorker,
       });
 
+      // Worker control handler — surfaces pause / resume / cancel /
+      // list_active_workers as grok tool calls. Grok decides when to
+      // call these based on the orchestrator skill's system-prompt
+      // directives (no keyword classifier).
+      workerControlHandler = buildWorkerControlHandler({ worker: agentWorker });
+
       log.info('phase 6 worker runtime ready');
     } catch (err) {
       log.error('phase 6 initialization failed — skills and workers disabled', {
@@ -412,6 +425,7 @@ export async function initServices(): Promise<CoreServices> {
       voiceFanoutBridge = null;
       clarificationBridge = null;
       skillToolHandler = null;
+      workerControlHandler = null;
     }
   } else {
     log.info('phase 6 disabled — missing store or XAI_API_KEY');
@@ -430,6 +444,7 @@ export async function initServices(): Promise<CoreServices> {
     voiceFanoutBridge,
     clarificationBridge,
     skillToolHandler,
+    workerControlHandler,
     version,
     pendingCleanups,
   };
@@ -510,6 +525,106 @@ function buildSkillToolHandler(deps: {
       // understands the limitation.
       log.warn('import_skill not yet wired for dynamic path registration', { path });
       return Promise.resolve({ imported: false, count: 0 });
+    },
+  };
+
+  return handler;
+}
+
+/**
+ * Build the WorkerControlHandler that backs `pause_worker`,
+ * `resume_worker`, `cancel_worker`, and `list_active_workers`.
+ * Target resolution is simple: if the caller provides a `workerId`,
+ * use it. Otherwise, pick the most recent non-terminal worker via
+ * `getMostRecentActiveWorker()`. Returns a structured result on
+ * every call so Grok can narrate back which worker it acted on.
+ */
+function buildWorkerControlHandler(deps: { worker: AgentWorker }): WorkerControlHandler {
+  const { worker } = deps;
+
+  async function resolveTarget(
+    explicitId?: string
+  ): Promise<{ workerId: string } | { error: string }> {
+    if (explicitId) return { workerId: explicitId };
+    const recent = await worker.getMostRecentActiveWorker();
+    if (!recent) return { error: 'no active workers' };
+    return { workerId: recent.workerId };
+  }
+
+  const handler: WorkerControlHandler = {
+    pauseWorker: async (
+      explicitId?: string
+    ): Promise<{ paused: boolean; workerId: string | null; reason?: string }> => {
+      const target = await resolveTarget(explicitId);
+      if ('error' in target) {
+        return { paused: false, workerId: null, reason: target.error };
+      }
+      try {
+        await worker.steer(
+          target.workerId,
+          "PAUSE. The user asked you to pause. Stop after the current tool call finishes and wait. Don't start new work until resumed."
+        );
+        await worker.waitForIdle(target.workerId);
+        return { paused: true, workerId: target.workerId };
+      } catch (err) {
+        return {
+          paused: false,
+          workerId: target.workerId,
+          reason: String(err),
+        };
+      }
+    },
+
+    resumeWorker: async (
+      explicitId?: string,
+      message?: string
+    ): Promise<{ resumed: boolean; workerId: string | null; reason?: string }> => {
+      const target = await resolveTarget(explicitId);
+      if ('error' in target) {
+        return { resumed: false, workerId: null, reason: target.error };
+      }
+      try {
+        const resumePrompt = message
+          ? `OK, resume the task. Extra context: ${message}`
+          : 'OK, continue the task you were working on. Pick up where you left off.';
+        await worker.resume(target.workerId, resumePrompt);
+        return { resumed: true, workerId: target.workerId };
+      } catch (err) {
+        return {
+          resumed: false,
+          workerId: target.workerId,
+          reason: String(err),
+        };
+      }
+    },
+
+    cancelWorker: async (
+      explicitId?: string
+    ): Promise<{ cancelled: boolean; workerId: string | null; reason?: string }> => {
+      const target = await resolveTarget(explicitId);
+      if ('error' in target) {
+        return { cancelled: false, workerId: null, reason: target.error };
+      }
+      try {
+        await worker.cancel(target.workerId);
+        return { cancelled: true, workerId: target.workerId };
+      } catch (err) {
+        return {
+          cancelled: false,
+          workerId: target.workerId,
+          reason: String(err),
+        };
+      }
+    },
+
+    listActive: async () => {
+      const workers = await worker.listActiveWorkers();
+      return workers.map((w) => ({
+        workerId: w.workerId,
+        status: w.status,
+        skillName: w.taskSpec.skillName,
+        startedAt: w.startedAt,
+      }));
     },
   };
 
