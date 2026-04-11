@@ -128,17 +128,28 @@ export async function installCommand(): Promise<void> {
   let serviceRegistered = false;
   try {
     const svc = await getServiceManager();
+    const wasInstalled = svc.isInstalled();
 
-    if (svc.isInstalled()) {
-      console.log(chalk.dim('  Service already registered, restarting...'));
-      svc.restart();
-      serviceRegistered = true;
-    } else {
-      await svc.install();
-      console.log(chalk.green('  ✓ Service registered (' + getPlatformLabel() + ')'));
-      svc.start();
-      serviceRegistered = true;
+    // Always (re)write the service definition. If we only restarted when the
+    // service was already registered, an upgrade that fixes the service file
+    // (e.g. macOS plist ProgramArguments, systemd ExecStart) would never take
+    // effect — the on-disk file would stay stale. Stop the old service first
+    // so the new file gets cleanly loaded.
+    if (wasInstalled) {
+      try {
+        svc.stop();
+      } catch {
+        // Service may not be running — that's fine.
+      }
     }
+    await svc.install();
+    console.log(
+      chalk.green(
+        `  ✓ Service ${wasInstalled ? 're-registered' : 'registered'} (${getPlatformLabel()})`
+      )
+    );
+    svc.start();
+    serviceRegistered = true;
   } catch (err) {
     console.log(chalk.yellow('  Service registration skipped:'));
     console.log(chalk.yellow('  ' + (err instanceof Error ? err.message : String(err))));
