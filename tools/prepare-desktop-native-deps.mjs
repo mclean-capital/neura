@@ -24,7 +24,17 @@ const STAGING = join(ROOT, 'packages/desktop/build-resources/node_modules');
 // Seeds — these are the externalized deps the bundled core requires at
 // runtime. Anything the core bundle pulls in via esbuild is already inlined
 // and does not need to be copied.
-const SEEDS = ['onnxruntime-node', '@electric-sql/pglite'];
+//
+// Phase 6 adds two seeds: `@mariozechner/pi-coding-agent` (the in-process
+// worker runtime, Approach D) and `chokidar` (skill-directory hot-reload
+// watcher with a native fsevents binding). See packages/core/scripts/bundle.ts
+// for the matching esbuild externals.
+const SEEDS = [
+  'onnxruntime-node',
+  '@electric-sql/pglite',
+  '@mariozechner/pi-coding-agent',
+  'chokidar',
+];
 
 function walkClosure(pkgName, visited = new Set()) {
   if (visited.has(pkgName)) return visited;
