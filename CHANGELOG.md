@@ -1,3 +1,9 @@
+## [2.1.2](https://github.com/mclean-capital/neura/compare/v2.1.1...v2.1.2) (2026-04-11)
+
+### Bug Fixes
+
+- **cli:** silence DEP0190 deprecation warning in neura update ([87c868b](https://github.com/mclean-capital/neura/commit/87c868bf6645f5dcffd25618c30d6e9e745e052c))
+
 ## [2.1.1](https://github.com/mclean-capital/neura/compare/v2.1.0...v2.1.1) (2026-04-11)
 
 ### Bug Fixes
