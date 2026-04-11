@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { spawnSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { CLI_VERSION } from '../version.js';
@@ -24,17 +24,31 @@ const PACKAGE_NAME = '@mclean-capital/neura';
  * install layout); the caller falls back to printing a manual instruction.
  */
 function resolveFreshCliEntrypoint(): string | null {
+  // We use execSync rather than spawnSync here to avoid DEP0190. The npm
+  // CLI on Windows is `npm.cmd` (a shell-script wrapper), and spawning
+  // `.cmd`/`.bat` files on Windows requires `shell: true` (CVE-2024-27980).
+  // But `spawnSync(cmd, args, { shell: true })` is deprecated in Node 22+
+  // because the args are concatenated into the shell command string
+  // without escaping. execSync with a single pre-joined command string
+  // sidesteps both problems — and because every token in this command is
+  // a hardcoded constant, there's no injection surface.
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(npmCmd, ['root', '-g'], {
-    encoding: 'utf-8',
-    shell: process.platform === 'win32',
-  });
-  if (result.status !== 0 || !result.stdout) return null;
-  const globalRoot = result.stdout.trim();
-  if (!globalRoot) return null;
-  // npm packages with scopes live at <root>/@scope/name/
-  const candidate = join(globalRoot, PACKAGE_NAME, 'dist', 'index.js');
-  return existsSync(candidate) ? candidate : null;
+  try {
+    const stdout = execSync(`${npmCmd} root -g`, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const globalRoot = stdout.trim();
+    if (!globalRoot) return null;
+    // npm packages with scopes live at <root>/@scope/name/
+    const candidate = join(globalRoot, PACKAGE_NAME, 'dist', 'index.js');
+    return existsSync(candidate) ? candidate : null;
+  } catch {
+    // `npm` not on PATH, `npm root -g` exited non-zero, or the candidate
+    // path isn't where we expected — caller falls back to manual
+    // instructions.
+    return null;
+  }
 }
 
 /**
@@ -80,15 +94,17 @@ export async function updateCommand(): Promise<void> {
   // operations are idempotent and fast when nothing actually changes.
 
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  console.log(chalk.dim(`  Running: ${npmCmd} install -g ${PACKAGE_NAME}@latest`));
+  const installCmd = `${npmCmd} install -g ${PACKAGE_NAME}@latest`;
+  console.log(chalk.dim(`  Running: ${installCmd}`));
   console.log();
 
-  const result = spawnSync(npmCmd, ['install', '-g', `${PACKAGE_NAME}@latest`], {
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  });
-
-  if (result.status !== 0) {
+  // Same DEP0190 reasoning as `resolveFreshCliEntrypoint` above: use
+  // execSync with a single pre-joined command string rather than
+  // `spawnSync(cmd, args, { shell: true })`. All three tokens in this
+  // string are hardcoded constants — no injection surface.
+  try {
+    execSync(installCmd, { stdio: 'inherit' });
+  } catch {
     console.log();
     console.log(
       chalk.red(
