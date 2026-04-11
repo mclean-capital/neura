@@ -1,3 +1,9 @@
+## [1.10.2](https://github.com/mclean-capital/neura/compare/v1.10.1...v1.10.2) (2026-04-11)
+
+### Bug Fixes
+
+- **cli:** always rewrite service definition on neura install ([0845ac4](https://github.com/mclean-capital/neura/commit/0845ac476345d3a7336107b93d4a9902f6924119))
+
 ## [1.10.1](https://github.com/mclean-capital/neura/compare/v1.10.0...v1.10.1) (2026-04-11)
 
 ### Bug Fixes
