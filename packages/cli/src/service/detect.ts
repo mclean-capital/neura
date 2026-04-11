@@ -33,7 +33,7 @@ export function isElevated(): boolean {
 
 export function getPlatformLabel(): string {
   const labels: Record<Platform, string> = {
-    windows: 'Windows Service (winsw)',
+    windows: 'Windows Scheduled Task (user logon)',
     macos: 'launchd Agent',
     linux: 'systemd User Service',
   };

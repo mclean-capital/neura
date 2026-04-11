@@ -42,7 +42,7 @@ describe('detectPlatform', () => {
 describe('getPlatformLabel', () => {
   it('returns Windows label', () => {
     mockedPlatform.mockReturnValue('win32');
-    expect(getPlatformLabel()).toBe('Windows Service (winsw)');
+    expect(getPlatformLabel()).toBe('Windows Scheduled Task (user logon)');
   });
 
   it('returns macOS label', () => {

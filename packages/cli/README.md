@@ -54,7 +54,21 @@ neura listen      # voice chat (mic + speaker, wake-word ready)
 neura chat        # text chat from your terminal
 ```
 
-After `neura install` completes, core runs as a background OS service (launchd on macOS, systemd on Linux). Say your wake word — by default **"jarvis"** — and Neura activates a voice session. Stop talking for 5 minutes and it drops back to passive listening.
+After `neura install` completes, core runs as a background OS service — launchd on macOS, systemd on Linux, a Scheduled Task (or Startup folder shim as fallback) on Windows. Say your wake word — by default **"jarvis"** — and Neura activates a voice session. Stop talking for 5 minutes and it drops back to passive listening.
+
+### Windows notes
+
+Windows doesn't have a clean "run as background service" path for a voice-first assistant. A proper Windows Service (via `sc.exe`, nssm, or WinSW) runs in **Session 0**, which is isolated from every interactive user session and cannot access the user's microphone or audio devices — a hard blocker for wake-word detection. So on Windows we use a per-user **Scheduled Task** instead, registered by `schtasks.exe` with `/SC ONLOGON /RL LIMITED`. No UAC prompt, no admin rights, no bundled binaries.
+
+If `schtasks /Create` refuses (some corporate / GPO-locked Windows configurations require elevation even for user-level tasks), `neura install` transparently falls back to a `neura-core.cmd` launcher in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\`. The core still starts on next logon — `neura install` will tell you which path was taken so you know what to expect.
+
+Trade-offs you should know about on Windows:
+
+- **The core only runs while you're logged in.** When you log out, it stops; when you log back in, Windows starts it again. There's no pre-login boot. If you need 24/7 availability, use macOS or Linux.
+- **Status telemetry is thinner** than a real service. `neura status` reports up/down by pid, but there's no Windows event-log integration or automatic crash-restart policy beyond "start fresh on next logon".
+- **The Task Scheduler path is manageable from the GUI.** Open Task Scheduler and look for `neura-core` under the top-level Task Scheduler Library. If you took the Startup folder fallback, the shim is at the path above — delete the file to disable.
+
+`neura config set` works normally on Windows. The launcher shim only exports `NEURA_HOME`, so the core re-reads `config.json` on every restart — same behavior as macOS and Linux. Changes take effect on the next `neura restart` without needing `neura install`.
 
 ## Update
 

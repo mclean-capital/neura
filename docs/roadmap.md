@@ -13,7 +13,7 @@ Phase 5 Discovery Loop MVP and Security Hardening are complete. The platform is 
 ### What's built
 
 - **Hybrid voice + vision** — Grok Eve for voice, Gemini Live for continuous vision watcher, bridged via tool calls
-- **Persistent core service** — Core runs as an OS-managed background service (launchd, systemd, Windows Service stub), independent of any client
+- **Persistent core service** — Core runs as an OS-managed background process, independent of any client (launchd on macOS, systemd on Linux, per-user Scheduled Task with Startup folder fallback on Windows)
 - **`neura` CLI** — 13 commands to install, configure, and manage core: `install`, `start`, `stop`, `restart`, `status`, `config`, `logs`, `open`, `update`, `version`, `uninstall`, `backup`, `restore`
 - **Desktop app** — Electron with setup wizard, tray icon, global hotkey, auto-update
 - **Web UI** — React 19 + Vite 6 + Tailwind v4, connects to core via WebSocket
@@ -598,16 +598,16 @@ Continuous audio and video capture demands deliberate security and privacy desig
 
 ## Research Items
 
-| Item                     | Question                                                                          | Priority |
-| ------------------------ | --------------------------------------------------------------------------------- | -------- |
-| **Smart glasses**        | Does Meta Ray-Ban SDK allow custom AI endpoints? Also investigate Brilliant Frame | Medium   |
-| **System audio capture** | Best cross-platform approach (WASAPI / CoreAudio / PulseAudio)                    | High     |
-| **Worker runtime**       | Claude agents vs custom LLM agents vs plugin system? MCP integration?             | High     |
-| **WinSW integration**    | Complete Windows Service registration for `neura install`                         | High     |
-| **Bun compile pipeline** | CI workflow for cross-platform standalone binaries                                | High     |
-| **Proactive audio**      | Gemini experimental `proactiveAudio` — monitor for availability                   | Low      |
-| **Auth/identity**        | OAuth, API key management, team/org model for cloud platform                      | Medium   |
-| **Adaptive frame rate**  | Motion detection for intelligent FPS scaling                                      | Medium   |
+| Item                       | Question                                                                                                                                         | Priority |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| **Smart glasses**          | Does Meta Ray-Ban SDK allow custom AI endpoints? Also investigate Brilliant Frame                                                                | Medium   |
+| **System audio capture**   | Best cross-platform approach (WASAPI / CoreAudio / PulseAudio)                                                                                   | High     |
+| **Worker runtime**         | Claude agents vs custom LLM agents vs plugin system? MCP integration?                                                                            | High     |
+| **Windows pre-login boot** | Optional `/SC ONSTART` system-level task for 24/7 headless mode (tradeoff: needs admin, loses mic access — more of a "server mode" than default) | Low      |
+| **Bun compile pipeline**   | CI workflow for cross-platform standalone binaries                                                                                               | High     |
+| **Proactive audio**        | Gemini experimental `proactiveAudio` — monitor for availability                                                                                  | Low      |
+| **Auth/identity**          | OAuth, API key management, team/org model for cloud platform                                                                                     | Medium   |
+| **Adaptive frame rate**    | Motion detection for intelligent FPS scaling                                                                                                     | Medium   |
 
 ---
 
@@ -645,7 +645,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Build pipeline: electron-builder → .exe / .dmg / .AppImage
 - [x] CI/CD pipeline: GitHub Actions → auto-build on release
 - [x] Build `packages/cli` (`neura` CLI for service management)
-- [x] Persistent core service architecture (launchd + systemd implemented; Windows: query/status only, install pending WinSW)
+- [x] Persistent core service architecture (launchd on macOS, systemd on Linux, per-user Scheduled Task + Startup folder fallback on Windows)
 - [x] `/health` endpoint, config loading from `~/.neura/config.json`
 - [x] Auto-port assignment (18000-19000 range)
 - [x] Optional web UI static mount from `~/.neura/ui/`
@@ -653,7 +653,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] 98+ unit tests across core + CLI
 - [ ] Landing page at neura.ai (separate repo) + GitHub releases
 - [ ] Bun compile release pipeline for standalone binaries
-- [ ] WinSW integration for Windows Service registration
+- [x] Windows service: per-user Scheduled Task via `schtasks.exe` + Startup folder fallback (openclaw pattern — no admin, no bundled wrapper binaries, runs in user session for mic access)
 
 #### Phase 3 — Memory & Identity ([detailed architecture](phase3-memory.md))
 

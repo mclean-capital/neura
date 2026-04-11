@@ -76,8 +76,11 @@ Requires Node.js >= 22. The `neura install` command downloads the core binary fr
 ├── logs/
 │   ├── core.log             # Core stdout (rolling)
 │   └── core.error.log       # Core stderr
+├── neura-core.cmd           # Windows only: launcher shim invoked by
+│                            # Scheduled Task / Startup folder fallback
+├── neura-core.pid           # Windows only: core-written PID file
+│                            # (macOS uses launchctl, Linux uses systemd)
 ├── service/                 # Platform-specific service config (generated)
-│   ├── neura-core.xml       # Windows: winsw config
 │   ├── com.neura.core.plist # macOS: launchd plist
 │   └── neura-core.service   # Linux: systemd unit
 └── pgdata/                  # PGlite data directory (WASM Postgres + pgvector)
@@ -217,28 +220,73 @@ export function loadConfig() {
 
 ## Service Registration
 
-### Windows — winsw (via node-windows)
+### Windows — Scheduled Task (user logon) with Startup folder fallback
 
-```xml
-<!-- ~/.neura/service/neura-core.xml -->
-<service>
-  <id>neura-core</id>
-  <name>Neura Core</name>
-  <description>Neura AI assistant core service</description>
-  <executable>{NEURA_HOME}\core\neura-core.exe</executable>
-  <workingdirectory>{NEURA_HOME}</workingdirectory>
-  <log mode="roll-by-size">
-    <sizeThreshold>10240</sizeThreshold>
-    <keepFiles>3</keepFiles>
-  </log>
-  <onfailure action="restart" delay="5 sec"/>
-  <env name="NEURA_HOME" value="{NEURA_HOME}"/>
-</service>
+Windows has no clean "run as background service" path for a voice-first
+assistant. A proper Windows Service (via `sc.exe`, nssm, or WinSW) runs
+in **Session 0**, which is isolated from every interactive user session
+and **cannot access the user's microphone or audio devices**. For a
+voice assistant whose main feature is wake-word detection, that's a
+hard blocker no amount of service-wrapper engineering works around — so
+we don't use a real service on Windows at all.
+
+Instead we mirror [openclaw](https://github.com/openclaw/openclaw)'s
+Windows design:
+
+1. **Primary path — per-user Scheduled Task via `schtasks.exe`:**
+
+   ```
+   schtasks /Create /F /SC ONLOGON /RL LIMITED /TN neura-core /TR "<shim>"
+   ```
+
+   `/RL LIMITED` keeps the task out of the elevated-integrity bucket,
+   so no UAC prompt, no admin rights, no bundled wrapper binaries. The
+   task fires when the user logs in and runs the `.cmd` launcher shim
+   written to `$NEURA_HOME/neura-core.cmd`.
+
+2. **Fallback path — Startup folder shim:** if `schtasks /Create`
+   refuses (corporate GPO, Windows configs that require elevation even
+   for user-level tasks), `neura install` transparently drops a
+   launcher at
+   `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\neura-core.cmd`
+   which Windows runs at next logon.
+
+3. **Dual install state:** every lifecycle op (`isInstalled`, `stop`,
+   `restart`, `uninstall`) handles both states. Reinstalls clean up
+   whichever path isn't being used this time, so we never end up with
+   both a scheduled task AND a startup shim firing at next logon.
+
+**Launcher shim (`$NEURA_HOME/neura-core.cmd`):**
+
+```cmd
+@echo off
+chcp 65001 >nul
+set "NEURA_HOME=<abs path>"
+if not exist "<log dir>" mkdir "<log dir>"
+"<node binary>" "<core bundle>" >> "<log dir>\core.log" 2>> "<log dir>\core.error.log"
 ```
 
-- Requires admin (UAC prompt fires automatically via node-windows)
-- Service appears in Windows Services Manager
-- Auto-restarts on crash with exponential backoff
+The shim sets ONLY `NEURA_HOME` — no port, no API keys, no auth token.
+The core reads those from `$NEURA_HOME/config.json` at startup. If the
+shim baked in config values, they'd shadow later `neura config set`
+changes (the core loader prefers `process.env.*` over `file.*`), and
+the user would have to re-run `neura install` to pick up any change.
+
+**PID tracking:** the core itself writes `$NEURA_HOME/neura-core.pid`
+with `process.pid` at startup and removes it on clean exit. `isRunning`
+and `stop` key off that file. `isRunning` self-heals stale pid files
+(core crashed without cleanup, or `taskkill /F` killed it before its
+exit handler ran) so PID reuse can't cause false positives.
+
+**Trade-offs we accept:**
+
+- No admin, no UAC, no bundled binaries.
+- Core only runs while the user is logged in — dies on logout, starts
+  again on next logon. No pre-login boot, no 24/7 availability.
+- Status telemetry is thinner than a real service. No Windows Event
+  Log integration, no restart-on-crash beyond "start fresh next logon".
+- No microphone-access problems — the shim runs in the user's session,
+  so audio devices are reachable the same way `neura listen` has them.
 
 ### macOS — launchd Agent
 
@@ -381,13 +429,9 @@ $ neura install
   ▸ Voice
     Voice (eve): ▏
 
-  ▸ Downloading core v1.2.0...
-    ✓ neura-core-windows-x64.exe → ~/.neura/core/
-    ✓ Web UI → ~/.neura/ui/
-
   ▸ Registering service...
-    ✓ "Neura Core" registered as Windows Service
-    ✓ Auto-start: enabled
+    ✓ Service registered (Windows Scheduled Task (user logon))
+    (Registered in Task Scheduler under name "neura-core")
 
   ▸ Starting core...
     ✓ Core running on ws://localhost:18742
@@ -415,7 +459,7 @@ $ neura status
   Version:   1.2.0
   Home:      ~/.neura
   PID:       12847
-  Service:   Windows Service (auto-start: enabled)
+  Service:   Windows Scheduled Task (user logon) (installed: yes)
 ```
 
 ---
@@ -605,7 +649,7 @@ packages/cli/
 │   │   └── open.ts              # Open web UI in browser
 │   ├── service/
 │   │   ├── manager.ts           # Cross-platform dispatcher
-│   │   ├── windows.ts           # winsw/node-windows registration
+│   │   ├── windows.ts           # schtasks Scheduled Task + Startup folder fallback
 │   │   ├── macos.ts             # launchd plist generation
 │   │   ├── linux.ts             # systemd unit generation
 │   │   └── detect.ts            # OS detection, elevation check
@@ -624,14 +668,14 @@ packages/cli/
     "commander": "^13.0.0",
     "@inquirer/prompts": "^7.0.0",
     "chalk": "^5.0.0",
-    "node-windows": "^1.0.0",
     "@neura/types": "workspace:*"
   }
 }
 ```
 
-`node-windows` is only needed on Windows — conditionally imported.
-macOS and Linux use direct file generation (no external deps).
+No platform-specific runtime dependencies. All three service managers
+shell out to tools that ship with the OS: `launchctl` on macOS,
+`systemctl` on Linux, `schtasks.exe` on Windows. Zero bundled binaries.
 
 ---
 
@@ -647,7 +691,7 @@ macOS and Linux use direct file generation (no external deps).
 
 ### Phase 2: OS Service Registration
 
-6. **Windows service** — winsw via node-windows, UAC handling
+6. **Windows** — Scheduled Task via `schtasks.exe` (primary) + Startup folder shim (fallback); no admin, no bundled binaries
 7. **macOS agent** — launchd plist generation + launchctl
 8. **Linux service** — systemd unit generation + systemctl
 9. **`neura uninstall`** — Service removal per platform
@@ -678,23 +722,23 @@ macOS and Linux use direct file generation (no external deps).
 
 ## Design Decisions
 
-| Decision            | Choice                                                       | Rationale                                                              |
-| ------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| Install methods     | curl/irm script + npm global                                 | Covers end users (no Node.js) and developers                           |
-| Binary format       | Bun compile                                                  | Cross-compile from CI, no runtime deps, proven (Claude Code uses this) |
-| Core distribution   | GitHub releases, downloaded at install time                  | Keeps CLI small, independent update cycles                             |
-| Config location     | `~/.neura/` (dotdir)                                         | Industry standard (Docker, AWS, OpenClaw)                              |
-| Config format       | JSON                                                         | Simple, no parser deps, editable by hand                               |
-| API key storage     | Plaintext + restricted file permissions                      | CLI standard; encrypted keychain is optional future enhancement        |
-| Windows service     | node-windows (winsw)                                         | Proven, handles UAC, intelligent restart                               |
-| macOS service       | launchd plist (direct generation)                            | No deps, user-level agent, no sudo                                     |
-| Linux service       | systemd unit (direct generation)                             | No deps, user-level service, no root                                   |
-| Desktop coexistence | Attach to running core                                       | OpenClaw model — service is primary, UI is disposable                  |
-| Config sharing      | `~/.neura/config.json` for core, electron-store for UI prefs | Clean separation of shared vs. per-client state                        |
-| Cloud config        | Env vars override config.json                                | Standard container pattern, zero changes to core                       |
-| Local port          | Auto-assigned in 18000-19000 range                           | Avoids dev server clashes; user can override                           |
-| Cloud port          | Default 3002, override via PORT env                          | Containers own their namespace; LBs need known port                    |
-| Web UI serving      | Optional static mount from `~/.neura/ui/`                    | Core stays API-only by default; UI is a drop-in                        |
+| Decision            | Choice                                                       | Rationale                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Install methods     | curl/irm script + npm global                                 | Covers end users (no Node.js) and developers                                                                                                                                                        |
+| Binary format       | Bun compile                                                  | Cross-compile from CI, no runtime deps, proven (Claude Code uses this)                                                                                                                              |
+| Core distribution   | GitHub releases, downloaded at install time                  | Keeps CLI small, independent update cycles                                                                                                                                                          |
+| Config location     | `~/.neura/` (dotdir)                                         | Industry standard (Docker, AWS, OpenClaw)                                                                                                                                                           |
+| Config format       | JSON                                                         | Simple, no parser deps, editable by hand                                                                                                                                                            |
+| API key storage     | Plaintext + restricted file permissions                      | CLI standard; encrypted keychain is optional future enhancement                                                                                                                                     |
+| Windows "service"   | `schtasks` Scheduled Task + Startup folder fallback          | Real Windows Services run in Session 0 and can't access the user mic — a hard blocker for a voice-first app. Per-user Scheduled Task runs in the user session, needs no admin, no bundled binaries. |
+| macOS service       | launchd plist (direct generation)                            | No deps, user-level agent, no sudo                                                                                                                                                                  |
+| Linux service       | systemd unit (direct generation)                             | No deps, user-level service, no root                                                                                                                                                                |
+| Desktop coexistence | Attach to running core                                       | OpenClaw model — service is primary, UI is disposable                                                                                                                                               |
+| Config sharing      | `~/.neura/config.json` for core, electron-store for UI prefs | Clean separation of shared vs. per-client state                                                                                                                                                     |
+| Cloud config        | Env vars override config.json                                | Standard container pattern, zero changes to core                                                                                                                                                    |
+| Local port          | Auto-assigned in 18000-19000 range                           | Avoids dev server clashes; user can override                                                                                                                                                        |
+| Cloud port          | Default 3002, override via PORT env                          | Containers own their namespace; LBs need known port                                                                                                                                                 |
+| Web UI serving      | Optional static mount from `~/.neura/ui/`                    | Core stays API-only by default; UI is a drop-in                                                                                                                                                     |
 
 ---
 
@@ -703,5 +747,6 @@ macOS and Linux use direct file generation (no external deps).
 - [OpenClaw architecture](https://github.com/openclaw/openclaw) — Gateway daemon, `~/.openclaw/`, CLI + desktop coexistence
 - [Bun install script](https://bun.sh/install) — Shell/PowerShell installer pattern
 - [Bun compile docs](https://bun.com/docs/bundler/executables) — Standalone binary generation
-- [node-windows](https://github.com/coreybutler/node-windows) — Windows Service registration
+- [openclaw schtasks.ts](https://github.com/openclaw/openclaw/blob/main/src/daemon/schtasks.ts) — Windows Scheduled Task + Startup folder fallback pattern we mirror
+- [schtasks.exe reference](https://learn.microsoft.com/en-us/windows/win32/taskschd/schtasks) — `/SC ONLOGON /RL LIMITED` is the no-admin path for per-user tasks
 - [Docker Desktop model](https://docs.docker.com/engine/daemon/) — CLI + daemon coexistence via socket/port

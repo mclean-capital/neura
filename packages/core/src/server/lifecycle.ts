@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
@@ -68,6 +68,45 @@ export async function initServices(): Promise<CoreServices> {
   if (config.xaiApiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = config.xaiApiKey;
   if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
     process.env.GOOGLE_API_KEY = config.googleApiKey;
+
+  // Windows: write our PID to `$NEURA_HOME/neura-core.pid` so the CLI's
+  // Windows service manager (which uses a dumb cmd-shim launcher rather
+  // than a real SCM service) can find us for `neura status` and
+  // `neura stop`. Capturing the current process's PID from inside cmd.exe
+  // is genuinely painful — having the core itself write the pid is both
+  // simpler and more reliable. Remove on clean exit.
+  //
+  // macOS and Linux already have native service managers (launchd /
+  // systemd) that track PIDs for us, so we skip this on those platforms.
+  if (process.platform === 'win32') {
+    const corePidFile = join(config.neuraHome, 'neura-core.pid');
+    try {
+      writeFileSync(corePidFile, String(process.pid));
+      const cleanup = (): void => {
+        try {
+          unlinkSync(corePidFile);
+        } catch {
+          // Already removed; fine.
+        }
+      };
+      // The 'exit' handler fires on any terminal path, so pid file
+      // cleanup is guaranteed to run on normal shutdown.
+      process.on('exit', cleanup);
+      // Also clean up the pid file on SIGINT/SIGTERM. CRITICAL: we do
+      // NOT call process.exit() from these handlers — `server.ts` also
+      // registers SIGINT/SIGTERM listeners via `doShutdown()` that close
+      // the store, drain websockets, and run a final memory backup.
+      // Node runs listeners in registration order; since `initServices`
+      // is called before `server.ts` attaches its listeners, if we
+      // exited here the downstream graceful-shutdown handler would
+      // never run and we'd leave PGlite dirty / the backup stale.
+      // Just cleanup the pid file and let the next listener proceed.
+      process.on('SIGINT', cleanup);
+      process.on('SIGTERM', cleanup);
+    } catch (err) {
+      log.warn('failed to write neura-core.pid', { err: String(err) });
+    }
+  }
 
   // Initialize data store if DB path is available (optional — skip persistence if not configured).
   // PGlite (WASM Postgres) can corrupt on dirty shutdown (force kill, crash). If the database

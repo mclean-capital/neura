@@ -171,13 +171,35 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
         `  ✓ Service ${wasInstalled ? 're-registered' : 'registered'} (${getPlatformLabel()})`
       )
     );
+
+    // Windows has two install paths (Scheduled Task → preferred, or
+    // Startup folder shim → fallback). Tell the user which one was
+    // used so they understand what to expect — e.g. Task Scheduler
+    // manageability vs. runs-on-next-login. Empty import on non-Windows.
+    if (process.platform === 'win32') {
+      const win = await import('../service/windows.js');
+      const mode = win.getLastInstallMode();
+      if (mode === 'startup-shim') {
+        console.log(
+          chalk.dim(
+            '  (Using Startup folder shim — schtasks.exe refused to register\n' +
+              '   the Scheduled Task on this machine, likely due to Windows\n' +
+              '   policy or corporate restrictions. The core will still run\n' +
+              '   at each user login. It can be removed from\n' +
+              '   %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\.)'
+          )
+        );
+      } else if (mode === 'scheduled-task') {
+        console.log(chalk.dim('  (Registered in Task Scheduler under name "neura-core")'));
+      }
+    }
+
     svc.start();
     serviceRegistered = true;
   } catch (err) {
     console.log(chalk.yellow('  Service registration skipped:'));
     console.log(chalk.yellow('  ' + (err instanceof Error ? err.message : String(err))));
-    console.log(chalk.dim('  Config was saved. You can run core manually:'));
-    console.log(chalk.dim('    npm run dev -w @neura/core'));
+    console.log(chalk.dim('  Config was saved. Try again after resolving the issue.'));
   }
 
   // Wait for health (only if service was started)
