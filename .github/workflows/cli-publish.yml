@@ -26,18 +26,18 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
 
+      # Trusted Publishing via OIDC requires npm >= 11.5.1, which ships
+      # natively with Node 24. The package's engines requirement is still
+      # >=22 — we only need 24 here for the npm version, not for the build
+      # output (which is plain JavaScript and runs on any Node >= 22).
+      # No NPM_TOKEN needed — npm detects the GitHub Actions OIDC token
+      # automatically when the package is configured with a trusted publisher
+      # on npm (see package settings → Access).
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
-
-      # Trusted Publishing via OIDC requires npm >= 11.5.1. Node 22 ships with
-      # npm 10, so upgrade explicitly. No NPM_TOKEN needed — npm detects the
-      # GitHub Actions OIDC token automatically when the package is configured
-      # with a trusted publisher on npm (see package settings → Access).
-      - name: Upgrade npm for Trusted Publishing
-        run: npm install -g npm@latest
 
       - run: npm ci
 
