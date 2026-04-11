@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toolDefs, handleToolCall, type ToolCallContext } from './index.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 15 tools', () => {
-    expect(toolDefs).toHaveLength(15);
+  it('defines exactly 21 tools', () => {
+    // 15 pre-phase-6 tools + 6 skill tools (list_skills, get_skill,
+    // run_skill, create_skill, promote_skill, import_skill).
+    expect(toolDefs).toHaveLength(21);
   });
 
   it('each tool has the required structure', () => {

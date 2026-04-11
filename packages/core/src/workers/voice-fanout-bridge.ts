@@ -53,8 +53,17 @@ export interface VoiceInterjector {
    * Speak a message into the active voice session. Implementations may
    * return after the message is queued on the websocket, before audio
    * playback completes.
+   *
+   * `bypassRateLimit` lets callers skip any provider-side rate limiting
+   * for clarification requests and worker completion announcements.
+   * The bridge itself does not use it — ambient progress updates
+   * respect the rate limit. Higher-level callers (clarification-bridge)
+   * pass it explicitly when they need to.
    */
-  interject(message: string, options: { immediate: boolean }): Promise<void>;
+  interject(
+    message: string,
+    options: { immediate: boolean; bypassRateLimit?: boolean }
+  ): Promise<void>;
 }
 
 /** Queue entry types. Kept narrow for exhaustiveness checking in `drain`. */
@@ -73,8 +82,13 @@ export interface VoiceFanoutBridgeOptions {
   coalesceBudgetMs?: number;
 }
 
+/** No-op interjector used when no voice session is currently attached. */
+const NO_INTERJECTOR: VoiceInterjector = {
+  interject: () => Promise.resolve(),
+};
+
 export class VoiceFanoutBridge {
-  private readonly interjector: VoiceInterjector;
+  private interjector: VoiceInterjector;
   private readonly coalesceBudgetMs: number;
   private queue: QueueEntry[] = [];
   private draining = false;
@@ -88,6 +102,18 @@ export class VoiceFanoutBridge {
   constructor(options: VoiceFanoutBridgeOptions) {
     this.interjector = options.interjector;
     this.coalesceBudgetMs = options.coalesceBudgetMs ?? 250;
+  }
+
+  /**
+   * Swap the active interjector. Used by the server layer to attach a
+   * GrokVoiceProvider when a client connects and detach when they
+   * disconnect — the bridge itself is long-lived across the core
+   * process, but the voice session it speaks through is per-client.
+   * Pass `null` to detach and fall back to a no-op interjector that
+   * silently drops everything.
+   */
+  setInterjector(interjector: VoiceInterjector | null): void {
+    this.interjector = interjector ?? NO_INTERJECTOR;
   }
 
   /**

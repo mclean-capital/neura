@@ -14,6 +14,7 @@ import {
   type MemoryToolHandler,
   type EnterModeHandler,
   type TaskToolHandler,
+  type SkillToolHandler,
 } from '../tools/index.js';
 
 const log = new Logger('voice');
@@ -34,6 +35,7 @@ export interface GrokVoiceConfig {
   memoryTools?: MemoryToolHandler;
   enterMode?: EnterModeHandler;
   taskTools?: TaskToolHandler;
+  skillTools?: SkillToolHandler;
 }
 
 export class GrokVoiceProvider implements VoiceProvider {
@@ -59,6 +61,14 @@ export class GrokVoiceProvider implements VoiceProvider {
   // Per-turn audio telemetry for debugging choppy playback
   private turnAudioChunks = 0;
   private turnAudioBytes = 0;
+
+  // Phase 6: interject() rate limiting. One interject per 10s unless the
+  // caller explicitly bypasses (clarification requests, worker completion
+  // announcements). Ambient progress updates — tool_start / tool_end
+  // affordances from VoiceFanoutBridge — respect the limit so Grok
+  // doesn't get flooded by a chatty worker.
+  private lastInterjectAt = 0;
+  private readonly minInterjectIntervalMs = 10_000;
 
   constructor(cb: VoiceProviderCallbacks, config: GrokVoiceConfig = {}) {
     this.cb = cb;
@@ -145,6 +155,7 @@ export class GrokVoiceProvider implements VoiceProvider {
               includeMemory: !!this.config.memoryTools,
               includePresence: !!this.config.enterMode,
               includeTasks: !!this.config.taskTools,
+              includeSkills: !!this.config.skillTools,
             }),
           },
         })
@@ -322,6 +333,7 @@ export class GrokVoiceProvider implements VoiceProvider {
       memoryTools: this.config.memoryTools,
       enterMode: this.config.enterMode,
       taskTools: this.config.taskTools,
+      skillTools: this.config.skillTools,
     });
     this.cb.onToolResult(name, result);
 
@@ -374,6 +386,74 @@ export class GrokVoiceProvider implements VoiceProvider {
         },
       })
     );
+  }
+
+  /**
+   * Phase 6 — inject a message into the active voice session from Neura's
+   * side (worker progress updates, clarification requests, "Done."
+   * affordances from VoiceFanoutBridge). Implements the
+   * `VoiceInterjector` interface used by `VoiceFanoutBridge`.
+   *
+   * Contract:
+   *   - `immediate: false` — queue as a conversation item that Grok
+   *     reads on the next natural turn boundary (when the user speaks
+   *     next). Used for progress updates and "Done." completion.
+   *   - `immediate: true` — queue AND fire `response.create` so Grok
+   *     speaks the message right now, interrupting any in-flight
+   *     response via `response.cancel` first. Used for clarification
+   *     requests that can't wait.
+   *   - `bypassRateLimit: true` — skip the 10s rate limiter. Used for
+   *     clarification requests and worker completion announcements
+   *     which are always important.
+   *
+   * Returns a Promise<void> to satisfy the VoiceInterjector interface
+   * even though the underlying ws.send is synchronous. If the ws is not
+   * open or the rate limiter drops the message, the method logs and
+   * resolves — it never throws, per the voice-fanout-bridge's
+   * expectation that the interjector is fire-and-forget.
+   */
+  interject(
+    message: string,
+    options: { immediate: boolean; bypassRateLimit?: boolean }
+  ): Promise<void> {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      log.warn('interject called with no active ws', { preview: message.slice(0, 80) });
+      return Promise.resolve();
+    }
+
+    const now = Date.now();
+    if (!options.bypassRateLimit && now - this.lastInterjectAt < this.minInterjectIntervalMs) {
+      log.info('interject rate-limited, dropping', {
+        preview: message.slice(0, 80),
+        msSinceLast: now - this.lastInterjectAt,
+      });
+      return Promise.resolve();
+    }
+    this.lastInterjectAt = now;
+
+    // Inject as a `system` tagged user item so Grok's reasoning treats
+    // it as context from the environment, not the user's own words.
+    // Mirror the sendSystemEvent shape but use a distinct prefix so
+    // the listen client can render it separately if needed.
+    this.ws.send(
+      JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: `[Neura: ${message}]` }],
+        },
+      })
+    );
+
+    if (options.immediate) {
+      // Break any in-flight response and speak the new message right now.
+      // response.cancel is a no-op if no response is streaming, so it's
+      // safe to send unconditionally.
+      this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+      this.ws.send(JSON.stringify({ type: 'response.create' }));
+    }
+    return Promise.resolve();
   }
 
   close(): void {

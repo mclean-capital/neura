@@ -35,7 +35,15 @@ function getAvailableWakeWords(modelsDir: string): string[] {
 }
 
 export function attachWebSocket(httpServer: Server, services: CoreServices): WebSocketServer {
-  const { store, memoryManager, config, connectedClients, pendingCleanups } = services;
+  const {
+    store,
+    memoryManager,
+    config,
+    connectedClients,
+    pendingCleanups,
+    voiceFanoutBridge,
+    skillToolHandler,
+  } = services;
   const { authToken } = config;
 
   const wss = new WebSocketServer({
@@ -421,10 +429,26 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         memoryTools,
         enterMode: (mode) => presence.enterMode(mode),
         taskTools,
+        skillTools: skillToolHandler ?? undefined,
       });
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();
       resetIdleTimer();
+
+      // Phase 6: attach this client's voice session to the fanout
+      // bridge so worker events (tool_start affordances, text delta
+      // batches, "Done." on completion) speak through it. Detached
+      // in deactivateVoiceSession() and on ws close.
+      if (voiceFanoutBridge && session) {
+        voiceFanoutBridge.setInterjector(
+          session as unknown as {
+            interject: (
+              message: string,
+              options: { immediate: boolean; bypassRateLimit?: boolean }
+            ) => Promise<void>;
+          }
+        );
+      }
     }
 
     function deactivateVoiceSession() {
@@ -437,6 +461,11 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
 
       session?.close();
       session = null;
+
+      // Detach the fanout bridge from this client's (now-dead) voice
+      // session so ambient worker events fall back to the no-op
+      // interjector instead of trying to speak through a closed ws.
+      voiceFanoutBridge?.setInterjector(null);
 
       // Resume wake-word detection by resetting the long-lived
       // detector instance. This clears its ring buffer, replay
@@ -609,6 +638,11 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         clearTimeout(idleTimer);
         idleTimer = null;
       }
+
+      // Detach the fanout bridge — deactivateVoiceSession() may have
+      // already done this but on a hard ws close we reach here without
+      // going through deactivate. Idempotent.
+      voiceFanoutBridge?.setInterjector(null);
 
       // Clean up presence (triggers deactivate if active)
       presence.close();
