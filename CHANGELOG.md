@@ -1,3 +1,14 @@
+# [2.0.0](https://github.com/mclean-capital/neura/compare/v1.10.2...v2.0.0) (2026-04-11)
+
+- feat(cli,core)!: ship core inside the CLI npm package ([c5d069a](https://github.com/mclean-capital/neura/commit/c5d069abcd370e5aede2e870b96eb8ddf2cae701))
+
+### BREAKING CHANGES
+
+- Users on v1.10.x cannot self-update to v1.11.0 via
+  `neura update` (it still points at the defunct GitHub tarball path).
+  Bootstrap once with `npm install -g @mclean-capital/neura@latest &&
+neura install`. All future upgrades work normally via `neura update`.
+
 ## [1.10.2](https://github.com/mclean-capital/neura/compare/v1.10.1...v1.10.2) (2026-04-11)
 
 ### Bug Fixes
