@@ -1,3 +1,9 @@
+## [2.1.3](https://github.com/mclean-capital/neura/compare/v2.1.2...v2.1.3) (2026-04-11)
+
+### Bug Fixes
+
+- **cli:** stop Windows terminal popup on neura start / neura install ([0bc9a8b](https://github.com/mclean-capital/neura/commit/0bc9a8b0fdfc9e4b1d8421d53b42ac52301db67b))
+
 ## [2.1.2](https://github.com/mclean-capital/neura/compare/v2.1.1...v2.1.2) (2026-04-11)
 
 ### Bug Fixes
