@@ -1,3 +1,9 @@
+## [2.1.1](https://github.com/mclean-capital/neura/compare/v2.1.0...v2.1.1) (2026-04-11)
+
+### Bug Fixes
+
+- **core:** don't load .env from CWD in the bundled production server ([7be9783](https://github.com/mclean-capital/neura/commit/7be9783e02ec5716447f39187e4cca85a7ac58f6))
+
 # [2.1.0](https://github.com/mclean-capital/neura/compare/v2.0.0...v2.1.0) (2026-04-11)
 
 ### Features
