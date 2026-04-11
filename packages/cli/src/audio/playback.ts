@@ -286,46 +286,104 @@ function createNodeSpeakerPlayback(): Promise<AudioPlayback> {
  * Secondary playback: @picovoice/pvspeaker-node
  *
  * Kept as a fallback for platforms where the `speaker` native build is
- * unavailable. Uses a manual pending-queue + drain loop because PvSpeaker
- * exposes a sync `write(samples[])` rather than a Writable stream.
+ * unavailable (it's the primary backend on Windows — node-speaker's
+ * mpg123 underflow warnings can't be silenced there).
+ *
+ * PvSpeaker's `write()` contract (from
+ * `node_modules/@picovoice/pvspeaker-node/test/pv_speaker.test.ts`):
+ *
+ *   - Accepts an `ArrayBuffer` of raw PCM bytes. NOT a `number[]`,
+ *     NOT a Node `Buffer` without unwrapping, NOT a `Uint8Array` view.
+ *     Passing anything else crashes with `RUNTIME_ERROR: Unable to
+ *     get buffer` because the native N-API binding calls
+ *     `napi_get_arraybuffer_info` on the argument.
+ *   - Returns the number of **samples** (frames) successfully written,
+ *     NOT the number of bytes. With 16-bit mono audio, 1 sample = 2
+ *     bytes, so the byte-level slice for partial writes must multiply
+ *     the returned sample count by `BYTES_PER_SAMPLE`.
+ *
+ * An earlier revision of this function missed both constraints — it
+ * built a `number[]` queue of samples and treated the sample-count
+ * return as bytes. That worked in theory for `createSoxPlayback`'s
+ * stdin pipe but not for PvSpeaker. It was also never caught in
+ * practice because an unrelated port bug (fixed in core v2.1.1)
+ * prevented `neura listen` from ever reaching audio playback, so the
+ * crash only surfaced the moment the port fix shipped.
  */
 async function createPvSpeakerPlayback(): Promise<AudioPlayback> {
   const { PvSpeaker } = await import('@picovoice/pvspeaker-node');
   let speaker: InstanceType<typeof PvSpeaker> | null = null;
 
-  // Pending samples not yet written to the speaker
-  let pending: number[] = [];
+  // Pending PCM chunks, each a Node Buffer of raw 16-bit PCM bytes.
+  // Stored as a queue of Buffers (rather than one concatenated Buffer)
+  // to avoid O(n) reallocations on every incoming audio chunk.
+  let pendingQueue: Buffer[] = [];
   let draining = false;
 
-  // Hard ceiling on consecutive "nothing drained" iterations so a stuck or
-  // zombie speaker can't spin the drain loop forever.
+  // 16-bit mono → 2 bytes per sample/frame.
+  const BYTES_PER_SAMPLE = 2;
+
+  // Hard ceiling on consecutive "nothing drained" iterations so a
+  // stuck or zombie speaker can't spin the drain loop forever.
   const MAX_STALL_ITERATIONS = 200; // 200 * 10ms = 2s max stuck time
+
+  /**
+   * Copy a Node Buffer slice into a fresh standalone ArrayBuffer.
+   *
+   * Why not `chunk.buffer.slice(...)`: Node Buffers created by
+   * `Buffer.from(..., 'base64')` may use a pooled underlying
+   * ArrayBuffer containing unrelated bytes, so we can't hand
+   * `chunk.buffer` to pvspeaker's native binding directly — we'd
+   * leak garbage into the audio stream. `chunk.buffer.slice()`
+   * would give us a fresh ArrayBuffer, but Node's `Buffer.buffer`
+   * is typed as `ArrayBuffer | SharedArrayBuffer`, and TypeScript
+   * can't narrow to ArrayBuffer without an unsafe cast.
+   *
+   * Allocating a fresh `new ArrayBuffer(length)` and copying via
+   * `Uint8Array.set` is type-safe (always ArrayBuffer), has the
+   * same runtime cost (one byte-level copy), and is the idiomatic
+   * way to hand Buffer bytes to native bindings that require a
+   * strict ArrayBuffer.
+   */
+  function chunkToArrayBuffer(chunk: Buffer): ArrayBuffer {
+    const out = new ArrayBuffer(chunk.byteLength);
+    new Uint8Array(out).set(chunk);
+    return out;
+  }
 
   async function drain(): Promise<void> {
     if (draining) return;
     draining = true;
     let stallCount = 0;
     try {
-      while (speaker && pending.length > 0) {
-        const chunk = pending;
-        pending = [];
-        const written = speaker.write(chunk);
-        if (written < chunk.length) {
-          // Ring buffer was full — requeue the tail and yield so the speaker
-          // can drain. Chrome/getUserMedia does something similar internally.
-          pending = chunk.slice(written).concat(pending);
-          if (written === 0) {
+      while (speaker && pendingQueue.length > 0) {
+        const chunk = pendingQueue.shift()!;
+        const samplesWritten = speaker.write(chunkToArrayBuffer(chunk));
+        const bytesWritten = samplesWritten * BYTES_PER_SAMPLE;
+
+        if (bytesWritten < chunk.byteLength) {
+          // Partial write — pvspeaker's ring buffer didn't have room
+          // for the whole chunk. Requeue the tail at the FRONT of the
+          // queue so the next iteration continues in order. Using
+          // `subarray` here keeps the same underlying memory rather
+          // than copying.
+          const tail = chunk.subarray(bytesWritten);
+          pendingQueue.unshift(tail);
+
+          if (samplesWritten === 0) {
             stallCount++;
             if (stallCount >= MAX_STALL_ITERATIONS) {
+              const droppedBytes = pendingQueue.reduce((n, b) => n + b.byteLength, 0);
               console.error(
-                `[playback] pvspeaker stalled after ${MAX_STALL_ITERATIONS} iterations, dropping ${pending.length} samples`
+                `[playback] pvspeaker stalled after ${MAX_STALL_ITERATIONS} iterations, dropping ${droppedBytes} bytes`
               );
-              pending = [];
+              pendingQueue = [];
               return;
             }
           } else {
             stallCount = 0; // Made progress
           }
+          // Yield so the speaker can consume what it already has
           await new Promise((r) => setTimeout(r, 10));
         } else {
           stallCount = 0;
@@ -344,7 +402,7 @@ async function createPvSpeakerPlayback(): Promise<AudioPlayback> {
     },
 
     stop() {
-      pending = [];
+      pendingQueue = [];
       if (speaker) {
         try {
           speaker.flush();
@@ -360,9 +418,9 @@ async function createPvSpeakerPlayback(): Promise<AudioPlayback> {
     play(base64Pcm: string) {
       if (!speaker) return;
       const buffer = Buffer.from(base64Pcm, 'base64');
-      const int16 = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 2);
-      // Append to pending queue. Runs off the hot path of WebSocket parsing.
-      for (const sample of int16) pending.push(sample);
+      // Queue the raw PCM Buffer — drain() converts to ArrayBuffer
+      // only at the point it hands bytes to the native speaker.
+      pendingQueue.push(buffer);
       void drain();
     },
   };

@@ -29,14 +29,59 @@ declare module 'decibri' {
 }
 
 declare module '@picovoice/pvspeaker-node' {
+  /**
+   * Ambient module declaration for `@picovoice/pvspeaker-node`.
+   *
+   * This is a stub used when the optional package isn't installed
+   * (e.g. a pre-bootstrap checkout on a platform that doesn't have
+   * prebuilt binaries). When the package IS installed, this ambient
+   * declaration STILL wins over the real `.d.ts` shipped in
+   * `node_modules/@picovoice/pvspeaker-node/dist/types/`, so the
+   * shapes here MUST match reality — otherwise a mismatch slips
+   * silently past the typechecker and crashes at runtime.
+   *
+   * ### Historical warning
+   *
+   * An earlier version of this stub declared
+   * `write(pcm: number[]): number`, which was wrong. The real API
+   * takes an `ArrayBuffer` and returns the number of **samples**
+   * (not bytes) successfully written. That bug let `playback.ts`
+   * compile clean while passing a `number[]` at runtime, which
+   * crashed pvspeaker's native binding with `RUNTIME_ERROR: Unable
+   * to get buffer` the first time audio playback was actually
+   * reached (see `createPvSpeakerPlayback` in `playback.ts` for
+   * full context). Keep the signatures below strictly aligned with
+   * `node_modules/@picovoice/pvspeaker-node/dist/types/pv_speaker.d.ts`.
+   */
   export class PvSpeaker {
-    constructor(sampleRate: number, bitsPerSample: number, options?: { deviceIndex?: number });
+    constructor(
+      sampleRate: number,
+      bitsPerSample: number,
+      options?: { bufferSizeSecs?: number; deviceIndex?: number }
+    );
+    readonly sampleRate: number;
+    readonly bitsPerSample: number;
+    readonly bufferSizeSecs: number;
+    readonly version: string;
+    readonly isStarted: boolean;
     start(): void;
     stop(): void;
-    write(pcm: number[]): number;
-    flush(): void;
-    release(): void;
+    /**
+     * Synchronous write of PCM data to the internal ring buffer.
+     * @returns the number of **samples** (not bytes) successfully
+     *          written. With 16-bit mono, 1 sample = 2 bytes; the
+     *          caller is responsible for multiplying when slicing
+     *          the remainder of a partial write.
+     */
+    write(pcm: ArrayBuffer): number;
+    /**
+     * Blocks until the PCM data has been written and played.
+     * @returns the number of samples successfully written.
+     */
+    flush(pcm?: ArrayBuffer): number;
+    writeToFile(outputPath: string): void;
     getSelectedDevice(): string;
+    release(): void;
     static getAvailableDevices(): string[];
   }
 }
