@@ -32,6 +32,13 @@ jobs:
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
+      # Trusted Publishing via OIDC requires npm >= 11.5.1. Node 22 ships with
+      # npm 10, so upgrade explicitly. No NPM_TOKEN needed — npm detects the
+      # GitHub Actions OIDC token automatically when the package is configured
+      # with a trusted publisher on npm (see package settings → Access).
+      - name: Upgrade npm for Trusted Publishing
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       - name: Skip if version already published
@@ -67,5 +74,3 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/cli
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
