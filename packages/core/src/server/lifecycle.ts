@@ -14,8 +14,10 @@ import { SkillRegistry } from '../skills/skill-registry.js';
 import { SkillWatcher } from '../skills/skill-watcher.js';
 import {
   AgentWorker,
+  ClarificationBridge,
   PiRuntime,
   VoiceFanoutBridge,
+  buildClarificationTool,
   buildNeuraTools,
   defaultSessionDir,
   type NeuraAgentTool,
@@ -48,6 +50,7 @@ export interface CoreServices {
   skillWatcher: SkillWatcher | null;
   agentWorker: AgentWorker | null;
   voiceFanoutBridge: VoiceFanoutBridge | null;
+  clarificationBridge: ClarificationBridge | null;
   skillToolHandler: SkillToolHandler | null;
   version: string;
   pendingCleanups: Set<Promise<void>>;
@@ -239,6 +242,7 @@ export async function initServices(): Promise<CoreServices> {
   let skillWatcher: SkillWatcher | null = null;
   let agentWorker: AgentWorker | null = null;
   let voiceFanoutBridge: VoiceFanoutBridge | null = null;
+  let clarificationBridge: ClarificationBridge | null = null;
   let skillToolHandler: SkillToolHandler | null = null;
 
   if (store && config.xaiApiKey) {
@@ -307,13 +311,25 @@ export async function initServices(): Promise<CoreServices> {
         },
       };
 
+      // Clarification bridge — sits between running workers (via the
+      // request_clarification pi custom tool) and the voice session's
+      // next-user-turn events. Built BEFORE the pi runtime so the
+      // buildTools factory can close over it.
+      clarificationBridge = new ClarificationBridge({
+        voiceInterjector: voiceFanoutBridge,
+        // Phase 3 leaves onPromotion unwired — agent-worker isn't yet
+        // referenceable here because the runtime is built from
+        // buildTools which itself depends on the bridge. Phase 4 moves
+        // the promotion dispatch into a post-construction wire-up step.
+      });
+
       // buildTools factory captures the worker-side tool context and
       // returns a fresh NeuraAgentTool[] array per AgentSession. The
-      // factory runs at createAgentSession time, so its closure reflects
-      // the state at worker dispatch — stores and memory managers are
-      // long-lived, so this is stable.
-      const buildTools = (): NeuraAgentTool[] =>
-        buildNeuraTools({
+      // factory runs at createAgentSession time with the worker id,
+      // so per-worker custom tools (request_clarification) can close
+      // over that id for status callbacks and answer routing.
+      const buildTools = ({ workerId }: { workerId: string }): NeuraAgentTool[] => {
+        const baseTools = buildNeuraTools({
           queryWatcher: async () => {
             // Workers run outside the active voice session's watcher
             // lifecycle by default. Phase 7 will thread a per-session
@@ -327,6 +343,14 @@ export async function initServices(): Promise<CoreServices> {
           memoryTools: workerMemoryTools,
           taskTools: workerTaskTools,
         });
+        // Append the per-worker request_clarification tool. PiRuntime's
+        // beforeToolCall hardcodes this name as always-allowed so
+        // skills don't need to declare it explicitly.
+        if (clarificationBridge) {
+          baseTools.push(buildClarificationTool(workerId, clarificationBridge));
+        }
+        return baseTools;
+      };
 
       // Build the pi runtime. getModel throws if the provider isn't
       // registered — wrap in try/catch so a missing model config
@@ -386,6 +410,7 @@ export async function initServices(): Promise<CoreServices> {
       skillWatcher = null;
       agentWorker = null;
       voiceFanoutBridge = null;
+      clarificationBridge = null;
       skillToolHandler = null;
     }
   } else {
@@ -403,6 +428,7 @@ export async function initServices(): Promise<CoreServices> {
     skillWatcher,
     agentWorker,
     voiceFanoutBridge,
+    clarificationBridge,
     skillToolHandler,
     version,
     pendingCleanups,
@@ -503,8 +529,11 @@ export async function shutdown(
   services.discoveryLoop?.stop();
   services.backupService?.stop();
 
-  // Phase 6: cancel every active worker and stop the skill watcher so
-  // pi sessions and fs watchers don't keep the process alive.
+  // Phase 6: cancel every active worker, reject any pending
+  // clarifications so waiting workers observe a clean failure instead
+  // of hanging, and stop the skill watcher so pi sessions and fs
+  // watchers don't keep the process alive.
+  services.clarificationBridge?.rejectAll('core shutting down');
   if (services.agentWorker) {
     try {
       await services.agentWorker.cancelAll();

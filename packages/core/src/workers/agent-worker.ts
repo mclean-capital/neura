@@ -33,6 +33,7 @@ import type { WorkerCallbacks, WorkerResult, WorkerStatus, WorkerTask } from '@n
 import {
   createWorker,
   getWorker,
+  listWorkers,
   sweepCrashedWorkers,
   updateWorker,
   type WorkerEntry,
@@ -251,6 +252,29 @@ export class AgentWorker {
   /** Read the current workers table row for a given id. */
   async getWorker(workerId: string): Promise<WorkerEntry | null> {
     return getWorker(this.db, workerId);
+  }
+
+  /**
+   * Return every non-terminal worker, sorted most-recently-active
+   * first. Used by the voice-intent router to find the target worker
+   * for pause / resume / cancel commands when the user says something
+   * like "stop that" without naming a specific worker.
+   */
+  async listActiveWorkers(): Promise<WorkerEntry[]> {
+    return listWorkers(this.db, {
+      status: ['spawning', 'running', 'blocked_clarifying', 'idle_partial'],
+      limit: 50,
+    });
+  }
+
+  /**
+   * Convenience: return the single most recently active worker, or
+   * null if none are running. Used by voice intent detection to pick
+   * a default target.
+   */
+  async getMostRecentActiveWorker(): Promise<WorkerEntry | null> {
+    const list = await this.listActiveWorkers();
+    return list[0] ?? null;
   }
 
   /** Number of workers currently registered with the cancellation coordinator. */

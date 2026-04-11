@@ -42,6 +42,7 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     connectedClients,
     pendingCleanups,
     voiceFanoutBridge,
+    clarificationBridge,
     skillToolHandler,
   } = services;
   const { authToken } = config;
@@ -252,6 +253,14 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
               })
           );
         }
+        // Phase 6: if any worker is currently blocked on a
+        // request_clarification tool call, resolve the oldest pending
+        // clarification with this transcript. Returns true if
+        // consumed so future logic can branch on it — today we still
+        // let Grok see the transcript too (it's normal user speech,
+        // not a special sentinel) so the orchestrator has full
+        // context of the conversation.
+        clarificationBridge?.notifyUserTurn(text);
       },
       onOutputTranscript(text: string) {
         send({ type: 'outputTranscript', text });

@@ -117,6 +117,25 @@ export class VoiceFanoutBridge {
   }
 
   /**
+   * Direct passthrough to the currently-attached interjector. Used by
+   * higher-level callers (clarification-bridge) that need to speak
+   * immediately and bypass the ambient progress queue. The queue is
+   * only for `push()` events from pi's agent loop; explicit calls
+   * from the orchestrator or a custom-tool execute go straight through
+   * so they don't get rate-limited or coalesced behind text deltas.
+   *
+   * Makes VoiceFanoutBridge itself satisfy the `VoiceInterjector`
+   * interface so clarification-bridge can take the bridge directly
+   * and always speak through whatever session is currently active.
+   */
+  interject(
+    message: string,
+    options: { immediate: boolean; bypassRateLimit?: boolean }
+  ): Promise<void> {
+    return this.interjector.interject(message, options);
+  }
+
+  /**
    * Synchronous listener — pi's agent loop is never blocked. Appends the
    * event to the queue and kicks the drain loop. Drain runs fire-and-forget
    * with a `.catch()` so errors become log lines, not unhandled rejections.

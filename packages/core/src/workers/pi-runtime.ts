@@ -39,6 +39,7 @@ import type { Model } from '@mariozechner/pi-ai';
 import type { WorkerCallbacks, WorkerResult, WorkerStatus } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import type { SkillRegistry } from '../skills/skill-registry.js';
+import { REQUEST_CLARIFICATION_TOOL_NAME } from './clarification-bridge.js';
 import type { NeuraAgentTool } from './neura-tools.js';
 import type { VoiceFanoutBridge } from './voice-fanout-bridge.js';
 import type { ResumeParams, WorkerHandle, WorkerRuntime } from './worker-runtime.js';
@@ -89,8 +90,13 @@ export interface PiRuntimeOptions {
    */
   sessionDir: string;
 
-  /** Factory that builds the full pi tool set for a new worker. */
-  buildTools: () => NeuraAgentTool[];
+  /**
+   * Factory that builds the full pi tool set for a new worker. Called
+   * once per `createAgentSession` with the worker id so per-worker
+   * custom tools (e.g. `request_clarification`) can close over the
+   * id for status updates and callback routing.
+   */
+  buildTools: (ctx: { workerId: string }) => NeuraAgentTool[];
 
   /** Voice fanout bridge. Shared across workers — one per active voice session. */
   voiceFanoutBridge: VoiceFanoutBridge;
@@ -140,7 +146,7 @@ export class PiRuntime implements WorkerRuntime {
     sessionManager: SessionManager,
     workerId: string
   ): Promise<AgentSession> {
-    const tools = this.opts.buildTools();
+    const tools = this.opts.buildTools({ workerId });
     const { session } = await createAgentSession({
       cwd: this.opts.cwd,
       agentDir: this.opts.agentDir,
@@ -158,6 +164,17 @@ export class PiRuntime implements WorkerRuntime {
     const agent = session.agent as Agent | undefined;
     if (agent) {
       agent.beforeToolCall = ({ toolCall }): Promise<BeforeToolCallResult | undefined> => {
+        const toolName = toolCall?.name ?? '';
+
+        // `request_clarification` is always available regardless of
+        // the active skill's `allowed-tools` list. Clarification is
+        // the escape hatch skills use when they hit a capability gap;
+        // requiring every skill to declare it explicitly would defeat
+        // the purpose.
+        if (toolName === REQUEST_CLARIFICATION_TOOL_NAME) {
+          return Promise.resolve(undefined);
+        }
+
         const worker = this.active.get(workerId);
         if (!worker?.skillName) return Promise.resolve(undefined);
         const allowed = this.opts.skillRegistry.getAllowedTools(worker.skillName);
@@ -167,7 +184,6 @@ export class PiRuntime implements WorkerRuntime {
             reason: `Skill '${worker.skillName}' is not loaded — cannot authorize tool call.`,
           });
         }
-        const toolName = toolCall?.name ?? '';
         if (!allowed.includes(toolName)) {
           log.info('beforeToolCall blocked', { workerId, skillName: worker.skillName, toolName });
           return Promise.resolve({
