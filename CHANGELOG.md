@@ -1,3 +1,9 @@
+## [2.1.4](https://github.com/mclean-capital/neura/compare/v2.1.3...v2.1.4) (2026-04-11)
+
+### Bug Fixes
+
+- **cli:** pass ArrayBuffer (not number[]) to pvspeaker.write in neura listen ([5d460f2](https://github.com/mclean-capital/neura/commit/5d460f239a6fd01740de74e43397c580f27dfd2b))
+
 ## [2.1.3](https://github.com/mclean-capital/neura/compare/v2.1.2...v2.1.3) (2026-04-11)
 
 ### Bug Fixes
