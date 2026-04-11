@@ -43,7 +43,13 @@ function toolEnd(toolName: string, isError = false): AgentEvent {
 }
 
 function agentEnd(stopReason: string): AgentEvent {
-  return { type: 'agent_end', stopReason } as unknown as AgentEvent;
+  // Pi's agent_end shape: `messages: AgentMessage[]`. stopReason lives on
+  // the last assistant message, NOT on the event itself — matching how
+  // extractStopReason walks messages backwards.
+  return {
+    type: 'agent_end',
+    messages: [{ role: 'assistant', content: [], stopReason, usage: {}, timestamp: 0 }],
+  } as unknown as AgentEvent;
 }
 
 /** Wait for the drain loop to finish processing pending events. */

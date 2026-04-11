@@ -254,15 +254,24 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Extract `stopReason` from a pi `agent_end` event. Different pi versions
- * shape this field slightly differently. Defaults to `"stop"` (natural
- * completion) when absent.
+ * Extract `stopReason` from a pi `agent_end` event. Pi's `AgentEvent`
+ * shape for `agent_end` carries `messages: AgentMessage[]`; the
+ * `stopReason` lives on the last assistant message in that array, not on
+ * the event itself. We walk backwards from the end of the list and pull
+ * the stopReason off the first assistant message we find. Defaults to
+ * `"stop"` when the event is malformed or no assistant message exists
+ * (e.g. agent_end fired before any assistant turn, which shouldn't
+ * happen but we'd rather fail silent than throw).
  */
 function extractStopReason(event: AgentEvent): string {
   if (event.type !== 'agent_end') return 'stop';
-  const direct = (event as unknown as { stopReason?: unknown }).stopReason;
-  if (typeof direct === 'string') return direct;
-  const nested = (event as unknown as { result?: { stopReason?: unknown } }).result;
-  if (nested && typeof nested.stopReason === 'string') return nested.stopReason;
+  const messages = (event as unknown as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return 'stop';
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as { role?: unknown; stopReason?: unknown } | undefined;
+    if (msg?.role === 'assistant' && typeof msg.stopReason === 'string') {
+      return msg.stopReason;
+    }
+  }
   return 'stop';
 }
