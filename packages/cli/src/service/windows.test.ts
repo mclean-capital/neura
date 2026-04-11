@@ -117,10 +117,36 @@ describe('renderCmdShim', () => {
   });
 });
 
+// ── VBScript launcher rendering ──────────────────────────────────────
+
+describe('renderVbsLauncher', () => {
+  it('calls WshShell.Run with the .cmd shim path, windowStyle=0, wait=False', () => {
+    const ctx = __test__.getShimContext();
+    const vbs = __test__.renderVbsLauncher(ctx);
+
+    // Uses WshShell (via WScript.Shell COM object) to run the shim.
+    expect(vbs).toContain('CreateObject("WScript.Shell")');
+    // Runs the .cmd shim path (wrapped in Chr(34) for VBScript-literal
+    // quoting), with windowStyle=0 (hidden) and bWaitOnReturn=False
+    // (fire-and-forget).
+    expect(vbs).toMatch(/shell\.Run Chr\(34\) & ".*neura-core\.cmd" & Chr\(34\), 0, False/);
+  });
+
+  it('escapes double quotes in interpolated paths', () => {
+    // VBScript string escape for " is ""
+    expect(__test__.escapeVbs('simple')).toBe('simple');
+    expect(__test__.escapeVbs('has "quotes"')).toBe('has ""quotes""');
+    // Paths passing through unchanged
+    expect(__test__.escapeVbs('C:\\Users\\test\\.neura\\x.cmd')).toBe(
+      'C:\\Users\\test\\.neura\\x.cmd'
+    );
+  });
+});
+
 // ── Install — primary schtasks path ──────────────────────────────────
 
 describe('install (Scheduled Task path)', () => {
-  it('writes the shim .cmd and registers the task via schtasks /Create', () => {
+  it('writes both the .cmd shim and the .vbs launcher, and registers the task', () => {
     mockedSpawnSync.mockReturnValue({
       status: 0,
       stdout: '',
@@ -133,11 +159,20 @@ describe('install (Scheduled Task path)', () => {
 
     windowsService.install();
 
-    // Shim file written to NEURA_HOME
-    const shimWrite = mockedWriteFileSync.mock.calls.find(([path]) =>
+    // Both launcher files must be written to NEURA_HOME:
+    //   - neura-core.cmd           → invoked by schtasks / Startup shim
+    //   - neura-core-launcher.vbs  → invoked by spawnDetachedCore via
+    //                                wscript.exe to avoid the visible
+    //                                terminal popup on install/start
+    const cmdWrite = mockedWriteFileSync.mock.calls.find(([path]) =>
       String(path).endsWith('neura-core.cmd')
     );
-    expect(shimWrite).toBeDefined();
+    expect(cmdWrite).toBeDefined();
+
+    const vbsWrite = mockedWriteFileSync.mock.calls.find(([path]) =>
+      String(path).endsWith('neura-core-launcher.vbs')
+    );
+    expect(vbsWrite).toBeDefined();
 
     // schtasks /Create invoked with the right flags
     const createCall = mockedSpawnSync.mock.calls.find(
@@ -236,6 +271,51 @@ describe('install (Startup folder fallback)', () => {
       ([cmd, args]) => cmd === 'schtasks.exe' && Array.isArray(args) && args.includes('/Delete')
     );
     expect(deleteCall).toBeDefined();
+  });
+});
+
+// ── Detached core spawn path (wscript + .vbs launcher) ───────────────
+
+describe('start (detached spawn)', () => {
+  it('spawns wscript.exe with the .vbs launcher, detached and hidden', () => {
+    // Regression: we previously spawned `cmd.exe` directly with
+    // `detached: true`. On Windows, `detached: true` always allocates
+    // a new console for the child — which Windows Terminal's "default
+    // terminal" setting intercepts and shows as a visible tab,
+    // ignoring `windowsHide: true`. A user saw the core's JSON log
+    // output pop up in a brand-new terminal tab on every `neura start`.
+    //
+    // The fix: launch via `wscript.exe` (a GUI app with no console)
+    // running a tiny .vbs that calls `WshShell.Run(shim, 0, False)`
+    // (window style 0 = hidden, wait = false). This chain has zero
+    // visible windows and the core still survives the parent exiting.
+    mockedExistsSync.mockReturnValue(false); // pid file missing → start() spawns
+
+    windowsService.start();
+
+    expect(mockedSpawn).toHaveBeenCalledOnce();
+    const [cmd, args, opts] = mockedSpawn.mock.calls[0];
+    expect(cmd).toBe('wscript.exe');
+    expect(args).toEqual([expect.stringMatching(/neura-core-launcher\.vbs$/)]);
+    // Must be detached so the core outlives the parent `neura start`
+    // exit ~100ms later. wscript is a GUI app so detached: true does
+    // NOT create a visible console, unlike cmd.exe.
+    expect(opts).toMatchObject({
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  });
+
+  it('does NOT spawn cmd.exe directly — that causes the visible popup', () => {
+    // Belt-and-braces: explicitly forbid the old (broken) spawn
+    // target. If someone refactors spawnDetachedCore back to cmd.exe,
+    // this test catches it before users hit a popup window.
+    mockedExistsSync.mockReturnValue(false);
+    windowsService.start();
+
+    const cmdExeCall = mockedSpawn.mock.calls.find(([cmd]) => cmd === 'cmd.exe');
+    expect(cmdExeCall).toBeUndefined();
   });
 });
 

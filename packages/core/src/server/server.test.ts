@@ -29,10 +29,18 @@ describe('server entry point', () => {
     // comment at the top of server.ts — which legitimately mentions
     // `dotenv/config` in prose to explain WHY it was removed — doesn't
     // trip the guard. After stripping, we only see actual code.
+    //
+    // Note the `[^\r\n]*` instead of `.*$`: JavaScript's `.` does NOT
+    // match `\r`, and `$` without the `m` flag only matches end-of-
+    // string. On files with CRLF endings (Windows checkouts), `//.*$`
+    // would fail to strip `//` comments because `.` stops at `\r`,
+    // leaving `\r` in the way of the `$` anchor. `[^\r\n]*` explicitly
+    // matches any run of non-newline characters, which works for both
+    // LF and CRLF line endings.
     const withoutBlockComments = src.replace(/\/\*[\s\S]*?\*\//g, '');
     const withoutLineComments = withoutBlockComments
       .split('\n')
-      .map((line) => line.replace(/\/\/.*$/, ''))
+      .map((line) => line.replace(/\/\/[^\r\n]*/, ''))
       .join('\n');
 
     expect(withoutLineComments).not.toMatch(/import\s+['"]dotenv\/config['"]/);
