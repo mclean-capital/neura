@@ -1,4 +1,21 @@
-import 'dotenv/config';
+// Intentionally NO `import 'dotenv/config'` here.
+//
+// When this file is the entry point of the esbuild-bundled production
+// server (`dist/core/server.bundled.mjs`), a top-level `dotenv/config`
+// import runs as a startup side-effect and reads `.env` from the
+// process CWD. That's wrong for a service: the user's CWD when they
+// run `neura install` is arbitrary (typically some project directory
+// they happen to be in), and any `.env` there will silently override
+// values from `$NEURA_HOME/config.json` — e.g. a leftover `PORT=3000`
+// in a repo checkout will pin the core to 3000 instead of the
+// auto-assigned 18xxx port, and `neura install`'s health check will
+// time out because the CLI polls a port the core isn't listening on.
+//
+// For local development the `npm run dev` script runs via
+// `src/server/dev-server.ts`, which explicitly imports `dotenv/config`
+// before importing this file. Tests also set env vars directly rather
+// than relying on dotenv. So removing the static import costs nothing
+// for dev and removes a serious leakage vector in production.
 import { createServer } from 'http';
 import type { WebSocketServer } from 'ws';
 import { Logger } from '@neura/utils/logger';

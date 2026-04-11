@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server/server.ts",
-    "start": "tsx src/server/server.ts",
+    "dev": "tsx watch src/server/dev-server.ts",
+    "start": "tsx src/server/dev-server.ts",
     "build": "tsc -p tsconfig.json && tsx scripts/bundle.ts",
     "bundle": "tsx scripts/bundle.ts",
     "typecheck": "tsc --noEmit",
@@ -16,7 +16,6 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.4.3",
     "@google/genai": "^1",
-    "dotenv": "^16",
     "express": "^4",
     "onnxruntime-node": "^1.24.3",
     "ws": "^8"
@@ -26,6 +25,7 @@
     "@neura/utils": "*",
     "@types/express": "^5",
     "@types/ws": "^8",
+    "dotenv": "^16",
     "esbuild": "^0.25.12",
     "tsx": "^4"
   }

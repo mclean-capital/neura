@@ -70,7 +70,19 @@ async function main() {
   console.log('Starting Neura desktop development environment...\n');
 
   // 1. Start core
-  run('npx', ['tsx', 'watch', 'src/server/server.ts'], path.join(root, 'packages', 'core'), 'core');
+  //
+  // Use the dev-server.ts wrapper (NOT server.ts directly) — the wrapper
+  // imports 'dotenv/config' before delegating, so `packages/core/.env`
+  // gets loaded for local dev. server.ts itself no longer has that side
+  // effect, because in the bundled production server it would read .env
+  // from the arbitrary CWD the user ran `neura install` from and leak
+  // unrelated env vars into the core. See server.ts's top comment.
+  run(
+    'npx',
+    ['tsx', 'watch', 'src/server/dev-server.ts'],
+    path.join(root, 'packages', 'core'),
+    'core'
+  );
 
   // 2. Start renderer Vite dev server (desktop's own UI)
   run('npx', ['vite', '--config', 'vite.renderer.config.ts'], desktopDir, 'renderer');
