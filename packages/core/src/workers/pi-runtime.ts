@@ -36,6 +36,14 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import type { Agent, AgentEvent, BeforeToolCallResult } from '@mariozechner/pi-agent-core';
 import type { Model } from '@mariozechner/pi-ai';
+import type { WorkerCallbacks, WorkerResult, WorkerStatus } from '@neura/types';
+import { Logger } from '@neura/utils/logger';
+import type { SkillRegistry } from '../skills/skill-registry.js';
+import type { NeuraAgentTool } from './neura-tools.js';
+import type { VoiceFanoutBridge } from './voice-fanout-bridge.js';
+import type { ResumeParams, WorkerHandle, WorkerRuntime } from './worker-runtime.js';
+
+const log = new Logger('pi-runtime');
 
 /** Events from pi-agent-core that the voice fanout bridge understands. */
 const BRIDGE_EVENT_TYPES = new Set<string>([
@@ -54,14 +62,6 @@ const BRIDGE_EVENT_TYPES = new Set<string>([
 function isBridgeEvent(event: AgentSessionEvent): event is AgentEvent {
   return BRIDGE_EVENT_TYPES.has(event.type);
 }
-import type { WorkerCallbacks, WorkerResult, WorkerStatus } from '@neura/types';
-import { Logger } from '@neura/utils/logger';
-import type { ResumeParams, WorkerHandle, WorkerRuntime } from './worker-runtime.js';
-import type { NeuraAgentTool } from './neura-tools.js';
-import type { VoiceFanoutBridge } from './voice-fanout-bridge.js';
-import type { SkillRegistry } from '../skills/skill-registry.js';
-
-const log = new Logger('pi-runtime');
 
 /**
  * Injection surface for PiRuntime. Constructed once at server startup
