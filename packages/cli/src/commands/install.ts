@@ -10,10 +10,24 @@ import {
 import { getServiceManager } from '../service/manager.js';
 import { getPlatformLabel } from '../service/detect.js';
 import { checkHealth, waitForHealthy } from '../health.js';
-import { hasCoreBinary, downloadCore, getLatestVersion } from '../download.js';
+import { hasCoreBinary } from '../download.js';
 import { findFreePort } from '../port.js';
 
-export async function installCommand(): Promise<void> {
+export interface InstallOptions {
+  /**
+   * Skip all prompts and reuse existing config.
+   *
+   * Used by `neura update`: after `npm install -g` replaces files on disk,
+   * update spawns `neura install --yes` to re-register the service using the
+   * NEW service-manager templates. The parent update process has the OLD
+   * code loaded in memory — we cannot reuse it to do the re-registration or
+   * we'd write the old templates back.
+   */
+  yes?: boolean;
+}
+
+export async function installCommand(opts: InstallOptions = {}): Promise<void> {
+  const nonInteractive = !!opts.yes;
   const home = getNeuraHome();
 
   console.log();
@@ -28,29 +42,38 @@ export async function installCommand(): Promise<void> {
   const existing = currentConfig.port > 0 ? await checkHealth(currentConfig.port) : null;
   if (existing) {
     console.log(chalk.green('  Core is already running on port ' + existing.port));
-    const reinstall = await confirm({
-      message: 'Reinstall?',
-      default: false,
-    });
-    if (!reinstall) return;
+    if (!nonInteractive) {
+      const reinstall = await confirm({
+        message: 'Reinstall?',
+        default: false,
+      });
+      if (!reinstall) return;
+    }
+    // --yes: proceed without asking (this is exactly the post-update path)
   }
 
   // Ensure directory structure
   ensureNeuraHome();
   const config = loadConfig();
 
-  // API keys
-  console.log(chalk.dim('  API Keys'));
-  const xaiKey =
-    (await password({
-      message: `XAI_API_KEY${config.apiKeys.xai ? ' (press Enter to keep existing)' : ''}:`,
-      mask: '*',
-    })) || config.apiKeys.xai;
-  const googleKey =
-    (await password({
-      message: `GOOGLE_API_KEY${config.apiKeys.google ? ' (press Enter to keep existing)' : ''}:`,
-      mask: '*',
-    })) || config.apiKeys.google;
+  // API keys — in --yes mode, reuse whatever is already in config.json.
+  // The user already entered these on a previous install; the update
+  // flow should not re-prompt for them.
+  let xaiKey = config.apiKeys.xai;
+  let googleKey = config.apiKeys.google;
+  if (!nonInteractive) {
+    console.log(chalk.dim('  API Keys'));
+    xaiKey =
+      (await password({
+        message: `XAI_API_KEY${config.apiKeys.xai ? ' (press Enter to keep existing)' : ''}:`,
+        mask: '*',
+      })) || config.apiKeys.xai;
+    googleKey =
+      (await password({
+        message: `GOOGLE_API_KEY${config.apiKeys.google ? ' (press Enter to keep existing)' : ''}:`,
+        mask: '*',
+      })) || config.apiKeys.google;
+  }
 
   // Port — auto-assign unless user already has one configured
   console.log();
@@ -65,26 +88,30 @@ export async function installCommand(): Promise<void> {
     port = await findFreePort();
     console.log(chalk.green(`  ✓ Auto-assigned: ${port}`));
   }
-  const customPort = await input({
-    message: 'Custom port? (leave blank to keep):',
-    default: '',
-    validate: (v) => {
-      if (v === '') return true;
-      if (!/^\d+$/.test(v)) return 'Must be a number';
-      const n = parseInt(v, 10);
-      if (n < 1 || n > 65535) return 'Must be 1-65535';
-      return true;
-    },
-  });
-  if (customPort) {
-    port = parseInt(customPort, 10);
+  if (!nonInteractive) {
+    const customPort = await input({
+      message: 'Custom port? (leave blank to keep):',
+      default: '',
+      validate: (v) => {
+        if (v === '') return true;
+        if (!/^\d+$/.test(v)) return 'Must be a number';
+        const n = parseInt(v, 10);
+        if (n < 1 || n > 65535) return 'Must be 1-65535';
+        return true;
+      },
+    });
+    if (customPort) {
+      port = parseInt(customPort, 10);
+    }
   }
 
   // Voice
-  const voice = await input({
-    message: 'Voice:',
-    default: config.voice,
-  });
+  const voice = nonInteractive
+    ? config.voice
+    : await input({
+        message: 'Voice:',
+        default: config.voice,
+      });
 
   // Generate auth token if not already set
   if (!config.authToken) {
@@ -102,24 +129,20 @@ export async function installCommand(): Promise<void> {
   console.log(chalk.dim('  Config saved to ' + home + '/config.json'));
   console.log(chalk.dim('  Auth token: ' + chalk.bold('generated')));
 
-  // Download core binary if missing — first-run install needs this.
+  // Sanity check — core is bundled inside this npm package since v1.11.0,
+  // so it should always be present. If it isn't, the user's CLI install is
+  // corrupted and the only fix is reinstalling from npm.
   if (!hasCoreBinary()) {
     console.log();
-    console.log(chalk.dim('  Downloading core binary...'));
-    try {
-      const version = await getLatestVersion();
-      await downloadCore(version);
-      console.log(chalk.green('  ✓ Core binary installed (' + version + ')'));
-    } catch (err) {
-      console.log(
-        chalk.yellow(
-          '  Could not download core binary: ' + (err instanceof Error ? err.message : String(err))
-        )
-      );
-      console.log(chalk.dim('  You can retry with: neura update'));
-      console.log();
-      return;
-    }
+    console.log(
+      chalk.red(
+        '  ✗ Core bundle not found inside this CLI install.\n' +
+          '    This indicates a broken installation. Fix with:\n' +
+          '      npm install -g @mclean-capital/neura@latest'
+      )
+    );
+    console.log();
+    return;
   }
 
   // Register service

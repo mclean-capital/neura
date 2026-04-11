@@ -57,8 +57,8 @@ jobs:
       # package.json before and after. Note: this detection relies on a local
       # diff, so rerunning this workflow after the release step already
       # succeeded (but a build job failed) will see no version change and
-      # skip builds. In that case, use workflow_dispatch on core-build.yml
-      # or desktop-build.yml to retry with the tag directly.
+      # skip builds. In that case, use workflow_dispatch on desktop-build.yml
+      # or cli-publish.yml to retry with the tag directly.
       - name: Semantic Release
         id: sr
         run: |
@@ -74,16 +74,6 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.NEURA_RELEASE_TOKEN }}
-
-  core-build:
-    name: Core Build
-    needs: release
-    if: needs.release.outputs.released == 'true'
-    uses: ./.github/workflows/core-build.yml
-    with:
-      tag: ${{ needs.release.outputs.tag }}
-    permissions:
-      contents: write
 
   desktop-build:
     name: Desktop Build

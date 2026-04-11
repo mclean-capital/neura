@@ -31,6 +31,8 @@
   },
   "files": [
     "dist",
+    "core",
+    "stores",
     "README.md",
     "LICENSE"
   ],
@@ -39,7 +41,7 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node ../../tools/bundle-core-into-cli.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
@@ -49,7 +51,9 @@
     "@inquirer/prompts": "^7",
     "chalk": "^5",
     "commander": "^13",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "@electric-sql/pglite": "0.4.3",
+    "onnxruntime-node": "1.24.3"
   },
   "optionalDependencies": {
     "@picovoice/pvspeaker-node": "^1.0.3",
@@ -57,6 +61,7 @@
     "speaker": "^0.5.5"
   },
   "devDependencies": {
+    "@neura/core": "*",
     "@neura/types": "*",
     "@types/node": "^25",
     "@types/ws": "^8.18.1",

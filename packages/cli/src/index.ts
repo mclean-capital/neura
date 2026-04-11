@@ -30,7 +30,11 @@ program.name('neura').description('Neura — AI assistant core service manager')
 program
   .command('install')
   .description('Interactive setup wizard + service registration')
-  .action(installCommand);
+  .option(
+    '--yes',
+    'Skip all prompts and reuse existing config (for automation / post-update re-register)'
+  )
+  .action((opts) => installCommand({ yes: !!opts.yes }));
 
 program
   .command('uninstall')

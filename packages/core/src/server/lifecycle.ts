@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
 import type { ServerMessage, DataStore, VoiceProvider } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
@@ -32,7 +33,25 @@ export interface CoreServices {
 }
 
 function resolveVersion(neuraHome: string): string {
+  // 1. Explicit env var override (used by dev, Docker)
   if (process.env.NEURA_VERSION) return process.env.NEURA_VERSION;
+
+  // 2. version.txt next to the running bundle. Since v1.11.0 the core ships
+  //    inside the CLI npm package at <cli-pkg>/core/server.bundled.mjs, and
+  //    tools/bundle-core-into-cli.mjs writes <cli-pkg>/core/version.txt.
+  //    import.meta.url resolves to that same directory at runtime.
+  try {
+    const bundleDir = dirname(fileURLToPath(import.meta.url));
+    const bundleVersionPath = join(bundleDir, 'version.txt');
+    if (existsSync(bundleVersionPath)) {
+      return readFileSync(bundleVersionPath, 'utf-8').trim();
+    }
+  } catch {
+    // Fall through to legacy path
+  }
+
+  // 3. Legacy location (pre-1.11.0): ~/.neura/core/version.txt from the
+  //    downloaded tarball. Kept for backwards compatibility.
   try {
     const versionPath = join(neuraHome, 'core', 'version.txt');
     return readFileSync(versionPath, 'utf-8').trim();

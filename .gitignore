@@ -6,6 +6,22 @@ dist/
 *.log
 *.tsbuildinfo
 
+# Local scratch / test artifacts
+.npm-cache/
+.tmp-neura-home*/
+
+# CLI ship locations — core bundle and stores bundle are copied from
+# packages/core/dist at build time by tools/bundle-core-into-cli.mjs.
+# Generated, never committed. `stores` is a sibling of `core` because
+# lifecycle.ts imports '../stores/index.js' — see that file for details.
+packages/cli/core/
+packages/cli/stores/
+
+# Desktop staging area for native runtime deps (onnxruntime-node + pglite
+# + their transitive closure). Generated at build time by
+# tools/prepare-desktop-native-deps.mjs, consumed by electron-builder.yml.
+packages/desktop/build-resources/
+
 # Turbo
 .turbo/
 

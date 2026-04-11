@@ -21,21 +21,20 @@ vi.mock('./config.js', () => ({
   getNeuraHome: vi.fn(() => '/home/testuser/.neura'),
 }));
 
-vi.mock('./download.js', () => ({
-  getInstalledCoreVersion: vi.fn(() => '1.0.0'),
+// Fix CLI_VERSION to a known value for the tests
+vi.mock('./version.js', () => ({
+  CLI_VERSION: '1.11.0',
 }));
 
 import { existsSync, readFileSync } from 'fs';
 import { spawn } from 'child_process';
 import { loadConfig } from './config.js';
-import { getInstalledCoreVersion } from './download.js';
 import { checkForUpdateInBackground } from './update-check.js';
 
 const mockedExistsSync = vi.mocked(existsSync);
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedSpawn = vi.mocked(spawn);
 const mockedLoadConfig = vi.mocked(loadConfig);
-const mockedGetInstalledVersion = vi.mocked(getInstalledCoreVersion);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -46,7 +45,6 @@ beforeEach(() => {
     service: { autoStart: true, logLevel: 'info' },
     autoUpdate: true,
   });
-  mockedGetInstalledVersion.mockReturnValue('1.0.0');
 });
 
 describe('checkForUpdateInBackground', () => {
@@ -55,12 +53,12 @@ describe('checkForUpdateInBackground', () => {
 
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: 'v2.0.0' })
+      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: '1.12.0' })
     );
 
     checkForUpdateInBackground();
 
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('2.0.0'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('1.12.0'));
     consoleSpy.mockRestore();
   });
 
@@ -69,7 +67,7 @@ describe('checkForUpdateInBackground', () => {
 
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: 'v1.0.0' })
+      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: '1.11.0' })
     );
 
     checkForUpdateInBackground();
@@ -78,10 +76,45 @@ describe('checkForUpdateInBackground', () => {
     consoleSpy.mockRestore();
   });
 
+  it('does not print notice when cache is older than running CLI (downgrade)', () => {
+    // Regression: right after `npm install -g @mclean-capital/neura@latest`
+    // bumps the user from 1.10.x → 1.11.0, the stale cache (still from the
+    // pre-upgrade check) remembers 1.10.2. A naive `!==` comparison would
+    // incorrectly announce "Update available: 1.11.0 → 1.10.2".
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    mockedExistsSync.mockReturnValue(true);
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: '1.10.2' })
+    );
+
+    checkForUpdateInBackground();
+
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('strips legacy v-prefix from pre-1.11.0 cache format', () => {
+    // Pre-1.11.0 caches (written by the old GitHub-release checker)
+    // stored versions as "v1.12.0". After the upgrade to the npm-based
+    // checker, we should still recognize these as newer and prompt.
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    mockedExistsSync.mockReturnValue(true);
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: 'v1.12.0' })
+    );
+
+    checkForUpdateInBackground();
+
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('1.12.0'));
+    consoleSpy.mockRestore();
+  });
+
   it('does not spawn when cache is fresh', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: 'v1.0.0' })
+      JSON.stringify({ lastCheckedAt: Date.now(), latestVersion: '1.11.0' })
     );
 
     checkForUpdateInBackground();
@@ -92,7 +125,7 @@ describe('checkForUpdateInBackground', () => {
   it('spawns background refresh when cache is stale', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ lastCheckedAt: 0, latestVersion: 'v1.0.0' })
+      JSON.stringify({ lastCheckedAt: 0, latestVersion: '1.11.0' })
     );
 
     checkForUpdateInBackground();
@@ -138,13 +171,5 @@ describe('checkForUpdateInBackground', () => {
     expect(() => checkForUpdateInBackground()).not.toThrow();
     // Should spawn refresh since cache is unreadable
     expect(mockedSpawn).toHaveBeenCalledOnce();
-  });
-
-  it('does nothing when no version is installed', () => {
-    mockedGetInstalledVersion.mockReturnValue(null);
-
-    checkForUpdateInBackground();
-
-    expect(mockedSpawn).not.toHaveBeenCalled();
   });
 });

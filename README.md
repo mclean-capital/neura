@@ -8,7 +8,7 @@
 </td>
 <td valign="middle">
 <h1>Neura</h1>
-<p><strong>A proactive, autonomous AI operating system.</strong> Real-time voice conversation, continuous visual understanding, and autonomous worker agents — driven by discovery and execution loops that think and act on their own.</p>
+<p><strong>A voice-first AI operating system.</strong> Say the wake word and talk — no click-to-start, no tap-to-speak. Neura listens ambiently on-device, activates when called, and proactively handles your tasks, memories, and deadlines.</p>
 </td>
 </tr>
 </table>
@@ -31,15 +31,25 @@ Mic audio → Grok (Eve voice)
                 └─ tool call → text query to watcher → Grok speaks result
 ```
 
-## Quick Start
+## Install
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 22
-- A [Grok API key](https://console.x.ai/) (xAI)
-- A [Google API key](https://aistudio.google.com/apikey) (Gemini)
+- [Node.js](https://nodejs.org/) **>= 22**
+- A [Grok API key](https://console.x.ai/) (xAI — voice conversation)
+- A [Google API key](https://aistudio.google.com/apikey) (Gemini — vision + memory)
 
-### Setup
+### One command (recommended)
+
+```bash
+npm install -g @mclean-capital/neura
+neura install       # interactive setup + register core as background service
+neura listen        # voice chat, wake-word ready
+```
+
+That's it. The CLI package ships the core service and all native runtime dependencies (wake-word ONNX runtime, local storage). No separate downloads. No platform-specific tarballs. One `npm install -g` installs everything.
+
+### Development setup (monorepo)
 
 ```bash
 git clone https://github.com/mclean-capital/neura.git
@@ -51,7 +61,7 @@ cp packages/core/.env.example packages/core/.env
 # Edit .env with your XAI_API_KEY and GOOGLE_API_KEY
 ```
 
-### Run the Web UI
+### Run the Web UI in dev mode
 
 ```bash
 # Two terminals:

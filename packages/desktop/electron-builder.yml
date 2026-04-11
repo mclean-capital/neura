@@ -11,27 +11,40 @@ files:
   - package.json
 
 extraResources:
-  # Core server — single esbuild bundle
-  - from: ../core/dist/server.bundled.mjs
-    to: core/server.bundled.mjs
-  # Sourcemap for crash diagnostics — remove for smaller DMG if not needed
-  - from: ../core/dist/server.bundled.mjs.map
-    to: core/server.bundled.mjs.map
-  # Core package.json needed so stores/*.js files are parsed as ESM
-  - from: ../core/package.json
-    to: core/package.json
-  # Stores module — dynamically imported so PGlite WASM only loads when PG_DATA_PATH is set
+  # Core server — dist/core/ now contains the main esbuild bundle plus
+  # version.txt, mirroring the target layout exactly. Since v1.11.0 the
+  # core source build writes to `dist/core/` (and `dist/stores/`) so the
+  # produced artifact can be run directly from `dist/core/` AND dropped
+  # verbatim into CLI or desktop packaging with no path rewriting.
+  - from: ../core/dist/core
+    to: core
+    filter:
+      - 'server.bundled.mjs'
+      - 'server.bundled.mjs.map'
+      - 'version.txt'
+  # Stores bundle — dynamically imported via '../stores/index.js' from
+  # server.bundled.mjs, so the bundle MUST live at `resources/stores/` (a
+  # sibling of `core/`), not `resources/core/stores/`. See tools/bundle-core-into-cli.mjs
+  # for the same constraint on the CLI side.
+  #
+  # The `package.json` is an ESM type sidecar written by scripts/bundle.ts —
+  # without it Node would parse this ESM module as CommonJS because the
+  # nearest package.json up the tree would otherwise be missed.
   - from: ../core/dist/stores
-    to: core/stores
+    to: stores
     filter:
       - '**/*.js'
       - '**/*.js.map'
-  # PGlite (WASM PostgreSQL 17 + pgvector) needed by stores at runtime
-  - from: ../../node_modules/@electric-sql/pglite
-    to: core/node_modules/@electric-sql/pglite
-    filter:
       - 'package.json'
-      - 'dist/**/*'
+  # Runtime dependency closure of onnxruntime-node and @electric-sql/pglite.
+  # Prepared by tools/prepare-desktop-native-deps.mjs which walks the transitive
+  # tree from the workspace node_modules and stages it in build-resources/.
+  # Shipped at `resources/node_modules/` so both the main bundle (resolves
+  # onnxruntime-node from `resources/core/..`) and the stores bundle (resolves
+  # @electric-sql/pglite from `resources/stores/..`) can find what they need
+  # via Node's normal upward module resolution.
+  - from: build-resources/node_modules
+    to: node_modules
   - from: dist-renderer
     to: renderer
     filter:

@@ -1,8 +1,10 @@
 # @mclean-capital/neura
 
-> Neura CLI — install, manage, and talk to the Neura AI assistant from your terminal.
+> **A voice-first, proactive AI operating system.** Say the wake word and talk to Neura from any device — no click-to-start, no tap-to-speak.
 
-Neura is a proactive, autonomous AI operating system. It combines real-time voice conversation, continuous visual understanding, and autonomous worker agents. This CLI installs and manages the Neura core service, and also acts as a full client via `neura chat` and `neura listen`.
+Neura is a self-hosted AI assistant that runs as a persistent background service on your machine. It's always listening for the wake word via on-device ONNX inference (zero cloud cost while passive), streams voice conversations via Grok's Eve voice when active, and continuously watches your camera or screen through a Gemini Live vision watcher. It remembers what you've talked about across sessions, manages your tasks, and proactively reminds you about deadlines.
+
+This package is the full Neura distribution: **the CLI, the core service, and all runtime dependencies** ship together as one npm install. No separate downloads, no matching platform tarballs — one command installs everything.
 
 ## Install
 
@@ -10,16 +12,41 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 npm install -g @mclean-capital/neura
 ```
 
-Requires Node.js >= 22.
+This fetches the CLI **plus** the bundled core service and its native dependencies (`onnxruntime-node` for wake-word detection, `@electric-sql/pglite` for local storage). If `onnxruntime-node` fails to install, the whole install fails loudly — voice is a required feature, not an optional one.
+
+Requires **Node.js >= 22**.
 
 ## Quick start
 
 ```bash
 neura install     # interactive setup: API keys, auto-port, service registration
-neura start       # start the core service
-neura chat        # text chat with Neura from your terminal
-neura listen      # voice chat (mic + speaker)
+                  # (auto-starts the core service)
+neura listen      # voice chat (mic + speaker, wake-word ready)
+# OR:
+neura chat        # text chat from your terminal
 ```
+
+After `neura install` completes, core runs as a background OS service (launchd on macOS, systemd on Linux). Say your wake word — by default **"jarvis"** — and Neura activates a voice session. Stop talking for 5 minutes and it drops back to passive listening.
+
+## Update
+
+```bash
+neura update
+# equivalent to: npm install -g @mclean-capital/neura@latest && neura restart
+```
+
+The `neura update` command runs `npm install -g @mclean-capital/neura@latest` and restarts the core service so the new version takes effect.
+
+### Upgrading from v1.10.x or earlier
+
+v1.11.0 moved the core service bundle from a separate GitHub release tarball into the CLI's npm package itself. Older CLIs expect the tarball layout and **cannot self-update to v1.11.0**. If you're on v1.10.x and `neura update` prints a 404 or "Download failed" error, bootstrap manually:
+
+```bash
+npm install -g @mclean-capital/neura@latest
+neura install   # rewrites service file to point at the new bundled core path
+```
+
+After this one-time step, `neura update` works normally for all future upgrades.
 
 ## Commands
 

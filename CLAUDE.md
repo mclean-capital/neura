@@ -101,16 +101,18 @@ npm run dev             # http://localhost:3002
 
 ### cli
 
-CLI tool for installing and managing Neura Core as a persistent OS background service. Auto-generates 256-bit auth token on install.
+CLI tool + bundled core service, published to npm as `@mclean-capital/neura`. Since v1.11.0 the core ships **inside** the CLI npm package — there's no separate GitHub release tarball. `npm install -g @mclean-capital/neura` fetches the CLI plus the core bundle plus all native runtime deps (`onnxruntime-node`, `@electric-sql/pglite`) in one step.
 
-- `src/index.ts` — Commander.js entry point, 15 commands
-- `src/config.ts` — Load/save `~/.neura/config.json`
-- `src/health.ts` — HTTP health check client for `/health` endpoint (includes version field)
+- `src/index.ts` — Commander.js entry point
+- `src/config.ts` — Load/save `~/.neura/config.json`, auth token generation (256-bit)
+- `src/health.ts` — HTTP health check client for core's `/health` endpoint
 - `src/port.ts` — Auto-assign free port in 18000-19000 range
-- `src/download.ts` — GitHub release asset downloader + extractor (atomic staging via temp dir)
-- `src/update-check.ts` — Background update check via detached child process + local cache file
-- `src/service/` — Platform-specific service managers (Windows, macOS, Linux)
-- `src/commands/` — install, uninstall, start, stop, restart, status, config, logs, open, update, version, backup, restore
+- `src/download.ts` — Resolves the bundled core path (no more download logic; core lives at `<pkg>/core/server.bundled.mjs` inside the CLI's npm install)
+- `src/update-check.ts` — Background update check against npm registry (detached child process + local cache)
+- `src/version.ts` — Reads CLI version from adjacent package.json via createRequire
+- `src/service/` — Platform-specific service managers (Windows stub, macOS launchd, Linux systemd). Service files reference `process.execPath` + the bundled core path.
+- `src/commands/` — install, uninstall, start, stop, restart, status, config, logs, open, update, version, backup, restore, chat, listen
+- `core/` — bundled core output (copied in from packages/core/dist at build time by `tools/bundle-core-into-cli.mjs`)
 
 Config lives at `~/.neura/config.json`. Port priority: `PORT` env var > config.json > default (0 = not yet assigned). See `docs/cli-service-architecture.md` for full spec.
 
