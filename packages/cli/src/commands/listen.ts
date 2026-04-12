@@ -240,7 +240,20 @@ export async function listenCommand(options: { port?: string; debug?: boolean })
           } else if (msg.state === 'passive' && everActive) {
             // Only log passive if we've previously been active — suppresses
             // the brief initial passive flash before manualStart fires.
-            console.log(chalk.dim('  [PASSIVE] say the wake word or press Enter to resume'));
+            //
+            // The server includes a `wakeDetection` field telling us whether
+            // the ONNX wake-word detector is loaded for this connection. If
+            // it's 'disabled' (missing models, init failure, wrong assistant
+            // name) we must NOT tell the user "say the wake word" — that's
+            // a lie and they'd sit there talking at a non-existent detector.
+            // Instead we tell them to press Enter, which fires a manual
+            // start message and re-activates the session.
+            const wakeOk = msg.wakeDetection === 'active';
+            if (wakeOk) {
+              console.log(chalk.dim('  [PASSIVE] say the wake word or press Enter to resume'));
+            } else {
+              console.log(chalk.dim('  [PASSIVE] wake word unavailable — press Enter to resume'));
+            }
           }
         }
         break;

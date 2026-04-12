@@ -74,10 +74,17 @@ Trade-offs you should know about on Windows:
 
 ```bash
 neura update
-# equivalent to: npm install -g @mclean-capital/neura@latest && neura restart
 ```
 
-The `neura update` command runs `npm install -g @mclean-capital/neura@latest` and restarts the core service so the new version takes effect.
+**Always use `neura update`** to upgrade. It stops the running core before calling `npm install -g @mclean-capital/neura@latest` so the old core's native binaries (`onnxruntime_binding.node`, `onnxruntime.dll`) aren't file-locked when npm tries to replace them. After the install completes it re-registers the service and starts the new core automatically.
+
+**Do not run `npm install -g @mclean-capital/neura` directly while the core is running.** On Windows, the running core holds exclusive file locks on its loaded native binaries, and npm will emit noisy `EPERM: operation not permitted` warnings when it can't clean up the temp directory it swapped out. The install still succeeds but the warnings are alarming and the old core stays running on the port through the upgrade, which can confuse the re-registration step. If you need to install manually for any reason, stop the core first:
+
+```bash
+neura stop
+npm install -g @mclean-capital/neura@latest
+neura install   # re-registers service, starts new core
+```
 
 ### Upgrading from v1.10.x or earlier
 

@@ -494,7 +494,16 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     const presence = new PresenceManager({
       onActivate: (wakeTranscript) => void activateVoiceSession(wakeTranscript),
       onDeactivate: () => deactivateVoiceSession(),
-      onStateChange: (state) => send({ type: 'presenceState', state }),
+      onStateChange: (state) =>
+        send({
+          type: 'presenceState',
+          state,
+          // Tell the client whether wake-word detection is available so
+          // it can show the right banner in passive mode. `wakeDetector`
+          // is null if the ONNX models failed to load on connection start
+          // (missing files, wrong assistant name, onnxruntime failure).
+          wakeDetection: wakeDetector ? 'active' : 'disabled',
+        }),
     });
 
     // Register in connected clients for discovery loop notifications

@@ -92,6 +92,20 @@ export interface CostUpdateMessage {
 export interface PresenceStateMessage {
   type: 'presenceState';
   state: 'passive' | 'active' | 'idle';
+  /**
+   * Status of wake-word detection, sent with every presence transition
+   * so the client knows whether "say the wake word" is a real option
+   * or a lie. Only meaningful when `state === 'passive'`:
+   *
+   *   - `'active'`   — detector is loaded and listening for the wake word
+   *   - `'disabled'`  — detector could not initialize (missing ONNX
+   *                      models, wrong assistant name, onnxruntime
+   *                      load failure, etc.)
+   *   - `undefined`   — server didn't send it (older core version);
+   *                      treat as unknown, show the wake-word banner
+   *                      optimistically.
+   */
+  wakeDetection?: 'active' | 'disabled';
 }
 
 export interface DiscoveryNotificationMessage {
