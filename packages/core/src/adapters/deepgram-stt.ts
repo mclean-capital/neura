@@ -59,6 +59,9 @@ class DeepgramSTTStream implements STTStream {
   private resolveWait: (() => void) | null = null;
   private errorHandlers: ((err: Error) => void)[] = [];
   private doneResolve: (() => void) | null = null;
+  /** Buffer audio until WebSocket is OPEN (prevents dropped wake audio) */
+  private preOpenBuffer: Buffer[] = [];
+  private wsOpen = false;
 
   constructor(
     private readonly apiKey: string,
@@ -82,6 +85,15 @@ class DeepgramSTTStream implements STTStream {
 
     this.ws = new WebSocket(`${DEEPGRAM_WS_BASE}?${params.toString()}`, {
       headers: { Authorization: `Token ${this.apiKey}` },
+    });
+
+    this.ws.on('open', () => {
+      this.wsOpen = true;
+      // Flush any audio that arrived before the WS was open
+      for (const buf of this.preOpenBuffer) {
+        this.ws?.send(buf);
+      }
+      this.preOpenBuffer = [];
     });
 
     this.ws.on('message', (data: WebSocket.Data) => {
@@ -123,8 +135,11 @@ class DeepgramSTTStream implements STTStream {
 
   write(audio: Buffer): void {
     if (this.aborted || this.ended) return;
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.wsOpen && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(audio);
+    } else {
+      // Buffer until WS is open (prevents dropped wake/activation audio)
+      this.preOpenBuffer.push(audio);
     }
   }
 
@@ -140,7 +155,12 @@ class DeepgramSTTStream implements STTStream {
   abort(): void {
     this.aborted = true;
     this.ended = true;
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    this.preOpenBuffer = [];
+    // Close WS in any connected state (OPEN or CONNECTING)
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       this.ws.close();
     }
     this.ws = null;

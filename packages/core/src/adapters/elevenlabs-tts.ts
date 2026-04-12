@@ -117,7 +117,11 @@ class ElevenLabsTTSStream implements TTSStream {
   abort(): void {
     this.aborted = true;
     this.done = true;
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    // Close in OPEN or CONNECTING state to prevent orphaned connections
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       this.ws.close();
     }
     this.ws = null;

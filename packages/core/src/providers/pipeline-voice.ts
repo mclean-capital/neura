@@ -8,6 +8,8 @@
  *
  * Key design:
  * - Sentence-level TTS streaming (start TTS before full LLM response)
+ * - Sequential TTS output (sentence N finishes before N+1 starts)
+ * - Detached utterance processing (STT loop never blocks, enabling interruption)
  * - AbortController propagation for interruption
  * - Deepgram's endpointing handles turn detection
  */
@@ -39,6 +41,8 @@ const log = new Logger('pipeline-voice');
 
 const MAX_TRANSCRIPT_HISTORY = 40;
 const MIN_INTERJECT_INTERVAL_MS = 10_000;
+/** Flush sentence buffer after this many characters even without punctuation */
+const SENTENCE_FLUSH_CHARS = 200;
 
 export interface PipelineVoiceConfig {
   systemPromptPrefix?: string;
@@ -60,8 +64,9 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
 
   private sttStream: STTStream | null = null;
   private currentTurnAbort: AbortController | null = null;
+  private interjectionAbort: AbortController | null = null;
   private transcriptHistory: { role: 'user' | 'assistant'; text: string }[] = [];
-  private systemEvents: string[] = [];
+  private lastSystemEvent: string | null = null;
   private connected = false;
   private closed = false;
   private lastInterjectAt = 0;
@@ -104,18 +109,24 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
     if (this.connected) return;
     this.connected = true;
 
-    // Create STT stream and start processing loop
+    // Create STT stream — it buffers audio internally until WS is open
     this.sttStream = this.sttAdapter.createStream('pcm16');
     this.sttStream.on('error', (err) => {
       log.warn('STT stream error', { err: err.message });
       this.cb.onError(`STT error: ${err.message}`);
+      // Attempt reconnection
+      void this.reconnectSTT();
     });
 
-    // Start the async STT processing loop
+    // Start the async STT processing loop (detached — never blocks)
     void this.runSTTLoop();
 
-    // Ready immediately — no async handshake needed
-    this.cb.onReady();
+    // Fire onReady after a short delay to let Deepgram WS connect.
+    // The server replays buffered audio in onReady(), and we need the
+    // STT WebSocket to be OPEN before that audio arrives.
+    setTimeout(() => {
+      if (!this.closed) this.cb.onReady();
+    }, 500);
   }
 
   sendAudio(base64: string): void {
@@ -127,11 +138,12 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
   sendText(text: string): void {
     if (!this.connected || this.closed) return;
     // Inject as user message, skip STT, go directly to LLM
-    void this.processUserUtterance(text);
+    this.startNewTurn(text);
   }
 
   sendSystemEvent(text: string): void {
-    this.systemEvents.push(text);
+    // Replace (not accumulate) — keeps context fresh
+    this.lastSystemEvent = text;
   }
 
   close(): void {
@@ -139,9 +151,11 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
     this.closed = true;
     this.connected = false;
 
-    // Abort any in-flight turn
+    // Abort any in-flight work
     this.currentTurnAbort?.abort();
     this.currentTurnAbort = null;
+    this.interjectionAbort?.abort();
+    this.interjectionAbort = null;
 
     // Close STT stream
     this.sttStream?.abort();
@@ -175,15 +189,27 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
       this.cb.onInterrupted();
     }
 
-    // Synthesize and send the interjection
+    // Cancel any previous interjection
+    this.interjectionAbort?.abort();
+    this.interjectionAbort = new AbortController();
+    const signal = this.interjectionAbort.signal;
+
+    // Fire-and-forget TTS synthesis (matches Grok contract — resolves after queue, not playback)
+    if (!options.immediate) {
+      // Non-immediate: queue for after current turn finishes
+      // For now, synthesize immediately but don't interrupt current audio
+    }
+
     try {
-      const stream = this.ttsAdapter.createStream(`[Neura: ${message}]`);
+      const stream = this.ttsAdapter.createStream(message, { signal });
       for await (const chunk of stream) {
-        if (this.closed) break;
+        if (this.closed || signal.aborted) break;
         this.cb.onAudio(chunk.toString('base64'));
       }
     } catch (err) {
-      log.warn('interject TTS failed', { err: String(err) });
+      if (!signal.aborted) {
+        log.warn('interject TTS failed', { err: String(err) });
+      }
     }
   }
 
@@ -199,13 +225,16 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
       for await (const partial of this.sttStream) {
         if (this.closed) break;
 
-        if (partial.text) {
-          // Fire interim transcript for client display
+        if (partial.text && !partial.isFinal) {
+          // Interim result — send to client for display only.
+          // Do NOT persist or use for clarification (avoids duplicate transcripts).
           this.cb.onInputTranscript(partial.text);
         }
 
         if (partial.isFinal && partial.text) {
           accumulatedText += (accumulatedText ? ' ' : '') + partial.text;
+          // Send final transcript segment to client
+          this.cb.onInputTranscript(accumulatedText);
         }
 
         // On utterance end (final + empty text = Deepgram endpoint),
@@ -214,7 +243,10 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
           const utterance = accumulatedText.trim();
           accumulatedText = '';
           if (utterance) {
-            await this.processUserUtterance(utterance);
+            // DETACHED — does not block the STT loop.
+            // This allows the loop to detect interruptions (new speech)
+            // while the current turn is being processed.
+            this.startNewTurn(utterance);
           }
         }
       }
@@ -222,16 +254,37 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
       if (!this.closed) {
         log.warn('STT loop error', { err: String(err) });
         this.cb.onError(`STT loop error: ${String(err)}`);
+        void this.reconnectSTT();
       }
     } finally {
       this.sttLoopRunning = false;
     }
   }
 
-  // ─── Internal: Process a complete user utterance ─────────────
+  // ─── Internal: STT reconnection ──────────────────────────────
 
-  private async processUserUtterance(text: string): Promise<void> {
-    // Interrupt any in-flight response
+  private reconnectSTT(): void {
+    if (this.closed) return;
+    log.info('attempting STT reconnection');
+    try {
+      this.sttStream?.abort();
+      this.sttStream = this.sttAdapter.createStream('pcm16');
+      this.sttStream.on('error', (err) => {
+        log.warn('STT stream error after reconnect', { err: err.message });
+        this.cb.onError(`STT error: ${err.message}`);
+      });
+      void this.runSTTLoop();
+      this.cb.onReconnected();
+    } catch (err) {
+      log.warn('STT reconnection failed', { err: String(err) });
+      this.cb.onError('STT reconnection failed');
+    }
+  }
+
+  // ─── Internal: Start a new turn (detached) ──────────────────
+
+  private startNewTurn(text: string): void {
+    // Abort any in-flight turn
     if (this.currentTurnAbort) {
       this.currentTurnAbort.abort();
       this.cb.onInterrupted();
@@ -240,25 +293,31 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
     this.currentTurnAbort = new AbortController();
     const signal = this.currentTurnAbort.signal;
 
-    // Record user turn
-    this.pushTranscript('user', text);
+    // Fire-and-forget — does NOT block the STT loop
+    void this.processUserUtterance(text, signal).catch((err) => {
+      if (!signal.aborted) {
+        log.warn('turn processing failed', { err: String(err) });
+        this.cb.onError(`Processing error: ${String(err)}`);
+      }
+    });
+  }
 
+  // ─── Internal: Process a complete user utterance ─────────────
+
+  private async processUserUtterance(text: string, signal: AbortSignal): Promise<void> {
     try {
-      // Build messages for the LLM
+      // Build messages for the LLM (includes history + current user text)
       const messages = this.buildMessages(text);
 
       // Stream LLM response with tool calling
       const fullResponse = await this.streamLLMResponse(messages, signal);
 
       if (fullResponse && !signal.aborted) {
+        // Record both sides in transcript history AFTER the turn completes
+        this.pushTranscript('user', text);
         this.pushTranscript('assistant', fullResponse);
         this.cb.onOutputTranscriptComplete(fullResponse);
         this.cb.onTurnComplete();
-      }
-    } catch (err) {
-      if (!signal.aborted) {
-        log.warn('turn processing failed', { err: String(err) });
-        this.cb.onError(`Processing error: ${String(err)}`);
       }
     } finally {
       if (this.currentTurnAbort?.signal === signal) {
@@ -272,10 +331,12 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
   private async streamLLMResponse(messages: ChatMessage[], signal: AbortSignal): Promise<string> {
     let fullResponse = '';
     let sentenceBuffer = '';
-    const ttsPromises: Promise<void>[] = [];
 
-    // Accumulate tool call state
-    const toolCalls = new Map<string, { name: string; args: string }>();
+    // TTS output queue — sequential, not parallel
+    let ttsChain = Promise.resolve();
+
+    // Accumulate ALL tool calls in the current response before dispatching
+    const pendingToolCalls = new Map<string, { name: string; args: string }>();
 
     const stream = this.textAdapter.chatWithToolsStream(messages, this.toolDefs, { signal });
 
@@ -289,13 +350,17 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
           sentenceBuffer += delta;
           this.cb.onOutputTranscript(delta);
 
-          // Check for sentence boundary
+          // Check for sentence boundary OR character-count flush
           const sentenceEnd = findSentenceEnd(sentenceBuffer);
-          if (sentenceEnd > 0) {
-            const sentence = sentenceBuffer.slice(0, sentenceEnd).trim();
-            sentenceBuffer = sentenceBuffer.slice(sentenceEnd);
+          const shouldFlush = sentenceEnd > 0 || sentenceBuffer.length >= SENTENCE_FLUSH_CHARS;
+
+          if (shouldFlush) {
+            const splitAt = sentenceEnd > 0 ? sentenceEnd : sentenceBuffer.length;
+            const sentence = sentenceBuffer.slice(0, splitAt).trim();
+            sentenceBuffer = sentenceBuffer.slice(splitAt);
             if (sentence) {
-              ttsPromises.push(this.synthesizeAndSend(sentence, signal));
+              // Chain sequentially — sentence N finishes before N+1 starts
+              ttsChain = ttsChain.then(() => this.synthesizeAndSend(sentence, signal));
             }
           }
           break;
@@ -304,7 +369,7 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
         case 'tool_call_start': {
           const tc = chunk.toolCall;
           if (tc?.id) {
-            toolCalls.set(tc.id, { name: tc.name ?? '', args: '' });
+            pendingToolCalls.set(tc.id, { name: tc.name ?? '', args: '' });
           }
           break;
         }
@@ -312,7 +377,7 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
         case 'tool_call_delta': {
           const tc = chunk.toolCall;
           if (tc?.id) {
-            const existing = toolCalls.get(tc.id);
+            const existing = pendingToolCalls.get(tc.id);
             if (existing && tc.argsDelta) {
               existing.args += tc.argsDelta;
             }
@@ -321,47 +386,67 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
         }
 
         case 'tool_call_end': {
-          const tc = chunk.toolCall;
-          if (tc?.id) {
-            const call = toolCalls.get(tc.id);
-            if (call) {
-              toolCalls.delete(tc.id);
-              // Execute tool and continue conversation
-              const toolResult = await this.executeTool(call.name, call.args);
+          // Don't dispatch yet — wait for 'done' to collect all tool calls
+          break;
+        }
 
-              // Add tool call + result to messages and recurse
-              messages.push({
-                role: 'assistant',
-                content: fullResponse || '',
-              });
+        case 'done': {
+          // If there are pending tool calls, dispatch them all
+          if (pendingToolCalls.size > 0) {
+            // Flush any buffered text before tool calls
+            if (sentenceBuffer.trim()) {
+              const sentence = sentenceBuffer.trim();
+              sentenceBuffer = '';
+              ttsChain = ttsChain.then(() => this.synthesizeAndSend(sentence, signal));
+            }
+            await ttsChain;
+
+            // Build the assistant message with tool_calls structure
+            const toolCallsArray = [...pendingToolCalls.entries()].map(([id, call]) => ({
+              id,
+              name: call.name,
+              args: safeParseArgs(call.args),
+            }));
+
+            messages.push({
+              role: 'assistant',
+              content: fullResponse || '',
+            });
+
+            // Execute all tool calls and add results
+            for (const tc of toolCallsArray) {
+              this.cb.onToolCall(tc.name, tc.args);
+              const result = await handleToolCall(tc.name, tc.args, this.toolCtx);
+              this.cb.onToolResult(tc.name, result);
+
               messages.push({
                 role: 'tool',
-                content: JSON.stringify(toolResult),
+                content: JSON.stringify(result),
                 toolCallId: tc.id,
-                name: call.name,
+                name: tc.name,
               });
+            }
 
-              // Continue with another LLM call (tool result → response)
+            pendingToolCalls.clear();
+
+            // Continue with another LLM call (tool results → response)
+            if (!signal.aborted) {
               const continuation = await this.streamLLMResponse(messages, signal);
-              fullResponse += continuation;
-              return fullResponse;
+              return fullResponse + continuation;
             }
           }
           break;
         }
-
-        case 'done':
-          break;
       }
     }
 
     // Flush remaining sentence buffer
     if (sentenceBuffer.trim() && !signal.aborted) {
-      ttsPromises.push(this.synthesizeAndSend(sentenceBuffer.trim(), signal));
+      ttsChain = ttsChain.then(() => this.synthesizeAndSend(sentenceBuffer.trim(), signal));
     }
 
-    // Wait for all TTS to complete
-    await Promise.all(ttsPromises);
+    // Wait for all TTS to complete (sequential chain)
+    await ttsChain;
 
     return fullResponse;
   }
@@ -384,25 +469,6 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
     }
   }
 
-  // ─── Internal: Tool execution ────────────────────────────────
-
-  private async executeTool(name: string, argsJson: string): Promise<Record<string, unknown>> {
-    let args: Record<string, unknown>;
-    try {
-      args = JSON.parse(argsJson) as Record<string, unknown>;
-    } catch {
-      args = { _raw: argsJson };
-    }
-
-    this.cb.onToolCall(name, args);
-
-    const result = await handleToolCall(name, args, this.toolCtx);
-
-    this.cb.onToolResult(name, result);
-
-    return result;
-  }
-
   // ─── Internal: Message building ──────────────────────────────
 
   private buildMessages(userText: string): ChatMessage[] {
@@ -413,8 +479,8 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
     if (this.config.systemPromptPrefix) {
       systemParts.push(this.config.systemPromptPrefix);
     }
-    if (this.systemEvents.length > 0) {
-      systemParts.push('Context: ' + this.systemEvents.join('. '));
+    if (this.lastSystemEvent) {
+      systemParts.push('Context: ' + this.lastSystemEvent);
     }
     systemParts.push(
       'You are a voice assistant. Respond concisely in 1-2 sentences unless the user asks for detail. ' +
@@ -422,12 +488,12 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
     );
     messages.push({ role: 'system', content: systemParts.join('\n\n') });
 
-    // Conversation history
+    // Conversation history (does NOT include current turn — added separately)
     for (const entry of this.transcriptHistory) {
       messages.push({ role: entry.role, content: entry.text });
     }
 
-    // Current user message
+    // Current user message (NOT in history yet — pushed after turn completes)
     messages.push({ role: 'user', content: userText });
 
     return messages;
@@ -451,10 +517,17 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
  * complete sentence is found.
  */
 function findSentenceEnd(text: string): number {
-  // Match sentence-ending punctuation followed by a space or end-of-string
   const match = /[.!?]\s/g.exec(text);
   if (match) {
     return match.index + match[0].length;
   }
   return 0;
+}
+
+function safeParseArgs(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw || '{}') as Record<string, unknown>;
+  } catch {
+    return { _raw: raw };
+  }
 }

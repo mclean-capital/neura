@@ -142,6 +142,15 @@ export class ProviderRegistry {
 
   // ─── Per-Session Adapter Factories ───────────────────────────
 
+  /** Create a text adapter for a specific route (per-session, e.g. pipeline LLM) */
+  createTextAdapterForRoute(route: RouteDescriptor): TextAdapter {
+    log.info('creating text adapter for route', {
+      provider: route.providerId,
+      model: route.model,
+    });
+    return new OpenAICompatibleTextAdapter(route);
+  }
+
   /** Create an STT adapter for a specific route (per-session, stateful) */
   createSTTAdapter(route: RouteDescriptor): STTAdapter {
     log.info('creating STT adapter', { provider: route.providerId, model: route.model });

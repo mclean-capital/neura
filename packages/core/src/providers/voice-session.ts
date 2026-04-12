@@ -25,14 +25,15 @@ export function createVoiceSession(
   registry?: ProviderRegistry
 ): VoiceProvider {
   if (config.mode === 'pipeline' && registry) {
-    const textAdapter = registry.getTextAdapter();
     const voiceRoute = registry.resolveVoice();
 
-    if (!textAdapter || voiceRoute?.mode !== 'pipeline' || !voiceRoute.pipeline) {
-      throw new Error('Pipeline voice mode requires text adapter and pipeline voice routing');
+    if (voiceRoute?.mode !== 'pipeline' || !voiceRoute.pipeline) {
+      throw new Error('Pipeline voice mode requires pipeline voice routing');
     }
 
-    // Resolve STT and TTS adapters from the pipeline route
+    // Use the pipeline-specific LLM route, NOT the singleton text adapter.
+    // This allows config to route voice LLM separately from memory/discovery text.
+    const llmAdapter = registry.createTextAdapterForRoute(voiceRoute.pipeline.llm);
     const sttAdapter = registry.createSTTAdapter(voiceRoute.pipeline.stt);
     const ttsAdapter = registry.createTTSAdapter(voiceRoute.pipeline.tts);
 
@@ -45,7 +46,7 @@ export function createVoiceSession(
       workerControl: config.workerControl,
     };
 
-    return new PipelineVoiceProvider(cb, pipelineConfig, textAdapter, sttAdapter, ttsAdapter);
+    return new PipelineVoiceProvider(cb, pipelineConfig, llmAdapter, sttAdapter, ttsAdapter);
   }
 
   return new GrokVoiceProvider(cb, config);
