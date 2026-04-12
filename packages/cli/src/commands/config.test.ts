@@ -1,6 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return {
+    ...actual,
+    existsSync: vi.fn(() => false),
+    readdirSync: vi.fn(() => []),
+  };
+});
+
 vi.mock('../config.js', () => ({
   loadConfig: vi.fn(),
   getConfigValue: vi.fn(),
@@ -13,6 +22,7 @@ vi.mock('chalk', () => ({
   default: {
     red: (s: string) => s,
     green: (s: string) => s,
+    yellow: (s: string) => s,
     bold: (s: string) => s,
     dim: (s: string) => s,
   },
@@ -136,6 +146,50 @@ describe('configSetCommand', () => {
 
     expect(mockedSetConfigValue).toHaveBeenCalledWith('port', '4000');
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Set port'));
+  });
+
+  it('warns when setting assistantName to a name with no .onnx classifier', async () => {
+    const { existsSync, readdirSync } = await import('fs');
+    const mockedExistsSync = vi.mocked(existsSync);
+    const mockedReaddirSync = vi.mocked(readdirSync);
+
+    // No classifier exists for "neddd"
+    mockedExistsSync.mockReturnValue(false);
+    // But other classifiers ARE available
+    mockedReaddirSync.mockReturnValue([
+      'melspectrogram.onnx',
+      'embedding_model.onnx',
+      'jarvis.onnx',
+      'neura.onnx',
+    ] as unknown as ReturnType<typeof readdirSync>);
+
+    configSetCommand('assistantName', 'neddd');
+
+    const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
+    expect(output).toContain('No wake-word classifier found for "neddd"');
+    expect(output).toContain('jarvis, neura');
+  });
+
+  it('does NOT warn when setting assistantName to a name that has a classifier', async () => {
+    const { existsSync } = await import('fs');
+    const mockedExistsSync = vi.mocked(existsSync);
+
+    // jarvis.onnx exists
+    mockedExistsSync.mockReturnValue(true);
+
+    configSetCommand('assistantName', 'jarvis');
+
+    const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
+    expect(output).not.toContain('No wake-word classifier');
+    expect(output).toContain('Set assistantName');
+  });
+
+  it('does NOT warn when setting non-assistantName keys', () => {
+    configSetCommand('voice', 'sage');
+
+    const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
+    expect(output).not.toContain('No wake-word classifier');
+    expect(output).toContain('Set voice');
   });
 });
 

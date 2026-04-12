@@ -99,12 +99,39 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
   // Seed the wake-word models if they aren't already installed. This
   // runs every `neura install` but is a no-op after the first one —
   // existing files are never overwritten, so user-trained classifiers
-  // take priority. Prints a one-line summary if anything was copied.
+  // take priority. Prints a one-line summary if anything was copied
+  // along with the list of available wake words.
   const seededModels = installBundledModels(home);
-  if (seededModels.length > 0) {
-    console.log();
-    console.log(chalk.dim('  Wake word models'));
-    console.log(chalk.green(`  ✓ Installed ${seededModels.length} model(s) to ${home}/models/`));
+  {
+    const modelsDir = join(home, 'models');
+    const infra = new Set(['melspectrogram', 'embedding_model']);
+    let available: string[] = [];
+    try {
+      available = readdirSync(modelsDir)
+        .filter((f) => f.endsWith('.onnx'))
+        .map((f) => f.replace('.onnx', ''))
+        .filter((name) => !infra.has(name));
+    } catch {
+      // models dir might not exist yet on a completely bare install
+    }
+
+    if (seededModels.length > 0 || available.length > 0) {
+      console.log();
+      console.log(chalk.dim('  Wake word models'));
+      if (seededModels.length > 0) {
+        console.log(
+          chalk.green(`  ✓ Installed ${seededModels.length} model(s) to ${home}/models/`)
+        );
+      }
+      if (available.length > 0) {
+        console.log(chalk.dim(`  Available wake words: ${available.join(', ')}`));
+        console.log(
+          chalk.dim(
+            `  Active: ${config.assistantName ?? 'jarvis'} (set via: neura config set assistantName <name>)`
+          )
+        );
+      }
+    }
   }
 
   // API keys — in --yes mode, reuse whatever is already in config.json.
