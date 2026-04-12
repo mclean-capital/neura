@@ -57,20 +57,26 @@ function makeMockRuntime(): MockRuntimeBundle {
   const dispatched: DispatchRecord[] = [];
   const resumeCalls: ResumeParams[] = [];
 
-  const dispatchMock: Mock = vi.fn((task: WorkerTask, callbacks: WorkerCallbacks) => {
-    let resolveDone!: (result: WorkerResult) => void;
-    const done = new Promise<WorkerResult>((resolve) => {
-      resolveDone = resolve;
-    });
-    const handle: WorkerHandle = {
-      workerId: `runtime-${dispatched.length}`,
-      sessionId: `sess-${dispatched.length}`,
-      sessionFile: `/tmp/sess-${dispatched.length}.jsonl`,
-      done,
-    };
-    dispatched.push({ task, callbacks, resolveDone, handle });
-    return Promise.resolve(handle);
-  });
+  const dispatchMock: Mock = vi.fn(
+    (task: WorkerTask, callbacks: WorkerCallbacks, workerId: string) => {
+      let resolveDone!: (result: WorkerResult) => void;
+      const done = new Promise<WorkerResult>((resolve) => {
+        resolveDone = resolve;
+      });
+      // B1 regression: the runtime must echo the caller-provided
+      // workerId back on the handle. Any downstream control-path
+      // lookup by workerId uses this same id, so handle.workerId and
+      // the id the caller holds MUST match.
+      const handle: WorkerHandle = {
+        workerId,
+        sessionId: `sess-${dispatched.length}`,
+        sessionFile: `/tmp/sess-${dispatched.length}.jsonl`,
+        done,
+      };
+      dispatched.push({ task, callbacks, resolveDone, handle });
+      return Promise.resolve(handle);
+    }
+  );
 
   const resumeMock: Mock = vi.fn((params: ResumeParams) => {
     resumeCalls.push(params);
@@ -205,6 +211,26 @@ describe('AgentWorker — dispatch', () => {
     await new Promise((r) => setTimeout(r, 5));
     expect(worker.activeCount).toBe(0);
   });
+
+  it('B1: passes the db-assigned workerId to runtime.dispatch', async () => {
+    // Regression for the PR-review blocker: agent-worker must hand the
+    // runtime the SAME id the orchestrator holds, so every later
+    // steer/cancel/waitForIdle/hasWorker lookup by workerId resolves
+    // correctly. Before the fix, the runtime minted its own uuid and
+    // keyed the active map under it, then returned a different id to
+    // agent-worker, which returned yet another id (the db id) to
+    // callers — so every control-path call missed the active map.
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({ db, runtime: bundle.runtime });
+
+    const handle = await worker.dispatch(task());
+
+    // The runtime received the caller-side id as its third argument.
+    const dispatchCall = bundle.mocks.dispatch.mock.calls[0];
+    expect(dispatchCall?.[2]).toBe(handle.workerId);
+    // And the handle echoed it back (mock runtime enforces this contract).
+    expect(bundle.dispatched[0]?.handle.workerId).toBe(handle.workerId);
+  });
 });
 
 describe('AgentWorker — resume', () => {
@@ -296,5 +322,109 @@ describe('AgentWorker — steer / waitForIdle', () => {
     const worker = new AgentWorker({ db, runtime: bundle.runtime });
     await worker.waitForIdle('worker-1');
     expect(bundle.mocks.waitForIdle).toHaveBeenCalledWith('worker-1');
+  });
+});
+
+describe('AgentWorker — getMostRecentPausedWorker (C1)', () => {
+  // Regression for PR-review concern C1: `resume_worker` without an
+  // explicit id must land on a paused (`idle_partial`) worker, not
+  // whichever non-terminal worker is most recent. Before the fix, a
+  // running worker could be ahead of a paused one in the ordering
+  // and `resume_worker` would try to reopen a live session or fail
+  // with "no session_file".
+
+  it('returns null when no workers are paused', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({ db, runtime: bundle.runtime });
+
+    // A running worker exists but none are paused.
+    const runningId = await createWorker(db, task());
+    await updateWorker(db, runningId, { status: 'running' });
+
+    const paused = await worker.getMostRecentPausedWorker();
+    expect(paused).toBeNull();
+  });
+
+  it('skips running workers and picks the most recent idle_partial', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({ db, runtime: bundle.runtime });
+
+    // Two workers: one running (most recent overall), one paused.
+    const pausedId = await createWorker(db, task({ skillName: 'paused-skill' }));
+    await updateWorker(db, pausedId, {
+      status: 'idle_partial',
+      sessionFile: '/tmp/paused.jsonl',
+    });
+
+    const runningId = await createWorker(db, task({ skillName: 'running-skill' }));
+    await updateWorker(db, runningId, { status: 'running' });
+
+    // getMostRecentActiveWorker returns any non-terminal — likely the
+    // running one (newer). getMostRecentPausedWorker must skip it and
+    // return the paused one regardless of recency ordering.
+    const paused = await worker.getMostRecentPausedWorker();
+    expect(paused?.workerId).toBe(pausedId);
+    expect(paused?.status).toBe('idle_partial');
+  });
+
+  it('picks the most recent idle_partial when multiple are paused', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({ db, runtime: bundle.runtime });
+
+    const firstId = await createWorker(db, task({ skillName: 'first' }));
+    await updateWorker(db, firstId, {
+      status: 'idle_partial',
+      sessionFile: '/tmp/first.jsonl',
+    });
+
+    // Small delay so the second worker has a strictly later startedAt.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const secondId = await createWorker(db, task({ skillName: 'second' }));
+    await updateWorker(db, secondId, {
+      status: 'idle_partial',
+      sessionFile: '/tmp/second.jsonl',
+    });
+
+    const paused = await worker.getMostRecentPausedWorker();
+    expect(paused?.workerId).toBe(secondId);
+  });
+});
+
+describe('AgentWorker — setStatus (C2)', () => {
+  // Regression for PR-review concern C2: the clarification bridge
+  // was constructed without onBlock/onUnblock wiring, so workers
+  // waiting on a user clarification stayed marked `running` and
+  // `list_active_workers` couldn't distinguish them from
+  // freshly-dispatched workers. The fix adds `AgentWorker.setStatus`
+  // as the wiring point — the bridge calls it via closure. This
+  // test pins the setStatus half; the clarification-bridge unit tests
+  // already cover that onBlock/onUnblock fire at the right moments.
+
+  it('writes the given status to the workers table', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({ db, runtime: bundle.runtime });
+
+    const workerId = await createWorker(db, task());
+    await worker.setStatus(workerId, 'blocked_clarifying');
+
+    const row = await getWorker(db, workerId);
+    expect(row?.status).toBe('blocked_clarifying');
+  });
+
+  it('round-trips blocked_clarifying → running via successive setStatus calls', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({ db, runtime: bundle.runtime });
+
+    const workerId = await createWorker(db, task());
+    await updateWorker(db, workerId, { status: 'running' });
+
+    // onBlock would fire here in production.
+    await worker.setStatus(workerId, 'blocked_clarifying');
+    expect((await getWorker(db, workerId))?.status).toBe('blocked_clarifying');
+
+    // onUnblock would fire here in production.
+    await worker.setStatus(workerId, 'running');
+    expect((await getWorker(db, workerId))?.status).toBe('running');
   });
 });

@@ -322,12 +322,32 @@ export async function initServices(): Promise<CoreServices> {
       // request_clarification pi custom tool) and the voice session's
       // next-user-turn events. Built BEFORE the pi runtime so the
       // buildTools factory can close over it.
+      //
+      // onBlock/onUnblock close over the outer `agentWorker` binding
+      // so they read its current value at call time — agentWorker is
+      // assigned later in this block after the runtime is constructed.
+      // This is the C2 fix: without these callbacks, workers waiting
+      // on a user clarification stayed marked `running` in the db,
+      // and list_active_workers / orchestrator-prompt logic couldn't
+      // distinguish "answer the clarification" from "resume a paused
+      // worker". onPromotion still unwired — promotion dispatch lands
+      // as a separate polish item.
       clarificationBridge = new ClarificationBridge({
         voiceInterjector: voiceFanoutBridge,
-        // Phase 3 leaves onPromotion unwired — agent-worker isn't yet
-        // referenceable here because the runtime is built from
-        // buildTools which itself depends on the bridge. Phase 4 moves
-        // the promotion dispatch into a post-construction wire-up step.
+        onBlock: async (workerId) => {
+          try {
+            await agentWorker?.setStatus(workerId, 'blocked_clarifying');
+          } catch (err) {
+            log.warn('onBlock setStatus failed', { workerId, err: String(err) });
+          }
+        },
+        onUnblock: async (workerId) => {
+          try {
+            await agentWorker?.setStatus(workerId, 'running');
+          } catch (err) {
+            log.warn('onUnblock setStatus failed', { workerId, err: String(err) });
+          }
+        },
       });
 
       // buildTools factory captures the worker-side tool context and
@@ -545,20 +565,36 @@ function buildSkillToolHandler(deps: {
 function buildWorkerControlHandler(deps: { worker: AgentWorker }): WorkerControlHandler {
   const { worker } = deps;
 
+  /**
+   * Resolve an implicit target workerId. `mode` picks the fallback
+   * pool when no explicit id was provided: `active` for pause/cancel
+   * (any non-terminal worker is a valid target) and `paused` for
+   * resume (only `idle_partial` workers are resumable, so selecting
+   * a running worker would either fail with "no session_file" or
+   * reopen a live session — see C1 in the PR review).
+   */
   async function resolveTarget(
-    explicitId?: string
+    explicitId: string | undefined,
+    mode: 'active' | 'paused'
   ): Promise<{ workerId: string } | { error: string }> {
     if (explicitId) return { workerId: explicitId };
-    const recent = await worker.getMostRecentActiveWorker();
-    if (!recent) return { error: 'no active workers' };
-    return { workerId: recent.workerId };
+    const fallback =
+      mode === 'paused'
+        ? await worker.getMostRecentPausedWorker()
+        : await worker.getMostRecentActiveWorker();
+    if (!fallback) {
+      return {
+        error: mode === 'paused' ? 'no paused workers to resume' : 'no active workers',
+      };
+    }
+    return { workerId: fallback.workerId };
   }
 
   const handler: WorkerControlHandler = {
     pauseWorker: async (
       explicitId?: string
     ): Promise<{ paused: boolean; workerId: string | null; reason?: string }> => {
-      const target = await resolveTarget(explicitId);
+      const target = await resolveTarget(explicitId, 'active');
       if ('error' in target) {
         return { paused: false, workerId: null, reason: target.error };
       }
@@ -582,7 +618,7 @@ function buildWorkerControlHandler(deps: { worker: AgentWorker }): WorkerControl
       explicitId?: string,
       message?: string
     ): Promise<{ resumed: boolean; workerId: string | null; reason?: string }> => {
-      const target = await resolveTarget(explicitId);
+      const target = await resolveTarget(explicitId, 'paused');
       if ('error' in target) {
         return { resumed: false, workerId: null, reason: target.error };
       }
@@ -604,7 +640,7 @@ function buildWorkerControlHandler(deps: { worker: AgentWorker }): WorkerControl
     cancelWorker: async (
       explicitId?: string
     ): Promise<{ cancelled: boolean; workerId: string | null; reason?: string }> => {
-      const target = await resolveTarget(explicitId);
+      const target = await resolveTarget(explicitId, 'active');
       if ('error' in target) {
         return { cancelled: false, workerId: null, reason: target.error };
       }

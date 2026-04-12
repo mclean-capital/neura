@@ -91,8 +91,16 @@ export interface WorkerRuntime {
    * AgentSession is constructed and the `session.prompt()` call has been
    * kicked off — does NOT wait for the task to complete. Progress and
    * completion flow through `callbacks`.
+   *
+   * The caller provides `workerId` so the runtime's internal active map
+   * is keyed under the same id the caller will use for subsequent
+   * `steer` / `abort` / `waitForIdle` / `hasWorker` lookups. Phase 6
+   * uses the db-assigned id from `createWorker(db, task)` — the id the
+   * orchestrator persists AND the id every downstream caller holds. If
+   * the runtime minted its own id internally, every control-path lookup
+   * by db id would miss (the B1 bug in the PR review).
    */
-  dispatch(task: WorkerTask, callbacks: WorkerCallbacks): Promise<WorkerHandle>;
+  dispatch(task: WorkerTask, callbacks: WorkerCallbacks, workerId: string): Promise<WorkerHandle>;
 
   /**
    * Reopen a previously paused worker from its persisted session file.

@@ -297,8 +297,11 @@ export function estimateSkillPromptCost(skill: NeuraSkill): number {
  * sourceInfo / disableModelInvocation; custom fields (allowed-tools,
  * metadata.*) aren't read. We reconstruct a minimal sourceInfo because
  * NeuraSkill doesn't carry pi's internal shape.
+ *
+ * Exported so pi-runtime can feed Neura's skill registry into every
+ * new AgentSession via `DefaultResourceLoader.skillsOverride` (B2 fix).
  */
-function toPiSkillShape(skill: NeuraSkill): PiSkill {
+export function toPiSkillShape(skill: NeuraSkill): PiSkill {
   return {
     name: skill.name,
     description: skill.description,

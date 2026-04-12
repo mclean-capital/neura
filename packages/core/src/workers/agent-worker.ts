@@ -129,10 +129,12 @@ export class AgentWorker {
       },
     };
 
-    // Call the runtime. The handle is returned BEFORE the underlying
-    // session.prompt resolves; dispatch is async-kickoff, not
-    // async-await.
-    const handle = await this.runtime.dispatch(task, wrapped);
+    // Call the runtime, passing the db-assigned workerId so the
+    // runtime keys its internal active map under the SAME id the
+    // orchestrator persisted. Without this, every later
+    // steer/cancel/waitForIdle lookup by db id misses the runtime's
+    // active map and pause/cancel/voice-stop silently break (B1).
+    const handle = await this.runtime.dispatch(task, wrapped, workerId);
 
     // Immediately persist session_id + session_file so restart-safe
     // resume has the load-bearing path recorded even if the core dies
@@ -155,15 +157,7 @@ export class AgentWorker {
       this.cancellation.unregister(workerId);
     });
 
-    // Return the handle using the db-assigned workerId so the caller's
-    // persisted id and the runtime's id match. The runtime's internal
-    // uuid is discarded — we use the db id as the external contract.
-    return {
-      workerId,
-      sessionId: handle.sessionId,
-      sessionFile: handle.sessionFile,
-      done: handle.done,
-    };
+    return handle;
   }
 
   /**
@@ -255,6 +249,18 @@ export class AgentWorker {
   }
 
   /**
+   * Mirror a runtime-driven status transition into the workers table.
+   * Used by the clarification bridge onBlock/onUnblock wiring (C2) to
+   * flip a worker to `blocked_clarifying` while it waits on a user
+   * answer and back to `running` when the answer arrives. Keeping this
+   * as a first-class method lets callers compose with AgentWorker
+   * instead of reaching into PGlite directly.
+   */
+  async setStatus(workerId: string, status: WorkerStatus): Promise<void> {
+    await updateWorker(this.db, workerId, { status });
+  }
+
+  /**
    * Return every non-terminal worker, sorted most-recently-active
    * first. Used by the voice-intent router to find the target worker
    * for pause / resume / cancel commands when the user says something
@@ -274,6 +280,23 @@ export class AgentWorker {
    */
   async getMostRecentActiveWorker(): Promise<WorkerEntry | null> {
     const list = await this.listActiveWorkers();
+    return list[0] ?? null;
+  }
+
+  /**
+   * Convenience: return the single most recently paused (`idle_partial`)
+   * worker, or null if none are paused. Used by `resume_worker` so an
+   * implicit target resolution doesn't land on a still-running worker.
+   * Without this filter, `resume_worker` without an explicit id targets
+   * the most-recent non-terminal worker which may be running — the
+   * subsequent `runtime.resume()` would try to reopen a live session
+   * or fail with "no session_file" (C1 in the PR review).
+   */
+  async getMostRecentPausedWorker(): Promise<WorkerEntry | null> {
+    const list = await listWorkers(this.db, {
+      status: ['idle_partial'],
+      limit: 1,
+    });
     return list[0] ?? null;
   }
 

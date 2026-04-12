@@ -66,12 +66,21 @@ export interface VoiceInterjector {
   ): Promise<void>;
 }
 
-/** Queue entry types. Kept narrow for exhaustiveness checking in `drain`. */
+/**
+ * Queue entry types. Kept narrow for exhaustiveness checking in `drain`.
+ *
+ * `workerId` is present on every entry so the drain path can key
+ * `pendingPause` lookups per-worker. The bridge is a singleton shared
+ * across every active pi session — without per-worker keying, a pause
+ * steer on worker A and a natural completion on worker B race, and
+ * the single "Done." affordance flips to whichever agent_end arrives
+ * first (B4 in the PR review).
+ */
 type QueueEntry =
-  | { type: 'text_delta'; text: string; ts: number }
-  | { type: 'tool_start'; toolName: string; ts: number }
-  | { type: 'tool_end'; toolName: string; isError: boolean; ts: number }
-  | { type: 'agent_end'; stopReason: string; ts: number };
+  | { type: 'text_delta'; workerId: string; text: string; ts: number }
+  | { type: 'tool_start'; workerId: string; toolName: string; ts: number }
+  | { type: 'tool_end'; workerId: string; toolName: string; isError: boolean; ts: number }
+  | { type: 'agent_end'; workerId: string; stopReason: string; ts: number };
 
 export interface VoiceFanoutBridgeOptions {
   interjector: VoiceInterjector;
@@ -93,11 +102,16 @@ export class VoiceFanoutBridge {
   private queue: QueueEntry[] = [];
   private draining = false;
   /**
-   * Set by `agent-worker` immediately before sending a pause steer.
-   * Cleared on the NEXT `agent_end`. Tells the bridge to stay silent on
-   * the upcoming `stopReason: "stop"` because the user knows they paused.
+   * Set by `agent-worker` immediately before sending a pause steer on
+   * a specific worker. Cleared when that same worker emits its next
+   * `agent_end`. Keyed by workerId because the bridge is a singleton
+   * shared across every active pi session: a pause steer on worker A
+   * must not suppress worker B's natural completion cue, and worker
+   * B's completion must not clear worker A's pending pause. Without
+   * per-worker keying the single flag flips to whichever agent_end
+   * arrives first, which is the B4 bug in the PR review.
    */
-  private pendingPause = false;
+  private pendingPauseByWorker = new Set<string>();
 
   constructor(options: VoiceFanoutBridgeOptions) {
     this.interjector = options.interjector;
@@ -139,25 +153,32 @@ export class VoiceFanoutBridge {
    * Synchronous listener — pi's agent loop is never blocked. Appends the
    * event to the queue and kicks the drain loop. Drain runs fire-and-forget
    * with a `.catch()` so errors become log lines, not unhandled rejections.
+   *
+   * `workerId` is passed in explicitly by pi-runtime's subscribe closure,
+   * which already has it in scope. Carrying it through the queue lets
+   * drain key per-worker `pendingPause` lookups without the bridge
+   * needing any back-reference to the runtime's active map.
    */
-  push(event: AgentEvent): void {
+  push(workerId: string, event: AgentEvent): void {
     if (event.type === 'message_update') {
       const delta = this.extractDelta(event);
       if (delta !== null) {
         const cleaned = stripToolCallArtifacts(delta);
         if (cleaned.length > 0) {
-          this.queue.push({ type: 'text_delta', text: cleaned, ts: Date.now() });
+          this.queue.push({ type: 'text_delta', workerId, text: cleaned, ts: Date.now() });
         }
       }
     } else if (event.type === 'tool_execution_start') {
       this.queue.push({
         type: 'tool_start',
+        workerId,
         toolName: event.toolName,
         ts: Date.now(),
       });
     } else if (event.type === 'tool_execution_end') {
       this.queue.push({
         type: 'tool_end',
+        workerId,
         toolName: event.toolName,
         isError: event.isError,
         ts: Date.now(),
@@ -165,6 +186,7 @@ export class VoiceFanoutBridge {
     } else if (event.type === 'agent_end') {
       this.queue.push({
         type: 'agent_end',
+        workerId,
         stopReason: extractStopReason(event),
         ts: Date.now(),
       });
@@ -179,12 +201,23 @@ export class VoiceFanoutBridge {
   }
 
   /**
-   * Called by agent-worker before sending a pause steer. Tells the bridge
-   * to suppress the "Done." affordance on the next `agent_end` because the
-   * user explicitly requested the pause and doesn't need an audio confirm.
+   * Called by agent-worker before sending a pause steer on a specific
+   * worker. Tells the bridge to suppress the "Done." affordance on the
+   * NEXT `agent_end` event belonging to that worker. Other workers'
+   * completions are unaffected.
    */
-  setPendingPauseFlag(): void {
-    this.pendingPause = true;
+  setPendingPauseFlag(workerId: string): void {
+    this.pendingPauseByWorker.add(workerId);
+  }
+
+  /** True if the worker has a pending pause flag set. */
+  private isPending(workerId: string): boolean {
+    return this.pendingPauseByWorker.has(workerId);
+  }
+
+  /** Clear the pending pause flag for a specific worker. */
+  private clearPending(workerId: string): void {
+    this.pendingPauseByWorker.delete(workerId);
   }
 
   /**
@@ -245,10 +278,17 @@ export class VoiceFanoutBridge {
         //   "aborted"               → silent (orchestrator announces cancel)
         //   "error"                 → silent (orchestrator announces error)
         //   anything else           → silent
-        if (ev.stopReason === 'stop' && !this.pendingPause) {
-          await this.interjector.interject('Done.', { immediate: false });
+        //
+        // C3 fix: the "Done." cue must bypass the 10s interject rate
+        // limiter. Any worker that spoke progress or announced a tool
+        // in the last 10s would otherwise silently drop the completion
+        // announcement, leaving the user with no audible signal that
+        // the background task finished. Completions are infrequent
+        // and load-bearing — rate limiting them defeats the purpose.
+        if (ev.stopReason === 'stop' && !this.isPending(ev.workerId)) {
+          await this.interjector.interject('Done.', { immediate: false, bypassRateLimit: true });
         }
-        this.pendingPause = false;
+        this.clearPending(ev.workerId);
         break;
     }
   }

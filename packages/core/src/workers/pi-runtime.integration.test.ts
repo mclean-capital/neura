@@ -369,4 +369,85 @@ describe('PiRuntime integration (faux provider)', () => {
     expect(resumeResult.status).toBe('completed');
     expect(faux.getPendingResponseCount()).toBe(0);
   });
+
+  it('B1: runtime keys its active map by the db-assigned workerId', async () => {
+    // Regression for PR-review blocker B1. Before the fix, PiRuntime
+    // minted its own uuid and AgentWorker returned the db id, so any
+    // subsequent `runtime.hasWorker(dbId)` / steer / cancel / abort
+    // lookup by the db id missed the runtime's active map. This test
+    // asserts the end-to-end contract: after AgentWorker.dispatch,
+    // PiRuntime.hasWorker(dbId) must return true for the same id the
+    // caller holds.
+    const { faux, worker, runtime } = harness;
+
+    // Script a response that never resolves on its own so we have a
+    // live worker to introspect. A pending-but-never-fulfilled response
+    // would hang; instead we use a factory that resolves after a
+    // long delay to give us time to inspect, but the test exits fast
+    // via await on handle.done at the end.
+    faux.setResponses([fauxAssistantMessage('Done integration B1.', { stopReason: 'stop' })]);
+
+    const handle = await worker.dispatch(integrationTask());
+
+    // The runtime must recognize the caller's workerId as live.
+    // Before the fix, this was `false` because the active map was
+    // keyed under the runtime's internal uuid, not the db id.
+    expect(runtime.hasWorker(handle.workerId)).toBe(true);
+
+    // Drain the dispatch to terminal state so the afterEach cleanup
+    // doesn't hit an in-flight worker.
+    await handle.done;
+    await waitForDrain();
+  });
+
+  it('B2: pi session receives Neura-loaded skills via skillsOverride', async () => {
+    // Regression for PR-review blocker B2. Before the fix,
+    // createAgentSession was constructed with no resourceLoader, so
+    // pi's default ResourceLoader looked under its own conventions
+    // (not `.neura/skills`), and workers ran as generic coding agents
+    // with no SKILL.md instructions. This test proves the opposite:
+    // a skill registered in Neura's SkillRegistry is visible to the
+    // pi session at prompt time, via the DefaultResourceLoader
+    // `skillsOverride` injection.
+    const { faux, worker, registry } = harness;
+
+    // Add a second uniquely-named skill to the registry alongside
+    // the integration-test-skill the harness already installed.
+    const hellmark: NeuraSkill = {
+      name: 'hellmark-probe-skill',
+      description:
+        'A uniquely-named skill whose presence in the pi system prompt proves the skillsOverride wiring.',
+      filePath: '/virtual/hellmark-probe-skill/SKILL.md',
+      baseDir: '/virtual/hellmark-probe-skill',
+      location: 'explicit',
+      disableModelInvocation: false,
+      allowedTools: ['get_current_time'],
+      hasExplicitAllowedTools: true,
+      metadata: {},
+      body: 'hellmark probe body',
+    };
+    registry.replaceAll([...registry.list(), hellmark]);
+
+    // Use a faux response factory that inspects the context's
+    // systemPrompt at stream time. Pi's assembled system prompt should
+    // contain the skill name because pi's formatSkillsForPrompt ran
+    // over Neura's override output during session construction.
+    let observedSystemPrompt = '';
+    faux.setResponses([
+      (context) => {
+        observedSystemPrompt = context.systemPrompt ?? '';
+        return fauxAssistantMessage('done', { stopReason: 'stop' });
+      },
+    ]);
+
+    const handle = await worker.dispatch(integrationTask());
+    await handle.done;
+    await waitForDrain();
+
+    // Pi's formatter wraps skills in an XML-ish block containing the
+    // skill name. We don't over-specify the exact format because pi's
+    // internal prompt layout may evolve — we just assert the unique
+    // name is present somewhere in the system prompt.
+    expect(observedSystemPrompt).toContain('hellmark-probe-skill');
+  });
 });

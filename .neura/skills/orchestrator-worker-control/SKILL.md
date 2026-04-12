@@ -2,7 +2,6 @@
 name: orchestrator-worker-control
 description: Orchestrator-level directives for pausing, resuming, and cancelling background workers in response to user voice intents. Body is injected into the Grok voice session system prompt; not auto-invoked as a worker skill.
 version: 0.1.0
-disable-model-invocation: true
 allowed-tools: pause_worker resume_worker cancel_worker list_active_workers
 metadata:
   neura_level: orchestrator

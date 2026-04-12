@@ -16,16 +16,31 @@ import {
   type VoiceInterjector,
 } from './voice-fanout-bridge.js';
 
+/** Default worker id used by tests that don't care about identity. */
+const W = 'worker-test';
+
 function makeInterjector(): VoiceInterjector & {
-  calls: { message: string; immediate: boolean }[];
+  calls: { message: string; immediate: boolean; bypassRateLimit: boolean | undefined }[];
 } {
-  const calls: { message: string; immediate: boolean }[] = [];
+  const calls: {
+    message: string;
+    immediate: boolean;
+    bypassRateLimit: boolean | undefined;
+  }[] = [];
   return {
     calls,
-    interject: vi.fn().mockImplementation((message: string, options: { immediate: boolean }) => {
-      calls.push({ message, immediate: options.immediate });
-      return Promise.resolve();
-    }),
+    interject: vi
+      .fn()
+      .mockImplementation(
+        (message: string, options: { immediate: boolean; bypassRateLimit?: boolean }) => {
+          calls.push({
+            message,
+            immediate: options.immediate,
+            bypassRateLimit: options.bypassRateLimit,
+          });
+          return Promise.resolve();
+        }
+      ),
   };
 }
 
@@ -62,19 +77,19 @@ describe('VoiceFanoutBridge — synchronous push', () => {
   it('push() returns synchronously and never throws on well-formed events', () => {
     const bridge = new VoiceFanoutBridge({ interjector: makeInterjector() });
     // These calls must all return void immediately.
-    bridge.push(deltaEvent('hello '));
-    bridge.push(deltaEvent('world'));
-    bridge.push(toolStart('create_task'));
-    bridge.push(toolEnd('create_task'));
-    bridge.push(agentEnd('stop'));
+    bridge.push(W, deltaEvent('hello '));
+    bridge.push(W, deltaEvent('world'));
+    bridge.push(W, toolStart('create_task'));
+    bridge.push(W, toolEnd('create_task'));
+    bridge.push(W, agentEnd('stop'));
     // If any awaited, we wouldn't reach here without await.
     expect(true).toBe(true);
   });
 
   it('push() survives a malformed event without throwing', () => {
     const bridge = new VoiceFanoutBridge({ interjector: makeInterjector() });
-    bridge.push({ type: 'unknown_event_type' } as unknown as AgentEvent);
-    bridge.push({ type: 'message_update' } as unknown as AgentEvent); // no delta
+    bridge.push(W, { type: 'unknown_event_type' } as unknown as AgentEvent);
+    bridge.push(W, { type: 'message_update' } as unknown as AgentEvent); // no delta
     expect(true).toBe(true);
   });
 });
@@ -84,9 +99,9 @@ describe('VoiceFanoutBridge — text delta coalescing', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 50 });
 
-    bridge.push(deltaEvent('Hello '));
-    bridge.push(deltaEvent('there, '));
-    bridge.push(deltaEvent('friend.'));
+    bridge.push(W, deltaEvent('Hello '));
+    bridge.push(W, deltaEvent('there, '));
+    bridge.push(W, deltaEvent('friend.'));
 
     await flush(bridge, 200);
     expect(interjector.calls.length).toBe(1);
@@ -100,11 +115,11 @@ describe('VoiceFanoutBridge — text delta coalescing', () => {
 
     // First delta fires the drain, which sleeps for 100ms before draining
     // the text batch. Deltas pushed within that window must coalesce.
-    bridge.push(deltaEvent('First. '));
+    bridge.push(W, deltaEvent('First. '));
     await new Promise((r) => setTimeout(r, 30));
-    bridge.push(deltaEvent('Second. '));
+    bridge.push(W, deltaEvent('Second. '));
     await new Promise((r) => setTimeout(r, 30));
-    bridge.push(deltaEvent('Third.'));
+    bridge.push(W, deltaEvent('Third.'));
 
     await flush(bridge, 250);
     expect(interjector.calls.length).toBe(1);
@@ -115,9 +130,9 @@ describe('VoiceFanoutBridge — text delta coalescing', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 50 });
 
-    bridge.push(deltaEvent('Before. '));
-    bridge.push(toolStart('describe_screen'));
-    bridge.push(deltaEvent('After.'));
+    bridge.push(W, deltaEvent('Before. '));
+    bridge.push(W, toolStart('describe_screen'));
+    bridge.push(W, deltaEvent('After.'));
 
     await flush(bridge, 300);
     // Expect three calls: text batch 1 (with trailing space preserved),
@@ -135,7 +150,7 @@ describe('VoiceFanoutBridge — tool events', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(toolStart('describe_screen'));
+    bridge.push(W, toolStart('describe_screen'));
     await flush(bridge, 100);
     expect(interjector.calls[0]?.message).toBe('Running describe_screen...');
   });
@@ -144,7 +159,7 @@ describe('VoiceFanoutBridge — tool events', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(toolEnd('describe_screen', true));
+    bridge.push(W, toolEnd('describe_screen', true));
     await flush(bridge, 100);
     expect(interjector.calls.find((c) => c.message === 'describe_screen failed.')).toBeDefined();
   });
@@ -153,7 +168,7 @@ describe('VoiceFanoutBridge — tool events', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(toolEnd('describe_screen', false));
+    bridge.push(W, toolEnd('describe_screen', false));
     await flush(bridge, 100);
     expect(interjector.calls.length).toBe(0);
   });
@@ -164,7 +179,7 @@ describe('VoiceFanoutBridge — agent_end stopReason mapping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(agentEnd('stop'));
+    bridge.push(W, agentEnd('stop'));
     await flush(bridge, 100);
     expect(interjector.calls[0]?.message).toBe('Done.');
   });
@@ -173,8 +188,8 @@ describe('VoiceFanoutBridge — agent_end stopReason mapping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.setPendingPauseFlag();
-    bridge.push(agentEnd('stop'));
+    bridge.setPendingPauseFlag(W);
+    bridge.push(W, agentEnd('stop'));
     await flush(bridge, 100);
     expect(interjector.calls.length).toBe(0);
   });
@@ -183,12 +198,12 @@ describe('VoiceFanoutBridge — agent_end stopReason mapping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.setPendingPauseFlag();
-    bridge.push(agentEnd('stop'));
+    bridge.setPendingPauseFlag(W);
+    bridge.push(W, agentEnd('stop'));
     await flush(bridge, 100);
 
     // The next agent_end should speak "Done." since the flag was cleared.
-    bridge.push(agentEnd('stop'));
+    bridge.push(W, agentEnd('stop'));
     await flush(bridge, 100);
     expect(interjector.calls.some((c) => c.message === 'Done.')).toBe(true);
   });
@@ -197,7 +212,7 @@ describe('VoiceFanoutBridge — agent_end stopReason mapping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(agentEnd('aborted'));
+    bridge.push(W, agentEnd('aborted'));
     await flush(bridge, 100);
     expect(interjector.calls.length).toBe(0);
   });
@@ -206,9 +221,89 @@ describe('VoiceFanoutBridge — agent_end stopReason mapping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(agentEnd('error'));
+    bridge.push(W, agentEnd('error'));
     await flush(bridge, 100);
     expect(interjector.calls.length).toBe(0);
+  });
+
+  it('C3: "Done." is sent with bypassRateLimit=true so recent progress does not mute it', async () => {
+    // The voice provider rate-limits ambient interjects to one per 10s
+    // unless bypassRateLimit is set. Completion announcements are
+    // infrequent but load-bearing (the only audible signal that a
+    // background task finished), so they must ALWAYS bypass the limiter.
+    const interjector = makeInterjector();
+    const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
+
+    bridge.push(W, agentEnd('stop'));
+    await flush(bridge, 100);
+
+    const done = interjector.calls.find((c) => c.message === 'Done.');
+    expect(done).toBeDefined();
+    expect(done?.bypassRateLimit).toBe(true);
+  });
+});
+
+describe('VoiceFanoutBridge — per-worker pendingPause isolation (B4)', () => {
+  // The bridge is a singleton shared across every concurrent pi session.
+  // Before B4 was fixed, `pendingPause` was a bridge-global boolean, so a
+  // pause steer on worker A and a natural completion on worker B raced:
+  // whichever agent_end arrived first consumed the flag. These tests pin
+  // the fix — pause flags are keyed by workerId and don't cross-talk.
+
+  it('pause flag set on worker A does not suppress worker B completion', async () => {
+    const interjector = makeInterjector();
+    const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
+
+    bridge.setPendingPauseFlag('worker-a');
+    // Worker B naturally completes first. Its "Done." must still speak.
+    bridge.push('worker-b', agentEnd('stop'));
+    await flush(bridge, 100);
+
+    expect(interjector.calls.filter((c) => c.message === 'Done.').length).toBe(1);
+  });
+
+  it('worker B completion does not clear worker A pending pause flag', async () => {
+    const interjector = makeInterjector();
+    const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
+
+    // A is paused, B completes and speaks "Done.", then A's actual
+    // pause-ack arrives. A should STILL stay silent — the flag survived
+    // B's agent_end.
+    bridge.setPendingPauseFlag('worker-a');
+    bridge.push('worker-b', agentEnd('stop'));
+    await flush(bridge, 100);
+    expect(interjector.calls.filter((c) => c.message === 'Done.').length).toBe(1);
+
+    bridge.push('worker-a', agentEnd('stop'));
+    await flush(bridge, 100);
+
+    // Still exactly one "Done." — A's pause-ack stayed silent.
+    expect(interjector.calls.filter((c) => c.message === 'Done.').length).toBe(1);
+  });
+
+  it('clears the pending pause flag only for the worker whose agent_end arrived', async () => {
+    const interjector = makeInterjector();
+    const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
+
+    // Pause both A and B.
+    bridge.setPendingPauseFlag('worker-a');
+    bridge.setPendingPauseFlag('worker-b');
+
+    // A's pause-ack lands. Silent (its own flag is set). B's flag is
+    // unaffected.
+    bridge.push('worker-a', agentEnd('stop'));
+    await flush(bridge, 100);
+    expect(interjector.calls.filter((c) => c.message === 'Done.').length).toBe(0);
+
+    // B's pause-ack lands. Also silent (its own flag is still set).
+    bridge.push('worker-b', agentEnd('stop'));
+    await flush(bridge, 100);
+    expect(interjector.calls.filter((c) => c.message === 'Done.').length).toBe(0);
+
+    // Fresh agent_end on A — no flag, speaks "Done." as normal completion.
+    bridge.push('worker-a', agentEnd('stop'));
+    await flush(bridge, 100);
+    expect(interjector.calls.filter((c) => c.message === 'Done.').length).toBe(1);
   });
 });
 
@@ -217,7 +312,7 @@ describe('VoiceFanoutBridge — tool-call artifact stripping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(deltaEvent('Uploading {"docName":"alpha.pdf"} now.'));
+    bridge.push(W, deltaEvent('Uploading {"docName":"alpha.pdf"} now.'));
     await flush(bridge, 100);
     // The JSON blob should be gone.
     const spoken = interjector.calls[0]?.message ?? '';
@@ -230,7 +325,7 @@ describe('VoiceFanoutBridge — tool-call artifact stripping', () => {
     const interjector = makeInterjector();
     const bridge = new VoiceFanoutBridge({ interjector, coalesceBudgetMs: 10 });
 
-    bridge.push(deltaEvent('{"docName":"alpha.pdf"}'));
+    bridge.push(W, deltaEvent('{"docName":"alpha.pdf"}'));
     await flush(bridge, 100);
     expect(interjector.calls.length).toBe(0);
   });
@@ -258,7 +353,7 @@ describe('VoiceFanoutBridge — agent loop never blocks', () => {
     // every one, without ever waiting on the slow interjector.
     const start = Date.now();
     for (let i = 0; i < 50; i++) {
-      bridge.push(deltaEvent(`chunk ${i} `));
+      bridge.push(W, deltaEvent(`chunk ${i} `));
     }
     const elapsed = Date.now() - start;
 
@@ -278,12 +373,12 @@ describe('VoiceFanoutBridge — agent loop never blocks', () => {
       coalesceBudgetMs: 10,
     });
 
-    bridge.push(deltaEvent('first'));
+    bridge.push(W, deltaEvent('first'));
     await flush(bridge, 100);
 
     // After the drain error, a subsequent push should still schedule a
     // drain (not hit a stuck draining=true guard).
-    bridge.push(deltaEvent('second'));
+    bridge.push(W, deltaEvent('second'));
     await flush(bridge, 100);
 
     // Both interject attempts should have been made (and both rejected).

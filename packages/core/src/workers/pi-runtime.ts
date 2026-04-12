@@ -30,6 +30,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   createAgentSession,
+  DefaultResourceLoader,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
@@ -39,7 +40,7 @@ import type { Agent, AgentEvent, BeforeToolCallResult } from '@mariozechner/pi-a
 import type { Model } from '@mariozechner/pi-ai';
 import type { WorkerCallbacks, WorkerResult, WorkerStatus } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
-import type { SkillRegistry } from '../skills/skill-registry.js';
+import { toPiSkillShape, type SkillRegistry } from '../skills/skill-registry.js';
 import { REQUEST_CLARIFICATION_TOOL_NAME } from './clarification-bridge.js';
 import type { NeuraAgentTool } from './neura-tools.js';
 import type { VoiceFanoutBridge } from './voice-fanout-bridge.js';
@@ -157,6 +158,35 @@ export class PiRuntime implements WorkerRuntime {
     workerId: string
   ): Promise<AgentSession> {
     const tools = this.opts.buildTools({ workerId });
+
+    // B2 fix: feed Neura's SkillRegistry into pi's resource loader so
+    // the agent session sees Neura's loaded skills via `getSkills()`
+    // and formats them into its own system prompt. Without this, pi
+    // falls back to its default loader which looks under its own
+    // conventions (not `.neura/skills`), and the SKILL.md bodies the
+    // orchestrator dispatched a worker to execute never reach the
+    // worker — it runs as a generic coding agent with no context.
+    //
+    // We disable pi's own skill discovery via `noSkills: true` and
+    // replace the empty base result with the Neura catalog via
+    // `skillsOverride`. The override closes over the registry, so a
+    // hot-reloaded skill is visible to any session constructed AFTER
+    // the reload (existing sessions keep the snapshot they were built
+    // with, which is fine — pi reads skills at construction time).
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: this.opts.cwd,
+      agentDir: this.opts.agentDir,
+      noSkills: true,
+      skillsOverride: () => ({
+        skills: this.opts.skillRegistry
+          .listWorkerSkills()
+          .filter((s) => !s.disableModelInvocation)
+          .map(toPiSkillShape),
+        diagnostics: [],
+      }),
+    });
+    await resourceLoader.reload();
+
     const { session } = await createAgentSession({
       cwd: this.opts.cwd,
       agentDir: this.opts.agentDir,
@@ -164,6 +194,7 @@ export class PiRuntime implements WorkerRuntime {
       thinkingLevel: this.opts.thinkingLevel ?? 'low',
       sessionManager,
       customTools: tools,
+      resourceLoader,
       ...(this.opts.authStorage ? { authStorage: this.opts.authStorage } : {}),
     });
 
@@ -221,7 +252,7 @@ export class PiRuntime implements WorkerRuntime {
     session.subscribe((event: AgentSessionEvent) => {
       if (isBridgeEvent(event)) {
         try {
-          this.opts.voiceFanoutBridge.push(event);
+          this.opts.voiceFanoutBridge.push(workerId, event);
         } catch (err) {
           log.error('voice fanout push threw', { workerId, err: String(err) });
         }
@@ -346,14 +377,16 @@ export class PiRuntime implements WorkerRuntime {
 
   async dispatch(
     task: Parameters<WorkerRuntime['dispatch']>[0],
-    callbacks: WorkerCallbacks
+    callbacks: WorkerCallbacks,
+    workerId: string
   ): Promise<WorkerHandle> {
-    // Generate a workerId locally. The caller (agent-worker.ts) is
-    // expected to immediately persist this to the workers table via
-    // worker-queries.createWorker() in the same step — Phase 2 step 8
-    // wires this up. For tests and direct uses, callers get the id back
-    // on the handle and persist as they see fit.
-    const workerId = crypto.randomUUID();
+    // `workerId` is caller-provided (the db id from `createWorker`).
+    // Keying the active map under this id is essential — it's the same
+    // id every downstream control-path caller (steer, abort, waitForIdle,
+    // hasWorker, pause_worker, cancel_worker) uses to look this worker
+    // back up. If the runtime minted its own id here, the lookup would
+    // miss on every one of those methods. See the B1 writeup in the
+    // PR review.
 
     // Use a fresh file-backed SessionManager per dispatch. Writes to
     // `${sessionDir}/<timestamp>_<uuid>.jsonl` which becomes the
@@ -460,9 +493,11 @@ export class PiRuntime implements WorkerRuntime {
     }
     // Flag pending pause on the bridge so "Done." stays silent on the
     // upcoming agent_end, and on the worker itself so finalizeWorker
-    // routes the stopReason to idle_partial instead of completed.
+    // routes the stopReason to idle_partial instead of completed. The
+    // bridge flag is keyed by workerId so parallel workers can pause
+    // independently without clobbering each other's completion cues.
     worker.pendingPause = true;
-    this.opts.voiceFanoutBridge.setPendingPauseFlag();
+    this.opts.voiceFanoutBridge.setPendingPauseFlag(workerId);
     await worker.session.prompt(message, { streamingBehavior: 'steer' });
   }
 

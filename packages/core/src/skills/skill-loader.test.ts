@@ -100,6 +100,33 @@ describe('loadNeuraSkills', () => {
   });
 });
 
+describe('loadNeuraSkills — real repo .neura/skills', () => {
+  // Walk up from this test file to the repo root so the test isn't
+  // sensitive to where vitest is run from. packages/core/src/skills/ →
+  // ../../../../ lands in the repo root.
+  const repoRoot = resolve(__dirname, '..', '..', '..', '..');
+
+  it('loads the shipped orchestrator-worker-control skill as non-draft', () => {
+    // Regression for B3: the shipped orchestrator skill was marked
+    // `disable-model-invocation: true`, which caused
+    // buildOrchestratorPromptPrefix() to filter it out and Grok to
+    // silently lose all pause/resume/cancel routing directives. This
+    // test loads the real file and asserts it survives the filter.
+    const result = loadNeuraSkills({
+      cwd: repoRoot,
+      globalSkillsDir: hermeticGlobal,
+    });
+
+    const orchestrator = result.skills.find((s) => s.name === 'orchestrator-worker-control');
+    expect(orchestrator).toBeDefined();
+    expect(orchestrator?.disableModelInvocation).toBe(false);
+    expect(orchestrator?.metadata.neura_level).toBe('orchestrator');
+    expect(orchestrator?.body).toContain('pause_worker');
+    expect(orchestrator?.body).toContain('resume_worker');
+    expect(orchestrator?.body).toContain('cancel_worker');
+  });
+});
+
 describe('toNeuraSkill', () => {
   it('handles skills with explicit allowed-tools', () => {
     const piSkill: PiSkill = {
