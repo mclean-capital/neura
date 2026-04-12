@@ -1,3 +1,9 @@
+## [2.2.5](https://github.com/mclean-capital/neura/compare/v2.2.4...v2.2.5) (2026-04-12)
+
+### Bug Fixes
+
+- **core:** default wake word to neura and sync assistant name with system prompt ([9c8b404](https://github.com/mclean-capital/neura/commit/9c8b4043ffededc5d556edfcf539c9d6c5611a1e))
+
 ## [2.2.4](https://github.com/mclean-capital/neura/compare/v2.2.3...v2.2.4) (2026-04-12)
 
 ### Bug Fixes
