@@ -4,6 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { CLI_VERSION } from '../version.js';
 import { getInstalledCoreVersion } from '../download.js';
+import { getServiceManager } from '../service/manager.js';
 
 const PACKAGE_NAME = '@mclean-capital/neura';
 
@@ -92,6 +93,40 @@ export async function updateCommand(): Promise<void> {
   // after a v1.10 → v1.11 bootstrap, or an interrupted install), we still
   // want to run `npm install -g` and re-register the service below. Both
   // operations are idempotent and fast when nothing actually changes.
+
+  // Stop the running core BEFORE running `npm install -g` so the old
+  // core releases file handles on the files npm is about to replace.
+  //
+  // Without this, Windows holds a lock on
+  // `@mclean-capital/neura/node_modules/onnxruntime-node/bin/napi-v6/
+  //  win32/x64/onnxruntime_binding.node` (and similar native binaries)
+  // because the old core has loaded them into its process. npm can
+  // still install the new version — it writes to a temp dir first,
+  // then moves — but it can't remove the temp dir on cleanup and
+  // emits a loud `EPERM: operation not permitted, unlink ...` warning
+  // on every update. More importantly, if the old core hangs on to
+  // port 18259 through the install, the subsequent `neura install
+  // --yes` re-registration can get confused between the old and new
+  // cores and end up with the old core still running as the
+  // authoritative one.
+  //
+  // We do this via the CURRENTLY-INSTALLED CLI's service manager
+  // (before npm replaces it). That's fine — the pre-upgrade code is
+  // perfectly capable of stopping the pre-upgrade core. The fresh
+  // `neura install --yes` call further down runs against the NEW
+  // code and re-registers + starts the new core.
+  try {
+    const svc = await getServiceManager();
+    if (svc.isInstalled() && svc.isRunning()) {
+      console.log(chalk.dim('  Stopping core to release file locks...'));
+      svc.stop();
+    }
+  } catch {
+    // Non-fatal: if the service manager can't stop cleanly, npm will
+    // still try to install and may just print the EPERM warning.
+    // The subsequent `neura install --yes` re-registration will
+    // recover from any resulting inconsistency.
+  }
 
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const installCmd = `${npmCmd} install -g ${PACKAGE_NAME}@latest`;
