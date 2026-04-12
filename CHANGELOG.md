@@ -1,3 +1,9 @@
+## [2.1.5](https://github.com/mclean-capital/neura/compare/v2.1.4...v2.1.5) (2026-04-12)
+
+### Bug Fixes
+
+- **core:** keep wake detector alive across active mode so second wake fires ([f56fd82](https://github.com/mclean-capital/neura/commit/f56fd82808a6e1181690ffd3e4cf1c41cd869b22)), closes [hi#score](https://github.com/hi/issues/score)
+
 ## [2.1.4](https://github.com/mclean-capital/neura/compare/v2.1.3...v2.1.4) (2026-04-11)
 
 ### Bug Fixes
