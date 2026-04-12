@@ -449,14 +449,19 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
       // Re-check state after async gap — may have gone passive/idle during await
       if (connectionClosed || presence.state !== 'active') return;
 
-      session = createVoiceSession(voiceCallbacks, {
-        systemPromptPrefix,
-        memoryTools,
-        enterMode: (mode) => presence.enterMode(mode),
-        taskTools,
-        skillTools: skillToolHandler ?? undefined,
-        workerControl: workerControlHandler ?? undefined,
-      });
+      session = createVoiceSession(
+        voiceCallbacks,
+        {
+          mode: services.config.routing.voice?.mode ?? 'realtime',
+          systemPromptPrefix,
+          memoryTools,
+          enterMode: (mode) => presence.enterMode(mode),
+          taskTools,
+          skillTools: skillToolHandler ?? undefined,
+          workerControl: workerControlHandler ?? undefined,
+        },
+        services.registry
+      );
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();
       resetIdleTimer();

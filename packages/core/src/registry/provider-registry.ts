@@ -4,6 +4,8 @@ import type {
   RoutingConfig,
   TextAdapter,
   EmbeddingAdapter,
+  STTAdapter,
+  TTSAdapter,
   RouteDescriptor,
   VoiceRouteDescriptor,
   VisionRouteDescriptor,
@@ -11,6 +13,9 @@ import type {
 import { Logger } from '@neura/utils/logger';
 import { OpenAICompatibleTextAdapter } from '../adapters/openai-compatible-text.js';
 import { OpenAICompatibleEmbeddingAdapter } from '../adapters/openai-compatible-embedding.js';
+import { DeepgramSTTAdapter } from '../adapters/deepgram-stt.js';
+import { ElevenLabsTTSAdapter } from '../adapters/elevenlabs-tts.js';
+import { OpenAITTSAdapter } from '../adapters/openai-tts.js';
 
 const log = new Logger('registry');
 
@@ -133,6 +138,25 @@ export class ProviderRegistry {
       this.embeddingAdapter = new OpenAICompatibleEmbeddingAdapter(route);
     }
     return this.embeddingAdapter;
+  }
+
+  // ─── Per-Session Adapter Factories ───────────────────────────
+
+  /** Create an STT adapter for a specific route (per-session, stateful) */
+  createSTTAdapter(route: RouteDescriptor): STTAdapter {
+    log.info('creating STT adapter', { provider: route.providerId, model: route.model });
+    // Currently only Deepgram is supported
+    return new DeepgramSTTAdapter(route);
+  }
+
+  /** Create a TTS adapter for a specific route (per-session, stateful) */
+  createTTSAdapter(route: RouteDescriptor & { voice?: string }): TTSAdapter {
+    log.info('creating TTS adapter', { provider: route.providerId, model: route.model });
+    if (route.providerId === 'openai') {
+      return new OpenAITTSAdapter(route);
+    }
+    // Default to ElevenLabs for all other TTS providers
+    return new ElevenLabsTTSAdapter(route);
   }
 
   // ─── Lifecycle ─────────────────────────────────────────────────

@@ -14,6 +14,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@deepgram/sdk": "^5.0.0",
     "@electric-sql/pglite": "^0.4.3",
     "@google/genai": "^1",
     "@mariozechner/pi-coding-agent": "^0.66.1",
