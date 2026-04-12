@@ -49,13 +49,13 @@ export class PgliteStore implements DataStore {
    * Create a PgliteStore backed by a directory on disk (WAL-persisted).
    * If no dataDir is provided, creates an in-memory instance (useful for tests).
    */
-  static async create(dataDir?: string): Promise<PgliteStore> {
+  static async create(dataDir?: string, embeddingDimensions?: number): Promise<PgliteStore> {
     const db = await PGlite.create(dataDir ?? 'memory://', {
       extensions: { vector },
     });
 
     const store = new PgliteStore(db);
-    await runMigrations(db);
+    await runMigrations(db, embeddingDimensions);
     return store;
   }
 

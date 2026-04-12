@@ -164,14 +164,16 @@ export async function initServices(): Promise<CoreServices> {
 
     try {
       const { PgliteStore } = await import('../stores/index.js');
-      store = await PgliteStore.create(config.pgDataPath);
-      log.info('database initialized', { path: config.pgDataPath });
+      const embDims = config.routing.embedding?.dimensions;
+      store = await PgliteStore.create(config.pgDataPath, embDims);
+      log.info('database initialized', { path: config.pgDataPath, embeddingDimensions: embDims });
     } catch (err) {
       log.warn('database corrupt or failed to open, resetting', { err: String(err) });
       try {
         rmSync(config.pgDataPath, { recursive: true, force: true });
         const { PgliteStore } = await import('../stores/index.js');
-        store = await PgliteStore.create(config.pgDataPath);
+        const embDims = config.routing.embedding?.dimensions;
+        store = await PgliteStore.create(config.pgDataPath, embDims);
         log.info('database recreated after reset', { path: config.pgDataPath });
 
         // Auto-restore memories from backup after corruption recovery

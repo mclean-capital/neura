@@ -128,7 +128,7 @@ export async function searchFacts(
   embedding?: number[],
   limit = 10
 ): Promise<FactEntry[]> {
-  if (embedding?.length === 3072) {
+  if (embedding && embedding.length > 0) {
     const vecStr = `[${embedding.join(',')}]`;
     const result = await db.query<FactRow>(
       `SELECT * FROM facts
@@ -165,9 +165,8 @@ export async function upsertFact(
   embedding?: number[],
   tagPath?: string
 ): Promise<string> {
-  if (embedding && embedding.length !== 3072) {
-    throw new Error(`Embedding must be 3072-dimensional, got ${embedding.length}`);
-  }
+  // Dimension validation is handled by pgvector at the database level —
+  // the column type vector(N) rejects mismatched dimensions on insert.
   const id = crypto.randomUUID();
   const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
   const resolvedTagPath = tagPath ?? category;

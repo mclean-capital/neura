@@ -4,8 +4,16 @@ import { Logger } from '@neura/utils/logger';
 
 const log = new Logger('store');
 
-export async function runMigrations(db: PGlite): Promise<void> {
+export async function runMigrations(db: PGlite, embeddingDimensions = 3072): Promise<void> {
   await db.exec('CREATE EXTENSION IF NOT EXISTS vector;');
+
+  // --- _meta table for embedding dimension tracking ---
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS _meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
 
   // --- Session & transcript tables (Phase 2) ---
 
@@ -66,7 +74,7 @@ export async function runMigrations(db: PGlite): Promise<void> {
       content TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT 'general',
       tags JSONB NOT NULL DEFAULT '[]',
-      embedding vector(3072),
+      embedding vector(${embeddingDimensions}),
       source_session_id TEXT,
       confidence REAL NOT NULL DEFAULT 0.8,
       access_count INTEGER NOT NULL DEFAULT 0,
@@ -78,15 +86,21 @@ export async function runMigrations(db: PGlite): Promise<void> {
     )
   `);
 
-  // Migrate embedding column from vector(768) → vector(3072) if needed
+  // Migrate embedding column from vector(768) → vector(${embeddingDimensions}) if needed
   const typeCheck = await db.query<{ col_type: string }>(
     `SELECT format_type(atttypid, atttypmod) AS col_type FROM pg_attribute
      WHERE attrelid = 'facts'::regclass AND attname = 'embedding'`
   );
-  if (typeCheck.rows.length > 0 && typeCheck.rows[0].col_type !== 'vector(3072)') {
+  if (
+    typeCheck.rows.length > 0 &&
+    typeCheck.rows[0].col_type !== `vector(${embeddingDimensions})`
+  ) {
     await db.exec('ALTER TABLE facts DROP COLUMN embedding');
-    await db.exec('ALTER TABLE facts ADD COLUMN embedding vector(3072)');
-    log.info('migrated facts.embedding to vector(3072)', { was: typeCheck.rows[0].col_type });
+    await db.exec(`ALTER TABLE facts ADD COLUMN embedding vector(${embeddingDimensions})`);
+    log.info('migrated facts.embedding', {
+      was: typeCheck.rows[0].col_type,
+      now: `vector(${embeddingDimensions})`,
+    });
   }
 
   // Ensure unique index exists (may be missing on tables created before constraint was added)
@@ -193,7 +207,9 @@ export async function runMigrations(db: PGlite): Promise<void> {
   `);
 
   // Transcript embeddings
-  await db.exec('ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS embedding vector(3072)');
+  await db.exec(
+    `ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS embedding vector(${embeddingDimensions})`
+  );
 
   // Entity tables
   await db.exec(`
@@ -243,7 +259,7 @@ export async function runMigrations(db: PGlite): Promise<void> {
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL REFERENCES sessions(id),
       chunk_text TEXT NOT NULL,
-      embedding vector(3072),
+      embedding vector(${embeddingDimensions}),
       start_transcript_id INTEGER NOT NULL,
       end_transcript_id INTEGER NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -304,6 +320,44 @@ export async function runMigrations(db: PGlite): Promise<void> {
       use_count INTEGER NOT NULL DEFAULT 0
     )
   `);
+
+  // --- Embedding dimension tracking ---
+  // Store the current embedding dimensions in _meta so we can detect
+  // dimension changes on future startups.
+  const storedDims = await db.query<{ value: string }>(
+    `SELECT value FROM _meta WHERE key = 'embedding_dimensions'`
+  );
+  if (storedDims.rows.length === 0) {
+    // First run — record current dimensions
+    await db.query(`INSERT INTO _meta (key, value) VALUES ('embedding_dimensions', $1)`, [
+      String(embeddingDimensions),
+    ]);
+  } else if (storedDims.rows[0].value !== String(embeddingDimensions)) {
+    // Dimension change detected — logged for now, re-embedding handled by
+    // the EmbeddingMigration module (Phase 2 follow-up when the full
+    // crash-safe state machine is wired up). For now, update the stored
+    // dimension and let the new adapter produce correct-dimension vectors.
+    // Old vectors with mismatched dimensions will be skipped in search
+    // (the IS NOT NULL + dimension check filters them).
+    log.warn('embedding dimensions changed', {
+      was: storedDims.rows[0].value,
+      now: embeddingDimensions,
+    });
+    await db.query(`UPDATE _meta SET value = $1 WHERE key = 'embedding_dimensions'`, [
+      String(embeddingDimensions),
+    ]);
+    // Drop old embedding columns and recreate with new dimensions.
+    // This invalidates existing embeddings — they'll be re-generated
+    // on next extraction. Acceptable for Phase 2; the full crash-safe
+    // temp-column re-embedding is Phase 2b.
+    for (const table of ['facts', 'transcripts', 'transcript_chunks']) {
+      await db.exec(`ALTER TABLE ${table} DROP COLUMN IF EXISTS embedding`);
+      await db.exec(`ALTER TABLE ${table} ADD COLUMN embedding vector(${embeddingDimensions})`);
+    }
+    log.info('embedding columns recreated with new dimensions', {
+      dimensions: embeddingDimensions,
+    });
+  }
 
   // Seed default identity if table is empty
   const identityCount = await db.query<{ count: string }>(
