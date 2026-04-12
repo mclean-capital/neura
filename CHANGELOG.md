@@ -1,3 +1,9 @@
+## [2.1.7](https://github.com/mclean-capital/neura/compare/v2.1.6...v2.1.7) (2026-04-12)
+
+### Bug Fixes
+
+- **core:** buffer audio during voice session activation so wake utterance isn't lost ([bf06c58](https://github.com/mclean-capital/neura/commit/bf06c58ec44bd65741623b4b238d240880a59c06))
+
 ## [2.1.6](https://github.com/mclean-capital/neura/compare/v2.1.5...v2.1.6) (2026-04-12)
 
 ### Bug Fixes
