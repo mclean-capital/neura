@@ -3,7 +3,7 @@ name: red-test-triage
 description: When the user says "help me fix this" or "what broke" while looking at failing test output, create a triage task capturing the failing test name, error message, suspected file, and repro command. The orchestrator captures the on-screen test output via its own describe_screen call and passes the extracted details into this worker's task description — this worker does not access the screen itself. Use this for any test-failure triage flow initiated via voice.
 version: 0.1.0
 disable-model-invocation: false
-allowed-tools: create_task recall_memory
+allowed-tools: create_task recall_memory read
 metadata:
   neura_source: manual
   neura_created_by: phase6-kickoff

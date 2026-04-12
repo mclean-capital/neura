@@ -1,0 +1,3 @@
+# Dev-mode symlink for skill discovery (packages/core/.neura → ../../.neura)
+# The dev server's CWD is packages/core/, but skills live at the repo root.
+.neura
