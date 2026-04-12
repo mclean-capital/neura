@@ -34,8 +34,20 @@ const ENERGY_THRESHOLD = 0.001;
 // Debounce: suppress repeated detections
 const DEBOUNCE_MS = 2000;
 
-// Replay buffer: keep last N original base64 chunks for Grok
-const MAX_REPLAY_CHUNKS = 12; // ~2.4s at 200ms/chunk
+// Replay buffer: keep the last N BYTES of raw PCM (pre-base64) so we
+// can replay audio to Grok when the wake word fires.
+//
+// 4 seconds at 24kHz 16-bit mono = 192,000 bytes. This is generous
+// enough that "Hey Neura, I'm back" (which is about 1.5s) fits easily
+// in the replay along with some ambient prefix.
+//
+// IMPORTANT: we track by byte count, NOT chunk count. The mic capture
+// library (decibri/PortAudio) fires data events at whatever buffer
+// size it feels like — typically 1024 samples (~43ms at 24kHz), but
+// this varies by platform and device. A fixed chunk count (the old
+// `MAX_REPLAY_CHUNKS = 12`) was wrong: at 43ms/chunk it only gave
+// ~500ms of replay, which cut off everything after the wake word.
+const MAX_REPLAY_BYTES = 24000 * 2 * 4; // 4 seconds at 24kHz 16-bit mono
 
 export interface OnnxWakeDetectorConfig {
   /** The assistant name — used to find {name}.onnx classifier */
@@ -73,8 +85,11 @@ export class OnnxWakeDetector {
   // Partial frame accumulator (resampled 16kHz samples)
   private accumulator = new Float32Array(0);
 
-  // Replay buffer: original base64 chunks for Grok
+  // Replay buffer: original base64 chunks for Grok, evicted by total byte
+  // count (not chunk count) so the buffer duration is consistent regardless
+  // of the mic's chunk size.
   private readonly replayChunks: string[] = [];
+  private replayBytes = 0;
 
   // Inference gating
   private frameCounter = 0;
@@ -151,10 +166,19 @@ export class OnnxWakeDetector {
     // Resample 24kHz → 16kHz
     const resampled = resample24kTo16k(float32);
 
-    // Store original chunk for Grok replay
+    // Store original chunk for Grok replay. Evict oldest chunks when
+    // the total byte count exceeds the budget — NOT by chunk count,
+    // because the mic's chunk size varies across platforms/devices.
     this.replayChunks.push(base64Pcm);
-    if (this.replayChunks.length > MAX_REPLAY_CHUNKS) {
-      this.replayChunks.shift();
+    this.replayBytes += raw.byteLength;
+    while (this.replayBytes > MAX_REPLAY_BYTES && this.replayChunks.length > 1) {
+      const evicted = this.replayChunks.shift()!;
+      // Compute the raw byte length from the base64 string without
+      // decoding. base64 encodes 3 bytes as 4 characters, so:
+      //   rawBytes = base64Length * 3 / 4 (minus padding adjustment)
+      // But for simplicity (and to match the raw.byteLength we add
+      // above), just decode and measure.
+      this.replayBytes -= Buffer.from(evicted, 'base64').byteLength;
     }
 
     // Append resampled audio to accumulator
@@ -207,6 +231,7 @@ export class OnnxWakeDetector {
     this.closed = true;
     this.accumulator = new Float32Array(0);
     this.replayChunks.length = 0;
+    this.replayBytes = 0;
   }
 
   /**
@@ -234,6 +259,7 @@ export class OnnxWakeDetector {
     this.writePos = 0;
     this.totalSamplesWritten = 0;
     this.replayChunks.length = 0;
+    this.replayBytes = 0;
     this.frameCounter = 0;
     this.lastDetectionTime = 0;
     // Note: we leave `inferenceInProgress` alone. If a tryInference
@@ -274,6 +300,7 @@ export class OnnxWakeDetector {
         this.lastDetectionTime = Date.now();
         const chunks = [...this.replayChunks];
         this.replayChunks.length = 0;
+        this.replayBytes = 0;
         this.config.onWake(chunks);
       }
     } catch (err) {
