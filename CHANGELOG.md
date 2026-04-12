@@ -1,3 +1,9 @@
+## [2.2.1](https://github.com/mclean-capital/neura/compare/v2.2.0...v2.2.1) (2026-04-12)
+
+### Bug Fixes
+
+- **core,cli:** tell the client when wake detection is unavailable ([9a449a3](https://github.com/mclean-capital/neura/commit/9a449a38b98db7b7b1562a7ea874da59ff409f20))
+
 # [2.2.0](https://github.com/mclean-capital/neura/compare/v2.1.7...v2.2.0) (2026-04-12)
 
 ### Features
