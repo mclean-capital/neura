@@ -1,3 +1,9 @@
+## [2.2.4](https://github.com/mclean-capital/neura/compare/v2.2.3...v2.2.4) (2026-04-12)
+
+### Bug Fixes
+
+- **core:** use byte-based replay buffer so full wake utterance reaches Grok ([79a5057](https://github.com/mclean-capital/neura/commit/79a50579658b3418278d286c84268c940396f755))
+
 ## [2.2.3](https://github.com/mclean-capital/neura/compare/v2.2.2...v2.2.3) (2026-04-12)
 
 ### Bug Fixes
