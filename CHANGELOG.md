@@ -1,3 +1,9 @@
+## [2.4.2](https://github.com/mclean-capital/neura/compare/v2.4.1...v2.4.2) (2026-04-12)
+
+### Bug Fixes
+
+- **skills:** add read to red-test-triage allowed-tools ([2092ce9](https://github.com/mclean-capital/neura/commit/2092ce9b414064edd2b99168f256ef68642d1bf2))
+
 ## [2.4.1](https://github.com/mclean-capital/neura/compare/v2.4.0...v2.4.1) (2026-04-12)
 
 ### Bug Fixes
