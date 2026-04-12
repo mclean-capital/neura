@@ -1,3 +1,49 @@
+# [3.0.0](https://github.com/mclean-capital/neura/compare/v2.4.2...v3.0.0) (2026-04-12)
+
+### Bug Fixes
+
+- **core:** pipeline session labels show actual providers + fallback detection ([38cd49c](https://github.com/mclean-capital/neura/commit/38cd49c743511c78000dcb1fcbfa025e0e30225f))
+- **core:** pipeline voice review fixes — interruption, serialization, correctness ([4171179](https://github.com/mclean-capital/neura/commit/4171179c7e410b2520fc66223915e8cce11e957d))
+- **core:** snapshot vision uses dedicated route adapter + fail-fast guard ([eddf900](https://github.com/mclean-capital/neura/commit/eddf90006b074be0cceacfff22ab7e19d69376df))
+
+### Features
+
+- **core:** dynamic embedding dimensions with \_meta tracking (Phase 2) ([01cb3d4](https://github.com/mclean-capital/neura/commit/01cb3d4ae64612cc742f2e4ae5210ed432cd9e0a))
+- **core:** dynamic session recording + cost tracking (Phase 6) ([79c5fb1](https://github.com/mclean-capital/neura/commit/79c5fb170b354fb6da2fcb1a64a70e12f296a0a4))
+- **core:** model-agnostic provider registry and adapter layer (Phase 1) ([c875b47](https://github.com/mclean-capital/neura/commit/c875b47a2ae6de5a8a5333f5cddcd424fe94afe7))
+- **core:** pipeline voice mode — STT → LLM → TTS (Phase 3) ([19e47c0](https://github.com/mclean-capital/neura/commit/19e47c0573297bf091a22bff6fd0139426d5cf61))
+- **core:** provider extraction — Grok voice + Gemini vision accept RouteDescriptor (Phases 4 & 5) ([c957a30](https://github.com/mclean-capital/neura/commit/c957a3015915641565166c89b958bbc2911d8037))
+
+### BREAKING CHANGES
+
+- **core:** Config schema changed from v2 (apiKeys.xai/google) to v3
+  (providers map + capability-based routing). No migration path — users must
+  update ~/.neura/config.json to the new format.
+
+Phase 1 of the model-agnostic refactor introduces:
+
+- Adapter interfaces in @neura/types: TextAdapter, EmbeddingAdapter,
+  STT/TTS/Vision (split streaming/snapshot), VoiceInterjector,
+  RouteDescriptor, AdapterPricing
+- Zod-validated v3 config schema with optional routing (graceful
+  degradation for partial setups), provider cross-reference validation,
+  v2 detection with upgrade instructions, and env var overrides
+  (NEURA*PROVIDER*_, NEURA*ROUTING*_ with numeric coercion)
+- ProviderRegistry with KNOWN_BASE_URLS for google/xai/openrouter,
+  route resolution returning null for unconfigured capabilities,
+  singleton text/embedding adapters, per-session factory stubs
+- OpenAI-compatible text adapter (chat, chatStream, chatWithTools,
+  chatWithToolsStream with safeParseArgs) covering OpenAI, OpenRouter,
+  Vercel AI Gateway, xAI, Google via baseUrl switching
+- OpenAI-compatible embedding adapter with configurable dimensions
+- Refactored ExtractionPipeline, Reranker, DiscoveryLoop to accept
+  TextAdapter/EmbeddingAdapter instead of GoogleGenAI
+- Updated lifecycle.ts with registry wiring, adapter null guards,
+  configurable worker model routing via pi-ai
+- CLI config rewritten for v3 schema with dynamic redaction
+- Desktop CoreManager writes v3 config.json with conditional routing
+- All 337 tests migrated and passing
+
 ## [2.4.2](https://github.com/mclean-capital/neura/compare/v2.4.1...v2.4.2) (2026-04-12)
 
 ### Bug Fixes
