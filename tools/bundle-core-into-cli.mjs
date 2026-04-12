@@ -49,9 +49,11 @@ const ROOT = resolve(__dirname, '..');
 const CORE_DIST = join(ROOT, 'packages/core/dist');
 const CORE_DIST_CORE = join(CORE_DIST, 'core');
 const CORE_DIST_STORES = join(CORE_DIST, 'stores');
+const UI_DIST = join(ROOT, 'packages/ui/dist');
 const CLI_PKG = join(ROOT, 'packages/cli');
 const CLI_CORE = join(CLI_PKG, 'core');
 const CLI_STORES = join(CLI_PKG, 'stores');
+const CLI_UI = join(CLI_PKG, 'ui');
 
 // Always build core fresh before copying. Under turbo, `^build` already
 // ensures this, but someone running `npm run build -w @mclean-capital/neura`
@@ -60,17 +62,17 @@ const CLI_STORES = join(CLI_PKG, 'stores');
 // cache-hit on repeat, so this is effectively free when nothing changed.
 const isWindows = process.platform === 'win32';
 const coreBuild = isWindows
-  ? spawnSync('npx.cmd turbo run build --filter=@neura/core', {
+  ? spawnSync('npx.cmd turbo run build --filter=@neura/core --filter=@neura/ui', {
       cwd: ROOT,
       stdio: 'inherit',
       shell: true,
     })
-  : spawnSync('npx', ['turbo', 'run', 'build', '--filter=@neura/core'], {
+  : spawnSync('npx', ['turbo', 'run', 'build', '--filter=@neura/core', '--filter=@neura/ui'], {
       cwd: ROOT,
       stdio: 'inherit',
     });
 if (coreBuild.status !== 0) {
-  console.error('Core build failed; cannot bundle into CLI.');
+  console.error('Core/UI build failed; cannot bundle into CLI.');
   process.exit(1);
 }
 
@@ -97,6 +99,18 @@ if (!existsSync(join(CORE_DIST_STORES, 'index.js'))) {
   process.exit(1);
 }
 cpSync(CORE_DIST_STORES, CLI_STORES, { recursive: true });
+
+// Copy the web UI build output. The core server resolves this directory
+// via import.meta.url at runtime (../ui/ relative to core/server.bundled.mjs)
+// and serves it with express.static. Users get `neura open` working
+// out of the box without a separate UI download step.
+rmSync(CLI_UI, { recursive: true, force: true });
+if (!existsSync(join(UI_DIST, 'index.html'))) {
+  console.error('UI build output not found at packages/ui/dist/index.html after build.');
+  process.exit(1);
+}
+cpSync(UI_DIST, CLI_UI, { recursive: true });
+console.log('Bundled UI → packages/cli/ui');
 
 const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
 console.log(`Bundled core → packages/cli/core + packages/cli/stores (version ${rootPkg.version})`);

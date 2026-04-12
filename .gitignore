@@ -16,6 +16,7 @@ dist/
 # lifecycle.ts imports '../stores/index.js' — see that file for details.
 packages/cli/core/
 packages/cli/stores/
+packages/cli/ui/
 
 # Desktop staging area for native runtime deps (onnxruntime-node + pglite
 # + their transitive closure). Generated at build time by

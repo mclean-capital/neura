@@ -78,6 +78,32 @@ export function getInstalledCoreVersion(): string | null {
  * `$NEURA_HOME/models/` are never overwritten — users who train their
  * own classifiers can drop them into place and they'll take priority.
  */
+/**
+ * Absolute path to the built web UI shipped inside the CLI npm package.
+ *
+ * Layout:
+ *
+ *   $NPM_GLOBAL/lib/node_modules/@mclean-capital/neura/ui/
+ *     index.html
+ *     assets/
+ *       [hashed JS/CSS bundles]
+ *
+ * The core server resolves this same directory via import.meta.url
+ * at runtime and serves it with express.static. This helper is
+ * available to CLI commands that need to check for the UI's presence.
+ */
+export function getBundledUIDir(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const thisDir = dirname(thisFile);
+  const pkgRoot = resolve(thisDir, '..');
+  return join(pkgRoot, 'ui');
+}
+
+/** True if the bundled web UI exists at its expected ship location. */
+export function hasBundledUI(): boolean {
+  return existsSync(join(getBundledUIDir(), 'index.html'));
+}
+
 export function getBundledModelsDir(): string {
   const thisFile = fileURLToPath(import.meta.url);
   const thisDir = dirname(thisFile);

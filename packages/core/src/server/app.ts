@@ -1,5 +1,6 @@
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import { Logger } from '@neura/utils/logger';
 import { verifyToken } from './auth.js';
@@ -46,10 +47,32 @@ export function createApp(services: CoreServices, getPort: () => number): expres
     next();
   }
 
-  // Serve web UI from ~/.neura/ui/ if it exists (optional static mount)
-  const uiDir = join(services.config.neuraHome, 'ui');
-  const uiAvailable = existsSync(join(uiDir, 'index.html'));
-  if (uiAvailable) {
+  // Serve web UI — check the bundled UI first (shipped inside the CLI npm
+  // package as a sibling of core/), then fall back to ~/.neura/ui/ for dev
+  // mode where the bundle doesn't exist. Bundled-first ensures upgrades
+  // always serve the UI version that matches the core, rather than being
+  // shadowed by stale assets left in ~/.neura/ui/ from a previous release.
+  //
+  // In the production bundle, import.meta.url resolves to
+  //   <cli-pkg>/core/server.bundled.mjs
+  // so ../ui/ resolves to <cli-pkg>/ui/ where the built React app lives.
+  let uiDir = '';
+  try {
+    const bundleDir = dirname(fileURLToPath(import.meta.url));
+    const bundledUiDir = join(bundleDir, '..', 'ui');
+    if (existsSync(join(bundledUiDir, 'index.html'))) {
+      uiDir = bundledUiDir;
+    }
+  } catch {
+    // import.meta.url resolution failed (e.g. CJS context) — skip
+  }
+  if (!uiDir) {
+    const homeUiDir = join(services.config.neuraHome, 'ui');
+    if (existsSync(join(homeUiDir, 'index.html'))) {
+      uiDir = homeUiDir;
+    }
+  }
+  if (uiDir) {
     app.use(express.static(uiDir));
     log.info('web UI mounted', { path: uiDir });
   }
@@ -79,7 +102,7 @@ export function createApp(services: CoreServices, getPort: () => number): expres
   // IMPORTANT: This catch-all MUST be the last route registered.
   // Any GET route added after this will be shadowed.
   app.get('*', (_req, res) => {
-    if (uiAvailable) {
+    if (uiDir) {
       res.sendFile(join(uiDir, 'index.html'));
     } else {
       res.json({

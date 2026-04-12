@@ -33,6 +33,7 @@
     "dist",
     "core",
     "stores",
+    "ui",
     "models",
     "README.md",
     "LICENSE"
