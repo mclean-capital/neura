@@ -95,7 +95,8 @@ Standalone server with provider adapter layer and pluggable storage. Organized i
 
 ```bash
 cd packages/core
-# Set env vars: XAI_API_KEY, GOOGLE_API_KEY, optionally PG_DATA_PATH
+# Configure ~/.neura/config.json with providers + routing (v3 schema)
+# Or set env vars: NEURA_PROVIDER_XAI_API_KEY, NEURA_PROVIDER_GOOGLE_API_KEY
 npm run dev             # http://localhost:3002
 ```
 

@@ -140,20 +140,31 @@ When `neura install` runs (whether from npm or shell script), it:
 
 ### `~/.neura/config.json`
 
+v3 config schema (provider-agnostic with capability-based routing):
+
 ```json
 {
-  "port": 18742,
-  "voice": "eve",
-  "apiKeys": {
-    "xai": "sk-...",
-    "google": "AI..."
+  "providers": {
+    "xai": { "apiKey": "xai-..." },
+    "google": { "apiKey": "AIza..." }
   },
-  "service": {
-    "autoStart": true,
-    "logLevel": "info"
-  }
+  "routing": {
+    "voice": { "mode": "realtime", "provider": "xai", "model": "grok-realtime", "voice": "eve" },
+    "vision": { "mode": "streaming", "provider": "google", "model": "gemini-2.5-flash" },
+    "text": { "provider": "google", "model": "gemini-2.5-flash" },
+    "embedding": {
+      "provider": "google",
+      "model": "gemini-embedding-2-preview",
+      "dimensions": 3072
+    },
+    "worker": { "provider": "xai", "model": "grok-4-fast" }
+  },
+  "port": 18742,
+  "authToken": "..."
 }
 ```
+
+All routing fields are optional — missing routes disable that capability gracefully.
 
 **Security:** File permissions restricted to owner-only (`chmod 600` on Unix, ACL-restricted on Windows). Same model as `~/.docker/config.json`, `~/.aws/credentials`, `~/.openclaw/openclaw.json`.
 
@@ -189,32 +200,14 @@ This means:
 
 New file: `packages/core/src/config/config.ts`
 
-```typescript
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+v3 config loading:
 
-export function loadConfig() {
-  const neuraHome = process.env.NEURA_HOME || join(homedir(), '.neura');
-  const configPath = join(neuraHome, 'config.json');
+1. Read `~/.neura/config.json` (or `$NEURA_HOME/config.json`)
+2. Apply env var overrides: `NEURA_PROVIDER_{ID}_API_KEY`, `NEURA_ROUTING_{CAP}_{FIELD}`
+3. Validate with Zod schema — detects v2 format and prints upgrade instructions
+4. Return validated config with `providers`, `routing`, and settings
 
-  let file: Record<string, any> = {};
-  if (existsSync(configPath)) {
-    file = JSON.parse(readFileSync(configPath, 'utf-8'));
-  }
-
-  return {
-    port: int(process.env.PORT) ?? file.port ?? 3002,
-    apiKeys: {
-      xai: process.env.XAI_API_KEY ?? file.apiKeys?.xai ?? '',
-      google: process.env.GOOGLE_API_KEY ?? file.apiKeys?.google ?? '',
-    },
-    voice: process.env.NEURA_VOICE ?? file.voice ?? 'eve',
-    pgDataPath: process.env.PG_DATA_PATH ?? file.pgDataPath ?? join(neuraHome, 'pgdata'),
-    neuraHome,
-  };
-}
-```
+See `packages/core/src/config/config.ts` for the full implementation.
 
 ---
 
@@ -419,8 +412,8 @@ $ neura install
   Home:      C:\Users\donmc\.neura
 
   ▸ API Keys
-    XAI_API_KEY: sk-▏
-    GOOGLE_API_KEY: AI▏
+    XAI API key: xai-▏
+    Google API key: AIza▏
 
   ▸ Port
     ✓ Auto-assigned: 18742
@@ -604,8 +597,8 @@ services:
     volumes:
       - neura-data:/data
     environment:
-      - XAI_API_KEY=${XAI_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - NEURA_PROVIDER_XAI_API_KEY=${XAI_API_KEY}
+      - NEURA_PROVIDER_GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - PG_DATA_PATH=/data/pgdata
       - NEURA_HOME=/data
 

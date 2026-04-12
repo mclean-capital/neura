@@ -20,7 +20,7 @@ vi.mock('./config.js', () => ({
   loadConfig: vi.fn(() => ({
     providers: {},
     routing: {
-      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
       vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
       text: { provider: 'google', model: 'gemini-2.5-flash' },
       embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -51,7 +51,7 @@ beforeEach(() => {
   mockedLoadConfig.mockReturnValue({
     providers: {},
     routing: {
-      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
       vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
       text: { provider: 'google', model: 'gemini-2.5-flash' },
       embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -166,7 +166,7 @@ describe('checkForUpdateInBackground', () => {
     mockedLoadConfig.mockReturnValue({
       providers: {},
       routing: {
-        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
         vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
         text: { provider: 'google', model: 'gemini-2.5-flash' },
         embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },

@@ -56,7 +56,7 @@ export function loadConfig(): ResolvedCoreConfig {
         '{\n' +
         '  "providers": { "xai": { "apiKey": "xai-..." }, "google": { "apiKey": "AIza..." } },\n' +
         '  "routing": {\n' +
-        '    "voice": { "mode": "realtime", "provider": "xai", "model": "grok-3-fast" },\n' +
+        '    "voice": { "mode": "realtime", "provider": "xai", "model": "grok-realtime" },\n' +
         '    "vision": { "mode": "streaming", "provider": "google", "model": "gemini-2.5-flash" },\n' +
         '    "text": { "provider": "google", "model": "gemini-2.5-flash" },\n' +
         '    "embedding": { "provider": "google", "model": "gemini-embedding-2-preview", "dimensions": 3072 },\n' +

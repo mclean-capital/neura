@@ -42,7 +42,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             google: { apiKey: googleKey.trim() },
           },
           routing: {
-            voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast', voice: 'eve' },
+            voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime', voice: 'eve' },
             vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
             text: { provider: 'google', model: 'gemini-2.5-flash' },
             embedding: {

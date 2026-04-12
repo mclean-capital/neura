@@ -68,7 +68,7 @@ describe('loadConfig', () => {
     expect(config).toEqual({
       providers: {},
       routing: {
-        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
         vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
         text: { provider: 'google', model: 'gemini-2.5-flash' },
         embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -83,7 +83,7 @@ describe('loadConfig', () => {
       JSON.stringify({
         providers: { xai: { apiKey: 'xai-key-123' }, google: { apiKey: 'goog-key-456' } },
         routing: {
-          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
           vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
           text: { provider: 'google', model: 'gemini-2.5-flash' },
           embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -102,7 +102,7 @@ describe('loadConfig', () => {
     expect(config.routing.voice).toEqual({
       mode: 'realtime',
       provider: 'xai',
-      model: 'grok-3-fast',
+      model: 'grok-realtime',
     });
     expect(config.pgDataPath).toBe('/data/pgdata');
   });
@@ -116,7 +116,7 @@ describe('loadConfig', () => {
     expect(config.port).toBe(5000);
     expect(config.providers).toEqual({});
     expect(config.routing).toEqual({
-      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
       vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
       text: { provider: 'google', model: 'gemini-2.5-flash' },
       embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -133,7 +133,7 @@ describe('loadConfig', () => {
     expect(config).toEqual({
       providers: {},
       routing: {
-        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
         vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
         text: { provider: 'google', model: 'gemini-2.5-flash' },
         embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -148,7 +148,7 @@ describe('saveConfig', () => {
     const config = {
       providers: {},
       routing: {
-        voice: { mode: 'realtime' as const, provider: 'xai', model: 'grok-3-fast' },
+        voice: { mode: 'realtime' as const, provider: 'xai', model: 'grok-realtime' },
         vision: { mode: 'streaming' as const, provider: 'google', model: 'gemini-2.5-flash' },
         text: { provider: 'google', model: 'gemini-2.5-flash' },
         embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -171,7 +171,7 @@ describe('saveConfig', () => {
     saveConfig({
       providers: {},
       routing: {
-        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
         vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
         text: { provider: 'google', model: 'gemini-2.5-flash' },
         embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -188,7 +188,7 @@ describe('saveConfig', () => {
     saveConfig({
       providers: {},
       routing: {
-        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
         vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
         text: { provider: 'google', model: 'gemini-2.5-flash' },
         embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -207,7 +207,7 @@ describe('getConfigValue', () => {
       JSON.stringify({
         providers: { xai: { apiKey: 'my-xai-key' } },
         routing: {
-          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
           vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
           text: { provider: 'google', model: 'gemini-2.5-flash' },
           embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -225,7 +225,7 @@ describe('getConfigValue', () => {
       JSON.stringify({
         providers: {},
         routing: {
-          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
           vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
           text: { provider: 'google', model: 'gemini-2.5-flash' },
           embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -250,7 +250,7 @@ describe('getConfigValue', () => {
       JSON.stringify({
         providers: { xai: { apiKey: 'test' } },
         routing: {
-          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
           vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
           text: { provider: 'google', model: 'gemini-2.5-flash' },
           embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
@@ -271,7 +271,7 @@ describe('setConfigValue', () => {
       JSON.stringify({
         providers: { xai: { apiKey: '' }, google: { apiKey: '' } },
         routing: {
-          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
           vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
           text: { provider: 'google', model: 'gemini-2.5-flash' },
           embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },

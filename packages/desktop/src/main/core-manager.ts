@@ -58,7 +58,7 @@ export class CoreManager {
       routing: {
         // Only include routes whose provider has a key
         ...(hasXai
-          ? { voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast', voice: 'eve' } }
+          ? { voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime', voice: 'eve' } }
           : {}),
         ...(hasGoogle
           ? { vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' } }

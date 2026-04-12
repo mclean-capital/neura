@@ -9,7 +9,7 @@ export type { NeuraConfigFile };
 const DEFAULT_CONFIG: NeuraConfigFile = {
   providers: {},
   routing: {
-    voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+    voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
     vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
     text: { provider: 'google', model: 'gemini-2.5-flash' },
     embedding: {

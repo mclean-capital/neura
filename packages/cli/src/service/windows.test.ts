@@ -27,7 +27,7 @@ vi.mock('../config.js', () => ({
   loadConfig: vi.fn(() => ({
     providers: { xai: { apiKey: 'sk-xai-test' }, google: { apiKey: 'sk-google-test' } },
     routing: {
-      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-realtime' },
       vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
       text: { provider: 'google', model: 'gemini-2.5-flash' },
       embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },

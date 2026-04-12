@@ -54,7 +54,7 @@ beforeEach(() => {
 
 describe('configListCommand', () => {
   const v3Routing = {
-    voice: { mode: 'realtime' as const, provider: 'xai', model: 'grok-3-fast' },
+    voice: { mode: 'realtime' as const, provider: 'xai', model: 'grok-realtime' },
     vision: { mode: 'streaming' as const, provider: 'google', model: 'gemini-2.5-flash' },
     text: { provider: 'google', model: 'gemini-2.5-flash' },
     embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
