@@ -1,5 +1,10 @@
 import type { CostUpdateMessage, ProviderPricing } from '@neura/types';
-import { SESSION_PRICING } from '../providers/index.js';
+
+/** Default pricing — used when no config-specific pricing is available */
+const DEFAULT_PRICING: ProviderPricing = {
+  voiceRatePerMs: 0.05 / 60_000, // $0.05/min (Grok default)
+  visionRatePerMs: 0.002 / 60_000, // $0.002/min (Gemini default)
+};
 
 export class CostTracker {
   private readonly pricing: ProviderPricing;
@@ -10,8 +15,11 @@ export class CostTracker {
   };
   private interval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(pricing: ProviderPricing = SESSION_PRICING) {
-    this.pricing = pricing;
+  constructor(pricing?: Partial<ProviderPricing>) {
+    this.pricing = {
+      voiceRatePerMs: pricing?.voiceRatePerMs ?? DEFAULT_PRICING.voiceRatePerMs,
+      visionRatePerMs: pricing?.visionRatePerMs ?? DEFAULT_PRICING.visionRatePerMs,
+    };
     this.startTime = Date.now();
     this.visionSources = {
       camera: { startTime: null, activeMs: 0 },

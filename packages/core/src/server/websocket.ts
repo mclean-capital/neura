@@ -79,8 +79,18 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
 
     // Create DB session in the background — handlers are registered synchronously
     // so no messages or close events are missed while the insert runs.
+    // Use actual provider/model names from config for session recording
+    const voiceRoute = services.config.routing.voice;
+    const visionRoute = services.config.routing.vision;
+    const voiceProviderLabel = voiceRoute
+      ? `${voiceRoute.mode === 'realtime' ? voiceRoute.provider : 'pipeline'}/${voiceRoute.mode === 'realtime' ? voiceRoute.model : 'stt+llm+tts'}`
+      : 'none';
+    const visionProviderLabel = visionRoute
+      ? `${visionRoute.provider}/${visionRoute.model}`
+      : 'none';
+
     const sessionIdPromise: Promise<string | null> = store
-      ? store.createSession('grok', 'gemini').catch((err) => {
+      ? store.createSession(voiceProviderLabel, visionProviderLabel).catch((err) => {
           log.warn('session creation failed', { err: String(err) });
           return null;
         })
