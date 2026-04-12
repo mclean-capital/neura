@@ -161,6 +161,7 @@ export async function initServices(): Promise<CoreServices> {
       googleApiKey: config.googleApiKey,
       onExtractionComplete: () => backupService?.backup() ?? Promise.resolve(),
       retrievalStrategy: config.retrievalStrategy,
+      assistantName: config.assistantName,
     });
     log.info('memory manager initialized');
   }

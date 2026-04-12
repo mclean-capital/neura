@@ -11,12 +11,24 @@ const DEFAULT_TIER_CONFIG: MemoryTierConfig = {
  * Organized into tiers: L0 (identity), L1 (essential context), L2 (session context).
  * Each tier has a token budget; lower-priority content is trimmed first.
  */
-export function buildMemoryPrompt(context: MemoryContext, tierConfig?: MemoryTierConfig): string {
-  const config = tierConfig ?? DEFAULT_TIER_CONFIG;
+export interface PromptBuildOptions {
+  tierConfig?: MemoryTierConfig;
+  /**
+   * The configured assistant name (from `config.assistantName`).
+   * Used to generate the base personality line dynamically so
+   * changing the wake word also changes how the assistant introduces
+   * itself. If omitted, falls back to reading `base_personality`
+   * from the DB identity table (legacy path).
+   */
+  assistantName?: string;
+}
+
+export function buildMemoryPrompt(context: MemoryContext, options?: PromptBuildOptions): string {
+  const config = options?.tierConfig ?? DEFAULT_TIER_CONFIG;
   const sections: string[] = [];
 
   // L0: Identity + tool instructions (always loaded)
-  const l0 = buildL0(context);
+  const l0 = buildL0(context, options?.assistantName);
   sections.push(...trimToTokenBudget(l0, config.l0Budget));
 
   // L1: User profile + top preferences (always loaded)
@@ -31,9 +43,35 @@ export function buildMemoryPrompt(context: MemoryContext, tierConfig?: MemoryTie
 }
 
 /** L0: Identity — base personality and behavioral rules + static tool instructions. */
-function buildL0(context: MemoryContext): string[] {
+function buildL0(context: MemoryContext, assistantName?: string): string[] {
   const parts: string[] = [];
 
+  // Inject the configured assistant name so the assistant's
+  // self-identity stays in sync with the wake word. This is a
+  // SEPARATE line from the DB `base_personality` — we prepend
+  // "Your name is <Name>." rather than replacing the entire
+  // personality string. That way any learned/customized personality
+  // traits stored in the DB are preserved. If the DB base_personality
+  // says "You are Neura, a sarcastic AI who loves dad jokes" and
+  // the user changes assistantName to "Alfred", Grok sees:
+  //
+  //   Your name is Alfred.
+  //   You are Neura, a sarcastic AI who loves dad jokes.
+  //
+  // Grok follows the explicit name declaration and adopts the
+  // personality traits from the DB entry. Not perfectly clean
+  // (the DB still says "Neura") but non-destructive — we never
+  // silently drop personality customizations.
+  if (assistantName) {
+    const displayName = assistantName.charAt(0).toUpperCase() + assistantName.slice(1);
+    parts.push(`Your name is ${displayName}.`);
+  }
+
+  // DB identity entries: base_personality + behavioral rules
+  // (tone, verbosity, filler_words, etc.). All of these can be
+  // learned/updated from conversations via the extraction pipeline,
+  // which is why we read them from the DB rather than generating
+  // them statically.
   if (context.identity.length > 0) {
     const personality = context.identity.find((e) => e.attribute === 'base_personality');
     if (personality) parts.push(personality.value);

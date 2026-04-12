@@ -127,7 +127,7 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
         console.log(chalk.dim(`  Available wake words: ${available.join(', ')}`));
         console.log(
           chalk.dim(
-            `  Active: ${config.assistantName ?? 'jarvis'} (set via: neura config set assistantName <name>)`
+            `  Active: ${config.assistantName ?? 'neura'} (set via: neura config set assistantName <name>)`
           )
         );
       }

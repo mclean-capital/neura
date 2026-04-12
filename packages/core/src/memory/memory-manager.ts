@@ -18,6 +18,9 @@ export interface MemoryManagerOptions {
   onExtractionComplete?: () => Promise<void>;
   /** Phase 5b: retrieval strategy. Default: 'hybrid' */
   retrievalStrategy?: RetrievalStrategy;
+  /** The configured assistant name — used to generate the base personality
+   *  in the system prompt so it stays in sync with the wake word. */
+  assistantName?: string;
 }
 
 export class MemoryManager {
@@ -25,12 +28,14 @@ export class MemoryManager {
   private readonly pipeline: ExtractionPipeline;
   private readonly reranker: Reranker;
   private readonly strategy: RetrievalStrategy;
+  private readonly assistantName?: string;
   private readonly pendingExtractions = new Set<Promise<void>>();
   private readonly onExtractionComplete?: () => Promise<void>;
 
   constructor(options: MemoryManagerOptions) {
     this.store = options.store;
     this.strategy = options.retrievalStrategy ?? 'hybrid';
+    this.assistantName = options.assistantName;
     this.pipeline = new ExtractionPipeline(options.googleApiKey);
     this.reranker = new Reranker(options.googleApiKey);
     this.onExtractionComplete = options.onExtractionComplete;
@@ -38,7 +43,7 @@ export class MemoryManager {
 
   async buildSystemPrompt(): Promise<string> {
     const context = await this.store.getMemoryContext({ maxTokens: 2000 });
-    return buildMemoryPrompt(context);
+    return buildMemoryPrompt(context, { assistantName: this.assistantName });
   }
 
   async queueExtraction(sessionId: string): Promise<void> {

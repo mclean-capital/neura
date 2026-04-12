@@ -51,7 +51,7 @@ export function loadConfig(): ResolvedCoreConfig {
     pgDataPath:
       process.env.PG_DATA_PATH ?? process.env.DB_PATH ?? file.pgDataPath ?? pgDataPathDefault,
     neuraHome,
-    assistantName: process.env.NEURA_ASSISTANT_NAME ?? file.assistantName ?? 'jarvis',
+    assistantName: process.env.NEURA_ASSISTANT_NAME ?? file.assistantName ?? 'neura',
     retrievalStrategy:
       (process.env.NEURA_RETRIEVAL_STRATEGY as RetrievalStrategy | undefined) ??
       file.retrievalStrategy ??
