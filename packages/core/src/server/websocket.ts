@@ -82,11 +82,19 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     // Use actual provider/model names from config for session recording
     const voiceRoute = services.config.routing.voice;
     const visionRoute = services.config.routing.vision;
-    const voiceProviderLabel = voiceRoute
-      ? `${voiceRoute.mode === 'realtime' ? voiceRoute.provider : 'pipeline'}/${voiceRoute.mode === 'realtime' ? voiceRoute.model : 'stt+llm+tts'}`
-      : 'none';
+    let voiceProviderLabel: string;
+    if (!voiceRoute) {
+      // No voice routing configured, but voice-session factory may still fall back
+      // to GrokVoiceProvider via env var — record that as a fallback
+      voiceProviderLabel = process.env.XAI_API_KEY ? 'xai/grok (fallback)' : 'none';
+    } else if (voiceRoute.mode === 'realtime') {
+      voiceProviderLabel = `${voiceRoute.provider}/${voiceRoute.model}`;
+    } else {
+      // Pipeline mode — record actual STT/LLM/TTS providers
+      voiceProviderLabel = `pipeline:${voiceRoute.stt.provider}+${voiceRoute.llm.provider}+${voiceRoute.tts.provider}`;
+    }
     const visionProviderLabel = visionRoute
-      ? `${visionRoute.provider}/${visionRoute.model}`
+      ? `${visionRoute.provider}/${visionRoute.model} (${visionRoute.mode})`
       : 'none';
 
     const sessionIdPromise: Promise<string | null> = store
