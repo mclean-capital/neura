@@ -1,3 +1,9 @@
+# [2.3.0](https://github.com/mclean-capital/neura/compare/v2.2.5...v2.3.0) (2026-04-12)
+
+### Features
+
+- **core,skills:** Phase 6 — Neura OS Core (pi-runtime workers + skills + orchestrator) ([#10](https://github.com/mclean-capital/neura/issues/10)) ([1b0ba2b](https://github.com/mclean-capital/neura/commit/1b0ba2b5d0a7c9bcff0b60668441f8dacbcc1d74)), closes [#1](https://github.com/mclean-capital/neura/issues/1) [#2](https://github.com/mclean-capital/neura/issues/2) [#4ab](https://github.com/mclean-capital/neura/issues/4ab) [#4c](https://github.com/mclean-capital/neura/issues/4c) [#4d](https://github.com/mclean-capital/neura/issues/4d) [#4e](https://github.com/mclean-capital/neura/issues/4e) [#4d](https://github.com/mclean-capital/neura/issues/4d) [#4e](https://github.com/mclean-capital/neura/issues/4e) [#4](https://github.com/mclean-capital/neura/issues/4) [#4e](https://github.com/mclean-capital/neura/issues/4e) [#4e](https://github.com/mclean-capital/neura/issues/4e) [#4c](https://github.com/mclean-capital/neura/issues/4c) [#4e](https://github.com/mclean-capital/neura/issues/4e)
+
 ## [2.2.5](https://github.com/mclean-capital/neura/compare/v2.2.4...v2.2.5) (2026-04-12)
 
 ### Bug Fixes
