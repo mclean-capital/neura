@@ -333,9 +333,24 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
       // Reset extraction flag so this active session gets its own extraction
       extractionTriggered = false;
 
-      // Stop wake detector while active
-      wakeDetector?.close();
-      wakeDetector = null;
+      // NOTE: we deliberately do NOT close or null out `wakeDetector`
+      // here. The audio router below (see `ws.on('message')`) already
+      // gates on `presence.state === 'active'` to route frames to
+      // Grok instead of the detector, so the detector simply stops
+      // receiving audio while active — no need to tear it down.
+      //
+      // Keeping it alive avoids a race on deactivate: previously we
+      // closed the detector here and then re-created it async via
+      // `void startWakeDetector()` in `deactivateVoiceSession()`,
+      // which meant incoming audio frames arriving during the ~100ms
+      // `OnnxWakeDetector.create()` window hit a null detector and
+      // got silently dropped. The user's second wake word landed in
+      // that dead zone and never fired.
+      //
+      // The detector is now created once at connection start and
+      // kept for the full WebSocket lifetime. We call `reset()` on
+      // deactivate to clear stale audio from before the active
+      // session without releasing the expensive ONNX sessions.
 
       // Build fresh system prompt each activation (memory context may have changed)
       let systemPromptPrefix = memoryManager
@@ -386,8 +401,17 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
       session?.close();
       session = null;
 
-      // Resume wake word detection
-      void startWakeDetector();
+      // Resume wake-word detection by resetting the long-lived
+      // detector instance. This clears its ring buffer, replay
+      // chunks, and frame counters so stale audio from before the
+      // active session doesn't contaminate the next wake cycle.
+      //
+      // `reset()` is synchronous and operates on an already-loaded
+      // detector — the next audio frame the message handler routes
+      // here (see `ws.on('message')` below, 'passive' branch) will
+      // be processed immediately. No async gap, no dropped audio,
+      // no second-wake failure.
+      wakeDetector?.reset();
     }
 
     async function startWakeDetector() {

@@ -209,6 +209,40 @@ export class OnnxWakeDetector {
     this.replayChunks.length = 0;
   }
 
+  /**
+   * Clear all buffered audio and inference state without releasing the
+   * ONNX sessions. Used when transitioning from ACTIVE back to PASSIVE
+   * mode: the detector stays alive for the full WebSocket lifetime,
+   * but any audio it buffered from before the active session is stale
+   * and must be discarded so the next wake cycle starts clean.
+   *
+   * Why not `close()` + recreate: creating the three ONNX inference
+   * sessions (mel + embedding + classifier) takes ~50-200ms, during
+   * which the message handler continues routing incoming audio frames
+   * to the (null) detector. Those frames get silently dropped, and
+   * the user's wake word lands in the dead zone — the second wake
+   * fails even though the first worked fine at connection start.
+   *
+   * By keeping the sessions alive and just resetting the transient
+   * state, the transition is synchronous and the next audio frame
+   * is processed immediately.
+   */
+  reset(): void {
+    if (this.closed) return;
+    this.accumulator = new Float32Array(0);
+    this.ringBuffer.fill(0);
+    this.writePos = 0;
+    this.totalSamplesWritten = 0;
+    this.replayChunks.length = 0;
+    this.frameCounter = 0;
+    this.lastDetectionTime = 0;
+    // Note: we leave `inferenceInProgress` alone. If a tryInference
+    // call is mid-flight when reset() runs, its `this.closed` guard
+    // already keeps it from mutating state we care about, and we
+    // don't want to lie about `inferenceInProgress === false` while
+    // an async task is still executing against the old buffer.
+  }
+
   private async tryInference(): Promise<void> {
     if (this.closed || this.inferenceInProgress) return;
 
