@@ -1,3 +1,9 @@
+## [2.4.1](https://github.com/mclean-capital/neura/compare/v2.4.0...v2.4.1) (2026-04-12)
+
+### Bug Fixes
+
+- **core:** default wake word back to jarvis — neura is too hard to pronounce ([1f2ac69](https://github.com/mclean-capital/neura/commit/1f2ac69db052db8e8a2ff852e828f7304afa5325))
+
 # [2.4.0](https://github.com/mclean-capital/neura/compare/v2.3.0...v2.4.0) (2026-04-12)
 
 ### Features
