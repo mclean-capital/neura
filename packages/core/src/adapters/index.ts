@@ -3,3 +3,4 @@ export { OpenAICompatibleEmbeddingAdapter } from './openai-compatible-embedding.
 export { DeepgramSTTAdapter } from './deepgram-stt.js';
 export { ElevenLabsTTSAdapter } from './elevenlabs-tts.js';
 export { OpenAITTSAdapter } from './openai-tts.js';
+export { SnapshotVisionAdapter } from './snapshot-vision.js';

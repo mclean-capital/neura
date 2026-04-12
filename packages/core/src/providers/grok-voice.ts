@@ -26,6 +26,8 @@ const MAX_TRANSCRIPT_ENTRIES = 40;
 export const GROK_VOICE_RATE_PER_MS = 0.05 / 60_000; // $0.05/min
 
 export interface GrokVoiceConfig {
+  /** API key — passed from registry RouteDescriptor. Falls back to process.env.XAI_API_KEY */
+  apiKey?: string;
   voice?: string;
   vadThreshold?: number;
   vadSilenceDurationMs?: number;
@@ -81,7 +83,7 @@ export class GrokVoiceProvider implements VoiceProvider {
     this.vadPrefixPaddingMs = config.vadPrefixPaddingMs ?? 300;
     this.maxReconnectAttempts = config.maxReconnectAttempts ?? 5;
     this.sessionMaxMs = config.sessionMaxMs ?? 28 * 60 * 1000; // 28 min (Grok 30-min cap)
-    this.XAI_API_KEY = process.env.XAI_API_KEY;
+    this.XAI_API_KEY = config.apiKey ?? process.env.XAI_API_KEY;
   }
 
   private pushTranscript(role: 'user' | 'assistant', text: string): void {

@@ -99,15 +99,6 @@ export async function initServices(): Promise<CoreServices> {
   // Create provider registry from v3 config
   const registry = new ProviderRegistry(config);
 
-  // Temporary bridge: populate env vars from v3 config for providers that still
-  // read process.env directly (GrokVoiceProvider, GeminiVisionProvider).
-  // These will be removed when those providers become adapters (Phase 4 & 5).
-  const xaiCreds = config.providers.xai;
-  if (xaiCreds?.apiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = xaiCreds.apiKey;
-  const googleCreds = config.providers.google;
-  if (googleCreds?.apiKey && !process.env.GOOGLE_API_KEY)
-    process.env.GOOGLE_API_KEY = googleCreds.apiKey;
-
   // Windows: write our PID to `$NEURA_HOME/neura-core.pid` so the CLI's
   // Windows service manager (which uses a dumb cmd-shim launcher rather
   // than a real SCM service) can find us for `neura status` and

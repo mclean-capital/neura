@@ -49,5 +49,17 @@ export function createVoiceSession(
     return new PipelineVoiceProvider(cb, pipelineConfig, llmAdapter, sttAdapter, ttsAdapter);
   }
 
+  // Realtime mode — resolve API key from registry if available
+  if (registry) {
+    const voiceRoute = registry.resolveVoice();
+    if (voiceRoute?.mode === 'realtime' && voiceRoute.realtime) {
+      return new GrokVoiceProvider(cb, {
+        ...config,
+        apiKey: voiceRoute.realtime.apiKey,
+        voice: voiceRoute.realtime.voice ?? config.voice,
+      });
+    }
+  }
+
   return new GrokVoiceProvider(cb, config);
 }

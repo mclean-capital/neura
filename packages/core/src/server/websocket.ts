@@ -131,7 +131,20 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
       const existing = source === 'camera' ? cameraWatcher : screenWatcher;
       if (existing) return existing;
 
-      const watcher = createVisionWatcher({ label: source });
+      const visionRoute = services.config.routing.vision;
+      const visionApiKey = visionRoute
+        ? services.config.providers[visionRoute.provider]?.apiKey
+        : undefined;
+      const watcher = createVisionWatcher({
+        label: source,
+        mode: visionRoute?.mode,
+        apiKey: visionApiKey,
+        model: visionRoute?.model,
+        textAdapter:
+          visionRoute?.mode === 'snapshot'
+            ? (services.registry.getTextAdapter() ?? undefined)
+            : undefined,
+      });
       if (source === 'camera') cameraWatcher = watcher;
       else screenWatcher = watcher;
 

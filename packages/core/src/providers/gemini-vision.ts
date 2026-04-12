@@ -21,6 +21,8 @@ interface PendingQuery {
 }
 
 export interface GeminiVisionConfig {
+  /** API key — passed from registry RouteDescriptor. Falls back to process.env.GOOGLE_API_KEY */
+  apiKey?: string;
   label?: string;
   model?: string;
   queryTimeoutMs?: number;
@@ -51,7 +53,7 @@ export class GeminiVisionProvider implements VisionProvider {
     this.model = config.model ?? 'gemini-3.1-flash-live-preview';
     this.queryTimeoutMs = config.queryTimeoutMs ?? 15_000;
     this.log = new Logger(this.label);
-    this.googleApiKey = process.env.GOOGLE_API_KEY;
+    this.googleApiKey = config.apiKey ?? process.env.GOOGLE_API_KEY;
   }
 
   async connect(): Promise<void> {
