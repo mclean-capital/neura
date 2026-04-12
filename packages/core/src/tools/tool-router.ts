@@ -5,6 +5,8 @@ import { handleTimeTool } from './time-tools.js';
 import { handleMemoryTool } from './memory-tools.js';
 import { handlePresenceTool } from './presence-tools.js';
 import { handleTaskTool } from './task-tools.js';
+import { handleSkillTool } from './skill-tools.js';
+import { handleWorkerControlTool } from './worker-control-tools.js';
 
 const log = new Logger('tool');
 
@@ -20,6 +22,8 @@ export async function handleToolCall(
     handleTimeTool(name) ??
     (await handleMemoryTool(name, args, ctx)) ??
     handlePresenceTool(name, args, ctx) ??
-    (await handleTaskTool(name, args, ctx)) ?? { error: `Unknown tool: ${name}` }
+    (await handleTaskTool(name, args, ctx)) ??
+    (await handleSkillTool(name, args, ctx)) ??
+    (await handleWorkerControlTool(name, args, ctx)) ?? { error: `Unknown tool: ${name}` }
   );
 }

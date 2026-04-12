@@ -53,6 +53,30 @@ await esbuild.build({
   // paths relative to its own dist/ via import.meta.url, which only works if
   // PGlite is loaded from `node_modules/@electric-sql/pglite/` at runtime
   // rather than inlined into this bundle.
+  //
+  // Phase 6 adds externals for the pi-coding-agent runtime tree. Each of
+  // these packages must be resolved by Node at runtime rather than
+  // inlined:
+  //
+  // - `@mariozechner/pi-coding-agent`: the SDK entry point. 14MB
+  //   installed, pulls in `@silvia-odwyer/photon-node` (WASM loaded via
+  //   import.meta.url), theme JSON assets, and the full interactive TUI
+  //   surface via its main index.js re-exports.
+  //
+  // - `@mariozechner/pi-agent-core`: the underlying Agent class, event
+  //   types, and tool contracts. Imported directly by pi-runtime for
+  //   the `beforeToolCall` signature and `AgentEvent` type narrowing.
+  //   Listed as an explicit external because even type-only imports at
+  //   source level sometimes leak runtime references through chained
+  //   re-exports.
+  //
+  // - `@mariozechner/pi-ai`: provider abstraction (getModel, Model
+  //   type). Dynamically imported from lifecycle.ts; esbuild honors
+  //   externalization for dynamic imports with literal specifiers.
+  //
+  // - `chokidar`: file system watcher used by `skill-watcher.ts`. Has
+  //   a native fsevents binding on macOS that needs its own
+  //   node_modules path.
   external: [
     'node:*',
     ...builtinModules,
@@ -60,6 +84,10 @@ await esbuild.build({
     '../stores/index.js',
     '@electric-sql/pglite',
     'onnxruntime-node',
+    '@mariozechner/pi-coding-agent',
+    '@mariozechner/pi-agent-core',
+    '@mariozechner/pi-ai',
+    'chokidar',
   ],
   logLevel: 'info',
 });

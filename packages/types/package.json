@@ -8,7 +8,9 @@
     "./protocol": "./dist/protocol.js",
     "./tools": "./dist/tools.js",
     "./config": "./dist/config.js",
-    "./providers": "./dist/providers.js"
+    "./providers": "./dist/providers.js",
+    "./skills": "./dist/skills.js",
+    "./workers": "./dist/workers.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -1,4 +1,12 @@
-import type { FactEntry, WorkItemEntry, TimelineEntry, MemoryStats } from '@neura/types';
+import type {
+  FactEntry,
+  NeuraSkill,
+  WorkItemEntry,
+  TimelineEntry,
+  MemoryStats,
+  WorkerResult,
+  WorkerTask,
+} from '@neura/types';
 
 export interface MemoryToolHandler {
   storeFact(content: string, category: string, tags: string[], sessionId?: string): Promise<string>;
@@ -21,6 +29,67 @@ export interface TaskToolHandler {
   deleteTask(idOrTitle: string): Promise<boolean>;
 }
 
+/**
+ * Phase 6 — skill tool handler. Thin interface over SkillRegistry +
+ * AgentWorker so the tool-router stays decoupled from their
+ * implementations. The concrete instance is wired in lifecycle.ts.
+ */
+export interface SkillToolHandler {
+  /** Return every loaded skill (including drafts) for `list_skills`. */
+  listSkills(): NeuraSkill[];
+  /** Return a single skill for `get_skill`. */
+  getSkill(name: string): NeuraSkill | undefined;
+  /**
+   * Dispatch a worker to run an existing skill. Returns the worker id
+   * immediately; does NOT await completion. Progress flows via voice
+   * interject from the VoiceFanoutBridge.
+   */
+  runSkill(skillName: string, description: string): Promise<{ workerId: string }>;
+  /** Dispatch a worker that AUTHORS a new skill from a description. */
+  createSkill(description: string): Promise<{ workerId: string }>;
+  /** Clear the `disable-model-invocation` flag on a draft skill. */
+  promoteSkill(skillName: string): Promise<{ promoted: boolean }>;
+  /** Register an explicit filesystem path and reload the registry. */
+  importSkill(path: string): Promise<{ imported: boolean; count: number }>;
+}
+
+/**
+ * Phase 6 — worker control handler. Surfaces pause / resume / cancel
+ * as tool calls Grok can make during a voice session, driven by the
+ * orchestrator skill's system-prompt instructions. Each method takes
+ * an optional `workerId` — if omitted, the handler resolves to the
+ * most recent non-terminal worker. Returns the actual `workerId`
+ * that was acted on so Grok can confirm the target back to the user.
+ */
+export interface WorkerControlHandler {
+  /** Steer-pause a running worker to `idle_partial`. */
+  pauseWorker(workerId?: string): Promise<{
+    paused: boolean;
+    workerId: string | null;
+    reason?: string;
+  }>;
+  /** Resume a previously paused worker via SessionManager.open(). */
+  resumeWorker(
+    workerId?: string,
+    message?: string
+  ): Promise<{ resumed: boolean; workerId: string | null; reason?: string }>;
+  /** Cancel a worker permanently via pi's AbortSignal. */
+  cancelWorker(workerId?: string): Promise<{
+    cancelled: boolean;
+    workerId: string | null;
+    reason?: string;
+  }>;
+  /** List currently-active workers so Grok can name targets. */
+  listActive(): Promise<
+    {
+      workerId: string;
+      status: string;
+      skillName: string | undefined;
+      startedAt: string;
+    }[]
+  >;
+}
+
 /** Callback for presence mode changes triggered by AI tool calls */
 export type EnterModeHandler = (mode: 'passive' | 'active') => void;
 
@@ -30,4 +99,9 @@ export interface ToolCallContext {
   memoryTools?: MemoryToolHandler;
   enterMode?: EnterModeHandler;
   taskTools?: TaskToolHandler;
+  skillTools?: SkillToolHandler;
+  workerControl?: WorkerControlHandler;
 }
+
+/** Re-export for convenience — callers depend on these along with the context. */
+export type { WorkerResult, WorkerTask };

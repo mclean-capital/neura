@@ -24,7 +24,22 @@ const STAGING = join(ROOT, 'packages/desktop/build-resources/node_modules');
 // Seeds — these are the externalized deps the bundled core requires at
 // runtime. Anything the core bundle pulls in via esbuild is already inlined
 // and does not need to be copied.
-const SEEDS = ['onnxruntime-node', '@electric-sql/pglite'];
+//
+// Phase 6 adds the pi-coding-agent runtime tree as seeds. We list each
+// of the three @mariozechner/* packages explicitly because the closure
+// walker follows direct dependencies — pi-coding-agent already pulls in
+// pi-agent-core and pi-ai transitively, but listing them directly keeps
+// the seed set obvious and protects against closure walker edge cases
+// if the transitive tree changes. See packages/core/scripts/bundle.ts
+// for the matching esbuild externals.
+const SEEDS = [
+  'onnxruntime-node',
+  '@electric-sql/pglite',
+  '@mariozechner/pi-coding-agent',
+  '@mariozechner/pi-agent-core',
+  '@mariozechner/pi-ai',
+  'chokidar',
+];
 
 function walkClosure(pkgName, visited = new Set()) {
   if (visited.has(pkgName)) return visited;

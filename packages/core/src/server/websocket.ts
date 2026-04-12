@@ -35,7 +35,18 @@ function getAvailableWakeWords(modelsDir: string): string[] {
 }
 
 export function attachWebSocket(httpServer: Server, services: CoreServices): WebSocketServer {
-  const { store, memoryManager, config, connectedClients, pendingCleanups } = services;
+  const {
+    store,
+    memoryManager,
+    config,
+    connectedClients,
+    pendingCleanups,
+    voiceFanoutBridge,
+    clarificationBridge,
+    skillToolHandler,
+    workerControlHandler,
+    skillRegistry,
+  } = services;
   const { authToken } = config;
 
   const wss = new WebSocketServer({
@@ -244,6 +255,14 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
               })
           );
         }
+        // Phase 6: if any worker is currently blocked on a
+        // request_clarification tool call, resolve the oldest pending
+        // clarification with this transcript. Returns true if
+        // consumed so future logic can branch on it — today we still
+        // let Grok see the transcript too (it's normal user speech,
+        // not a special sentinel) so the orchestrator has full
+        // context of the conversation.
+        clarificationBridge?.notifyUserTurn(text);
       },
       onOutputTranscript(text: string) {
         send({ type: 'outputTranscript', text });
@@ -413,6 +432,20 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         }
       }
 
+      // Phase 6: inject every loaded orchestrator skill's markdown
+      // body into the system prompt. These are skills tagged with
+      // `metadata.neura_level: 'orchestrator'` in their frontmatter;
+      // their bodies describe always-on orchestrator behavior
+      // (pause/resume/cancel routing, clarification handling, etc.)
+      // that Grok reads at every turn. Driven by SKILL.md files so
+      // behavior can be edited without touching code.
+      if (skillRegistry) {
+        const orchestratorPrefix = skillRegistry.buildOrchestratorPromptPrefix();
+        if (orchestratorPrefix.length > 0) {
+          systemPromptPrefix = (systemPromptPrefix ?? '') + orchestratorPrefix;
+        }
+      }
+
       // Re-check state after async gap — may have gone passive/idle during await
       if (connectionClosed || presence.state !== 'active') return;
 
@@ -421,10 +454,27 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         memoryTools,
         enterMode: (mode) => presence.enterMode(mode),
         taskTools,
+        skillTools: skillToolHandler ?? undefined,
+        workerControl: workerControlHandler ?? undefined,
       });
       costTracker.startInterval(send, COST_UPDATE_INTERVAL_MS);
       session.connect();
       resetIdleTimer();
+
+      // Phase 6: attach this client's voice session to the fanout
+      // bridge so worker events (tool_start affordances, text delta
+      // batches, "Done." on completion) speak through it. Detached
+      // in deactivateVoiceSession() and on ws close.
+      if (voiceFanoutBridge && session) {
+        voiceFanoutBridge.setInterjector(
+          session as unknown as {
+            interject: (
+              message: string,
+              options: { immediate: boolean; bypassRateLimit?: boolean }
+            ) => Promise<void>;
+          }
+        );
+      }
     }
 
     function deactivateVoiceSession() {
@@ -437,6 +487,11 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
 
       session?.close();
       session = null;
+
+      // Detach the fanout bridge from this client's (now-dead) voice
+      // session so ambient worker events fall back to the no-op
+      // interjector instead of trying to speak through a closed ws.
+      voiceFanoutBridge?.setInterjector(null);
 
       // Resume wake-word detection by resetting the long-lived
       // detector instance. This clears its ring buffer, replay
@@ -609,6 +664,11 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         clearTimeout(idleTimer);
         idleTimer = null;
       }
+
+      // Detach the fanout bridge — deactivateVoiceSession() may have
+      // already done this but on a hard ws close we reach here without
+      // going through deactivate. Idempotent.
+      voiceFanoutBridge?.setInterjector(null);
 
       // Clean up presence (triggers deactivate if active)
       presence.close();

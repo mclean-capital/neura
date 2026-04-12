@@ -36,6 +36,16 @@ export class PgliteStore implements DataStore {
   }
 
   /**
+   * Raw PGlite handle for code paths that run their own queries
+   * (Phase 6 worker-queries, etc.). Prefer the typed DataStore methods
+   * where possible — this escape hatch exists for layers that operate
+   * on tables the DataStore interface doesn't cover.
+   */
+  getRawDb(): PGlite {
+    return this.db;
+  }
+
+  /**
    * Create a PgliteStore backed by a directory on disk (WAL-persisted).
    * If no dataDir is provided, creates an in-memory instance (useful for tests).
    */

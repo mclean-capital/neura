@@ -253,6 +253,58 @@ export async function runMigrations(db: PGlite): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_transcript_chunks_session ON transcript_chunks(session_id)'
   );
 
+  // --- Workers (Phase 6) ---
+  //
+  // One row per pi AgentSession dispatched as a worker. The session_file
+  // column is load-bearing for restart-safe resume: SessionManager.open()
+  // is path-addressed, not id-addressed, so persisting the JSONL path is
+  // what lets the core come back from a crash and reopen idle_partial
+  // workers. The session_id column is stored for cross-reference and log
+  // correlation — NOT sufficient alone for reopen.
+  //
+  // Status enum is documented in the authoritative stopReason → WorkerStatus
+  // mapping in docs/phase6-os-core.md. On startup, worker-queries.ts'
+  // recovery sweep marks any spawning/running/blocked_clarifying rows as
+  // crashed (terminal), and preserves idle_partial rows with a valid
+  // session_file for resume.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS workers (
+      worker_id TEXT PRIMARY KEY,
+      task_type TEXT NOT NULL,
+      task_spec JSONB NOT NULL,
+      status TEXT NOT NULL DEFAULT 'spawning'
+        CHECK (status IN (
+          'spawning', 'running', 'blocked_clarifying', 'idle_partial',
+          'completed', 'failed', 'crashed', 'cancelled'
+        )),
+      started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      last_progress_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      result_json JSONB,
+      error_json JSONB,
+      session_id TEXT,
+      session_file TEXT
+    )
+  `);
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status)');
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_workers_last_progress ON workers(last_progress_at)'
+  );
+
+  // --- Skill usage (Phase 6) ---
+  //
+  // Lightweight MRU tracking for the skill registry's token-budget
+  // eviction logic. skill-registry.ts maintains an in-memory MRU map for
+  // the current session; this table mirrors usage to disk so the MRU
+  // ordering survives core restarts. Updated via a callback wired from
+  // skill-registry.notifyUsed() → worker-queries' skill usage helpers.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS skill_usage (
+      skill_name TEXT PRIMARY KEY,
+      last_used_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      use_count INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
   // Seed default identity if table is empty
   const identityCount = await db.query<{ count: string }>(
     'SELECT COUNT(*)::TEXT as count FROM identity'
