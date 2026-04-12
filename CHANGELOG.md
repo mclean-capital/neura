@@ -1,3 +1,9 @@
+# [2.4.0](https://github.com/mclean-capital/neura/compare/v2.3.0...v2.4.0) (2026-04-12)
+
+### Features
+
+- **cli:** bundle web UI in npm package for out-of-box neura open ([9b2bb1f](https://github.com/mclean-capital/neura/commit/9b2bb1f2fb822668a489326364eb0116157d37bd))
+
 # [2.3.0](https://github.com/mclean-capital/neura/compare/v2.2.5...v2.3.0) (2026-04-12)
 
 ### Features
