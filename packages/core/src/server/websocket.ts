@@ -135,15 +135,21 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
       const visionApiKey = visionRoute
         ? services.config.providers[visionRoute.provider]?.apiKey
         : undefined;
+      // For snapshot mode, create a dedicated text adapter from the vision route
+      // so routing.vision.provider/model is respected (not the singleton routing.text)
+      let snapshotTextAdapter;
+      if (visionRoute?.mode === 'snapshot') {
+        const route = services.registry.resolveVision();
+        if (route) {
+          snapshotTextAdapter = services.registry.createTextAdapterForRoute(route.route);
+        }
+      }
       const watcher = createVisionWatcher({
         label: source,
         mode: visionRoute?.mode,
         apiKey: visionApiKey,
         model: visionRoute?.model,
-        textAdapter:
-          visionRoute?.mode === 'snapshot'
-            ? (services.registry.getTextAdapter() ?? undefined)
-            : undefined,
+        textAdapter: snapshotTextAdapter,
       });
       if (source === 'camera') cameraWatcher = watcher;
       else screenWatcher = watcher;

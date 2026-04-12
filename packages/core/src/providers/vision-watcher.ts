@@ -15,11 +15,13 @@ export interface VisionWatcherConfig extends GeminiVisionConfig {
 }
 
 export function createVisionWatcher(config: VisionWatcherConfig = {}): VisionProvider {
-  if (config.mode === 'snapshot' && config.textAdapter) {
-    // Snapshot mode wraps a TextAdapter — stateless per-query.
-    // The returned object satisfies VisionProvider by implementing
-    // query() (with frame) and close(). connect/sendFrame/isConnected
-    // are not used for snapshot adapters.
+  if (config.mode === 'snapshot') {
+    if (!config.textAdapter) {
+      throw new Error(
+        'Snapshot vision mode requires a text adapter (routing.vision configured as snapshot ' +
+          'but no text adapter available — check that routing.vision.provider has an API key)'
+      );
+    }
     return new SnapshotVisionWrapperProvider(config.textAdapter, config.label);
   }
 
