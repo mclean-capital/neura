@@ -1,3 +1,9 @@
+# [2.2.0](https://github.com/mclean-capital/neura/compare/v2.1.7...v2.2.0) (2026-04-12)
+
+### Features
+
+- **cli:** ship wake-word ONNX models so fresh installs get working voice out of the box ([74ffd91](https://github.com/mclean-capital/neura/commit/74ffd914e8b93ce8462486c6c839056dc0cb7556))
+
 ## [2.1.7](https://github.com/mclean-capital/neura/compare/v2.1.6...v2.1.7) (2026-04-12)
 
 ### Bug Fixes
