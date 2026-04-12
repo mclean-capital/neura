@@ -33,30 +33,29 @@ export function configGetCommand(key: string): void {
 }
 
 export function configSetCommand(key: string, value: string): void {
-  setConfigValue(key, value);
-  console.log(chalk.green(`Set ${key}`));
-
-  // Warn immediately if the user set an assistantName that has no
-  // matching .onnx classifier — they'd only discover the problem
-  // next time they went to passive mode, and then only as a cryptic
-  // "wake word unavailable" banner. Catching it here gives them
-  // an actionable hint while they're still at the keyboard.
+  // Block setting assistantName to a name without a matching .onnx
+  // classifier. Without a classifier, wake-word detection silently
+  // disables and the user only discovers the breakage next time
+  // they go to passive mode. Failing fast with the list of valid
+  // options is far better UX.
   if (key === 'assistantName') {
     const classifierPath = join(getNeuraHome(), 'models', `${value}.onnx`);
     if (!existsSync(classifierPath)) {
       const available = getAvailableWakeWords();
-      console.log();
-      console.log(chalk.yellow(`  ⚠ No wake-word classifier found for "${value}".`));
-      console.log(
-        chalk.yellow('    Wake-word detection will be disabled until a classifier is trained.')
-      );
+      console.log(chalk.red(`  ✗ No wake-word classifier found for "${value}".`));
       if (available.length > 0) {
         console.log(chalk.dim(`    Available wake words: ${available.join(', ')}`));
       } else {
         console.log(chalk.dim('    No classifiers installed. See: tools/wake-word/README.md'));
       }
+      console.log(chalk.dim('    Train a custom wake word: tools/wake-word/scripts/train.sh'));
+      process.exit(1);
+      return; // unreachable in production; needed for test mock path
     }
   }
+
+  setConfigValue(key, value);
+  console.log(chalk.green(`Set ${key}`));
 }
 
 export function configListCommand(): void {

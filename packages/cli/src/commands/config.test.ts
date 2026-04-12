@@ -148,7 +148,7 @@ describe('configSetCommand', () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Set port'));
   });
 
-  it('warns when setting assistantName to a name with no .onnx classifier', async () => {
+  it('blocks setting assistantName to a name with no .onnx classifier', async () => {
     const { existsSync, readdirSync } = await import('fs');
     const mockedExistsSync = vi.mocked(existsSync);
     const mockedReaddirSync = vi.mocked(readdirSync);
@@ -168,6 +168,10 @@ describe('configSetCommand', () => {
     const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
     expect(output).toContain('No wake-word classifier found for "neddd"');
     expect(output).toContain('jarvis, neura');
+    // Must NOT have written the invalid value to config
+    expect(mockedSetConfigValue).not.toHaveBeenCalled();
+    // Must exit with error
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it('does NOT warn when setting assistantName to a name that has a classifier', async () => {
