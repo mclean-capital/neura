@@ -54,7 +54,7 @@ neura listen      # voice chat (mic + speaker, wake-word ready)
 neura chat        # text chat from your terminal
 ```
 
-After `neura install` completes, core runs as a background OS service — launchd on macOS, systemd on Linux, a Scheduled Task (or Startup folder shim as fallback) on Windows. Say your wake word — by default **"neura"** — and Neura activates a voice session. Stop talking for 5 minutes and it drops back to passive listening.
+After `neura install` completes, core runs as a background OS service — launchd on macOS, systemd on Linux, a Scheduled Task (or Startup folder shim as fallback) on Windows. Say your wake word — by default **"jarvis"** — and Neura activates a voice session. Stop talking for 5 minutes and it drops back to passive listening.
 
 ### Windows notes
 
