@@ -1,3 +1,9 @@
+## [2.1.6](https://github.com/mclean-capital/neura/compare/v2.1.5...v2.1.6) (2026-04-12)
+
+### Bug Fixes
+
+- **cli:** stop core before npm install in neura update to avoid EPERM ([103df6e](https://github.com/mclean-capital/neura/commit/103df6e6fe2fb1a6aaca15c69aac6a99083fd481))
+
 ## [2.1.5](https://github.com/mclean-capital/neura/compare/v2.1.4...v2.1.5) (2026-04-12)
 
 ### Bug Fixes
