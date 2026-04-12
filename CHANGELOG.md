@@ -1,3 +1,9 @@
+## [2.2.3](https://github.com/mclean-capital/neura/compare/v2.2.2...v2.2.3) (2026-04-12)
+
+### Bug Fixes
+
+- **cli:** block neura config set assistantName when no matching classifier exists ([aef3aaa](https://github.com/mclean-capital/neura/commit/aef3aaa31a8611e6dd72d96f34eccf290ca8da7c))
+
 ## [2.2.2](https://github.com/mclean-capital/neura/compare/v2.2.1...v2.2.2) (2026-04-12)
 
 ### Bug Fixes
