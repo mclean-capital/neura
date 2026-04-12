@@ -37,9 +37,21 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
       if (xaiResult.valid && googleResult.valid) {
         await window.neuraDesktop.saveConfig({
-          xaiApiKey: xaiKey.trim(),
-          googleApiKey: googleKey.trim(),
-          voice: 'eve',
+          providers: {
+            xai: { apiKey: xaiKey.trim() },
+            google: { apiKey: googleKey.trim() },
+          },
+          routing: {
+            voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast', voice: 'eve' },
+            vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+            text: { provider: 'google', model: 'gemini-2.5-flash' },
+            embedding: {
+              provider: 'google',
+              model: 'gemini-embedding-2-preview',
+              dimensions: 3072,
+            },
+            worker: { provider: 'xai', model: 'grok-4-fast' },
+          },
         });
         setDone(true);
       }

@@ -7,6 +7,7 @@ interface CoreManagerOptions {
   port: number;
   env: { xaiApiKey: string; googleApiKey: string };
   authToken?: string;
+  neuraHome?: string;
   onCrash?: (code: number | null) => void;
 }
 
@@ -41,11 +42,48 @@ export class CoreManager {
     this.portResolved = false;
     const pgDataPath = path.join(app.getPath('userData'), 'pgdata');
 
+    // Write a v3 config.json so core's loadConfig() has a valid config file.
+    // The desktop stores API keys in encrypted Electron store; we write them
+    // to the config.json that core reads at startup.
+    const neuraHome = this.opts.neuraHome ?? path.join(app.getPath('userData'));
+    fs.mkdirSync(neuraHome, { recursive: true });
+    const configPath = path.join(neuraHome, 'config.json');
+    const hasXai = !!this.opts.env.xaiApiKey;
+    const hasGoogle = !!this.opts.env.googleApiKey;
+    const v3Config = {
+      providers: {
+        ...(hasXai ? { xai: { apiKey: this.opts.env.xaiApiKey } } : {}),
+        ...(hasGoogle ? { google: { apiKey: this.opts.env.googleApiKey } } : {}),
+      },
+      routing: {
+        // Only include routes whose provider has a key
+        ...(hasXai
+          ? { voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast', voice: 'eve' } }
+          : {}),
+        ...(hasGoogle
+          ? { vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' } }
+          : {}),
+        ...(hasGoogle ? { text: { provider: 'google', model: 'gemini-2.5-flash' } } : {}),
+        ...(hasGoogle
+          ? {
+              embedding: {
+                provider: 'google',
+                model: 'gemini-embedding-2-preview',
+                dimensions: 3072,
+              },
+            }
+          : {}),
+        ...(hasXai ? { worker: { provider: 'xai', model: 'grok-4-fast' } } : {}),
+      },
+      port: this.opts.port,
+      ...(this.opts.authToken ? { authToken: this.opts.authToken } : {}),
+    };
+    fs.writeFileSync(configPath, JSON.stringify(v3Config, null, 2) + '\n', 'utf-8');
+
     const env: Record<string, string> = {
       ...process.env,
       PORT: String(this.opts.port),
-      XAI_API_KEY: this.opts.env.xaiApiKey,
-      GOOGLE_API_KEY: this.opts.env.googleApiKey,
+      NEURA_HOME: neuraHome,
       PG_DATA_PATH: pgDataPath,
       NODE_ENV: app.isPackaged ? 'production' : 'development',
       ...(this.opts.authToken ? { NEURA_AUTH_TOKEN: this.opts.authToken } : {}),

@@ -1,8 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('neuraDesktop', {
-  saveConfig: (config: { xaiApiKey: string; googleApiKey: string; voice: string }) =>
-    ipcRenderer.invoke('wizard:save-config', config),
+  saveConfig: (config: Record<string, unknown>) => ipcRenderer.invoke('wizard:save-config', config),
   validateKey: (provider: string, key: string) =>
     ipcRenderer.invoke('wizard:validate-key', provider, key),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),

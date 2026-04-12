@@ -6,6 +6,7 @@ import { WebSocket } from 'ws';
 import type { DataStore, NeuraSkill, ServerMessage, VoiceProvider, WorkerTask } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import { loadConfig } from '../config/index.js';
+import { ProviderRegistry } from '../registry/index.js';
 import { MemoryManager } from '../memory/index.js';
 import { BackupService } from '../memory/index.js';
 import type { PresenceManager } from '../presence/index.js';
@@ -35,6 +36,7 @@ const log = new Logger('server');
 
 export interface CoreServices {
   config: ReturnType<typeof loadConfig>;
+  registry: ProviderRegistry;
   store: DataStore | null;
   memoryManager: MemoryManager | null;
   backupService: BackupService | null;
@@ -94,10 +96,17 @@ export async function initServices(): Promise<CoreServices> {
   const config = loadConfig();
   const version = resolveVersion(config.neuraHome);
 
-  // Make API keys available to providers that read process.env directly
-  if (config.xaiApiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = config.xaiApiKey;
-  if (config.googleApiKey && !process.env.GOOGLE_API_KEY)
-    process.env.GOOGLE_API_KEY = config.googleApiKey;
+  // Create provider registry from v3 config
+  const registry = new ProviderRegistry(config);
+
+  // Temporary bridge: populate env vars from v3 config for providers that still
+  // read process.env directly (GrokVoiceProvider, GeminiVisionProvider).
+  // These will be removed when those providers become adapters (Phase 4 & 5).
+  const xaiCreds = config.providers.xai;
+  if (xaiCreds?.apiKey && !process.env.XAI_API_KEY) process.env.XAI_API_KEY = xaiCreds.apiKey;
+  const googleCreds = config.providers.google;
+  if (googleCreds?.apiKey && !process.env.GOOGLE_API_KEY)
+    process.env.GOOGLE_API_KEY = googleCreds.apiKey;
 
   // Windows: write our PID to `$NEURA_HOME/neura-core.pid` so the CLI's
   // Windows service manager (which uses a dumb cmd-shim launcher rather
@@ -185,15 +194,26 @@ export async function initServices(): Promise<CoreServices> {
   let memoryManager: MemoryManager | null = null;
   let backupService: BackupService | null = null;
 
-  if (store && config.googleApiKey) {
-    memoryManager = new MemoryManager({
-      store,
-      googleApiKey: config.googleApiKey,
-      onExtractionComplete: () => backupService?.backup() ?? Promise.resolve(),
-      retrievalStrategy: config.retrievalStrategy,
-      assistantName: config.assistantName,
-    });
-    log.info('memory manager initialized');
+  const textAdapter = registry.getTextAdapter();
+  const embeddingAdapter = registry.getEmbeddingAdapter();
+  if (store && textAdapter && embeddingAdapter) {
+    try {
+      memoryManager = new MemoryManager({
+        store,
+        textAdapter,
+        embeddingAdapter,
+        onExtractionComplete: () => backupService?.backup() ?? Promise.resolve(),
+        retrievalStrategy: config.retrievalStrategy,
+        assistantName: config.assistantName,
+      });
+      log.info('memory manager initialized');
+    } catch (err) {
+      log.warn('memory manager disabled — adapter error', {
+        err: String(err),
+      });
+    }
+  } else if (store) {
+    log.info('memory manager disabled — text or embedding route not configured');
   }
 
   // Start periodic memory backup
@@ -215,24 +235,32 @@ export async function initServices(): Promise<CoreServices> {
 
   // Discovery loop — reviews open tasks, checks deadlines, notifies clients
   let discoveryLoop: DiscoveryLoop | null = null;
-  if (store && config.googleApiKey) {
-    discoveryLoop = new DiscoveryLoop({
-      store,
-      googleApiKey: config.googleApiKey,
-      onNotifications: (summary, items) => {
-        for (const [, client] of connectedClients) {
-          if (client.presence.state === 'active') {
-            const session = client.getSession();
-            if (session) {
-              session.sendText(`Task reminder: ${summary}`);
+  if (store && textAdapter) {
+    try {
+      discoveryLoop = new DiscoveryLoop({
+        store,
+        textAdapter,
+        onNotifications: (summary, items) => {
+          for (const [, client] of connectedClients) {
+            if (client.presence.state === 'active') {
+              const session = client.getSession();
+              if (session) {
+                session.sendText(`Task reminder: ${summary}`);
+              }
+            } else if (client.presence.state === 'passive') {
+              client.send({ type: 'discoveryNotification', summary, items });
             }
-          } else if (client.presence.state === 'passive') {
-            client.send({ type: 'discoveryNotification', summary, items });
           }
-        }
-      },
-    });
-    discoveryLoop.start();
+        },
+      });
+      discoveryLoop.start();
+    } catch (err) {
+      log.warn('discovery loop disabled — text adapter error', {
+        err: String(err),
+      });
+    }
+  } else if (store) {
+    log.info('discovery loop disabled — text route not configured');
   }
 
   const pendingCleanups = new Set<Promise<void>>();
@@ -252,7 +280,9 @@ export async function initServices(): Promise<CoreServices> {
   let skillToolHandler: SkillToolHandler | null = null;
   let workerControlHandler: WorkerControlHandler | null = null;
 
-  if (store && config.xaiApiKey) {
+  const workerRoute = config.routing.worker;
+  const workerProviderAvailable = workerRoute && !!config.providers[workerRoute.provider]?.apiKey;
+  if (store && workerProviderAvailable) {
     try {
       const agentDir = join(config.neuraHome, 'agent');
       const sessionDir = defaultSessionDir(agentDir);
@@ -386,9 +416,14 @@ export async function initServices(): Promise<CoreServices> {
       // registered — wrap in try/catch so a missing model config
       // doesn't fail the whole core startup.
       const { getModel } = await import('@mariozechner/pi-ai');
-      const model = getModel('xai', 'grok-4-fast');
+      const { provider: wProvider, model: wModel } = workerRoute;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = getModel(wProvider as any, wModel);
       if (!model) {
-        throw new Error('xai/grok-4-fast model not registered in pi-ai');
+        throw new Error(
+          `${wProvider}/${wModel} model not registered in pi-ai. ` +
+            'Check config.routing.worker or verify pi-ai supports this provider.'
+        );
       }
 
       const piRuntime = new PiRuntime({
@@ -451,11 +486,12 @@ export async function initServices(): Promise<CoreServices> {
       workerControlHandler = null;
     }
   } else {
-    log.info('phase 6 disabled — missing store or XAI_API_KEY');
+    log.info('phase 6 disabled — missing store or worker route/API key');
   }
 
   return {
     config,
+    registry,
     store,
     memoryManager,
     backupService,

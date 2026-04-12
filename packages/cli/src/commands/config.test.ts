@@ -53,12 +53,19 @@ beforeEach(() => {
 });
 
 describe('configListCommand', () => {
+  const v3Routing = {
+    voice: { mode: 'realtime' as const, provider: 'xai', model: 'grok-3-fast' },
+    vision: { mode: 'streaming' as const, provider: 'google', model: 'gemini-2.5-flash' },
+    text: { provider: 'google', model: 'gemini-2.5-flash' },
+    embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+    worker: { provider: 'xai', model: 'grok-4-fast' },
+  };
+
   it('outputs all config fields', () => {
     mockedLoadConfig.mockReturnValue({
+      providers: { xai: { apiKey: 'xai-abcdefghijklmnop' } },
+      routing: v3Routing,
       port: 3002,
-      voice: 'eve',
-      apiKeys: { xai: 'xai-abcdefghijklmnop', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
     });
 
     configListCommand();
@@ -66,20 +73,18 @@ describe('configListCommand', () => {
     const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
     expect(output).toContain('port');
     expect(output).toContain('3002');
+    expect(output).toContain('xai');
     expect(output).toContain('voice');
-    expect(output).toContain('eve');
-    expect(output).toContain('apiKeys.xai');
-    expect(output).toContain('apiKeys.google');
-    expect(output).toContain('service.autoStart');
-    expect(output).toContain('service.logLevel');
+    expect(output).toContain('vision');
+    expect(output).toContain('text');
+    expect(output).toContain('embedding');
+    expect(output).toContain('worker');
   });
 
   it('redacts API keys that are set (shows first 8 chars + ...)', () => {
     mockedLoadConfig.mockReturnValue({
-      port: 3002,
-      voice: 'eve',
-      apiKeys: { xai: 'xai-abcdefghijklmnop', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: { xai: { apiKey: 'xai-abcdefghijklmnop' } },
+      routing: v3Routing,
     });
 
     configListCommand();
@@ -90,18 +95,16 @@ describe('configListCommand', () => {
     expect(output).not.toContain('xai-abcdefghijklmnop');
   });
 
-  it('shows (not set) for empty API keys', () => {
+  it('shows (none configured) when no providers are set', () => {
     mockedLoadConfig.mockReturnValue({
-      port: 3002,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: {},
+      routing: v3Routing,
     });
 
     configListCommand();
 
     const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
-    expect(output).toContain('(not set)');
+    expect(output).toContain('(none configured)');
   });
 });
 
@@ -117,7 +120,7 @@ describe('configGetCommand', () => {
   it('redacts API keys (shows first 8 chars + ...)', () => {
     mockedGetConfigValue.mockReturnValue('xai-abcdefghijklmnop12345');
 
-    configGetCommand('apiKeys.xai');
+    configGetCommand('providers.xai.apiKey');
 
     expect(consoleSpy).toHaveBeenCalledWith('xai-abcd...');
   });
@@ -125,7 +128,7 @@ describe('configGetCommand', () => {
   it('redacts Google API key too', () => {
     mockedGetConfigValue.mockReturnValue('AIzaSyB-long-google-key');
 
-    configGetCommand('apiKeys.google');
+    configGetCommand('providers.google.apiKey');
 
     expect(consoleSpy).toHaveBeenCalledWith('AIzaSyB-...');
   });
@@ -189,11 +192,11 @@ describe('configSetCommand', () => {
   });
 
   it('does NOT warn when setting non-assistantName keys', () => {
-    configSetCommand('voice', 'sage');
+    configSetCommand('port', '4000');
 
     const output = consoleSpy.mock.calls.map((c: string[]) => c[0] ?? '').join('\n');
     expect(output).not.toContain('No wake-word classifier');
-    expect(output).toContain('Set voice');
+    expect(output).toContain('Set port');
   });
 });
 

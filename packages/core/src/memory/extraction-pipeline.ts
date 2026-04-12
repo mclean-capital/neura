@@ -1,11 +1,14 @@
-import { GoogleGenAI } from '@google/genai';
 import { Logger } from '@neura/utils/logger';
-import type { TranscriptEntry, MemoryContext, ExtractionResult } from '@neura/types';
+import type {
+  TranscriptEntry,
+  MemoryContext,
+  ExtractionResult,
+  TextAdapter,
+  EmbeddingAdapter,
+} from '@neura/types';
 
 const log = new Logger('extractor');
 
-const EXTRACTION_MODEL = 'gemini-2.5-flash';
-const EMBEDDING_MODEL = 'gemini-embedding-2-preview';
 const MIN_TRANSCRIPT_ENTRIES = 4;
 
 /** Descriptor for a transcript chunk with its embedding and source range. */
@@ -150,21 +153,19 @@ function formatExistingContext(context: MemoryContext): string {
 }
 
 export class ExtractionPipeline {
-  private readonly ai: GoogleGenAI;
+  private readonly textAdapter: TextAdapter;
+  private readonly embeddingAdapter: EmbeddingAdapter;
 
-  constructor(googleApiKey: string) {
-    this.ai = new GoogleGenAI({ apiKey: googleApiKey });
+  constructor(textAdapter: TextAdapter, embeddingAdapter: EmbeddingAdapter) {
+    this.textAdapter = textAdapter;
+    this.embeddingAdapter = embeddingAdapter;
   }
 
   async generateEmbedding(text: string): Promise<number[] | null> {
     try {
-      const response = await this.ai.models.embedContent({
-        model: EMBEDDING_MODEL,
-        contents: text,
-      });
-      const values = response.embeddings?.[0]?.values;
-      if (values?.length === 3072) return values;
-      log.warn('unexpected embedding dimensions', { length: values?.length });
+      const [embedding] = await this.embeddingAdapter.embed([text]);
+      if (embedding?.length > 0) return embedding;
+      log.warn('empty embedding returned');
       return null;
     } catch (err) {
       log.warn('embedding generation failed', { err: String(err) });
@@ -185,17 +186,20 @@ export class ExtractionPipeline {
       const formattedTranscript = formatTranscript(transcript);
       const contextRef = formatExistingContext(existingContext);
 
-      const response = await this.ai.models.generateContent({
-        model: EXTRACTION_MODEL,
-        contents: `Existing context (for deduplication):\n${contextRef}\n\nTranscript:\n${formattedTranscript}`,
-        config: {
-          systemInstruction: EXTRACTION_PROMPT,
-          responseMimeType: 'application/json',
-          responseSchema: EXTRACTION_SCHEMA,
-        },
-      });
+      const response = await this.textAdapter.chat(
+        [
+          { role: 'system', content: EXTRACTION_PROMPT },
+          {
+            role: 'user',
+            content: `Existing context (for deduplication):\n${contextRef}\n\nTranscript:\n${formattedTranscript}`,
+          },
+        ],
+        {
+          responseSchema: EXTRACTION_SCHEMA as unknown as Record<string, unknown>,
+        }
+      );
 
-      const text = response.text;
+      const text = response.content;
       if (!text) {
         log.warn('empty extraction response');
         return null;

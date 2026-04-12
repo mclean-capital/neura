@@ -5,3 +5,4 @@ export * from './providers.js';
 export * from './memory.js';
 export * from './skills.js';
 export * from './workers.js';
+export * from './adapters.js';

@@ -6,7 +6,7 @@ import { hasCoreBinary, getInstalledCoreVersion } from '../download.js';
 
 export async function versionCommand(): Promise<void> {
   const config = loadConfig();
-  const health = await checkHealth(config.port);
+  const health = await checkHealth(config.port ?? 3002);
   const installedVersion = getInstalledCoreVersion();
 
   console.log(`neura-cli  ${CLI_VERSION}`);

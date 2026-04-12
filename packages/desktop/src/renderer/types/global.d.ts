@@ -3,11 +3,7 @@ export {};
 declare global {
   interface Window {
     neuraDesktop: {
-      saveConfig: (config: {
-        xaiApiKey: string;
-        googleApiKey: string;
-        voice: string;
-      }) => Promise<{ success: boolean }>;
+      saveConfig: (config: Record<string, unknown>) => Promise<{ success: boolean }>;
       validateKey: (provider: string, key: string) => Promise<{ valid: boolean; error?: string }>;
       openExternal: (url: string) => Promise<void>;
       getSettings: () => Promise<{

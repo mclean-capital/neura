@@ -25,11 +25,16 @@ vi.mock('child_process', () => ({
 vi.mock('../config.js', () => ({
   getNeuraHome: vi.fn(() => 'C:/Users/test/.neura'),
   loadConfig: vi.fn(() => ({
-    port: 3002,
-    voice: 'eve',
-    apiKeys: { xai: 'sk-xai-test', google: 'sk-google-test' },
+    providers: { xai: { apiKey: 'sk-xai-test' }, google: { apiKey: 'sk-google-test' } },
+    routing: {
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+      text: { provider: 'google', model: 'gemini-2.5-flash' },
+      embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+      worker: { provider: 'xai', model: 'grok-4-fast' },
+    },
     authToken: 'tok-abc123',
-    service: { autoStart: true, logLevel: 'info' },
+    port: 3002,
   })),
 }));
 

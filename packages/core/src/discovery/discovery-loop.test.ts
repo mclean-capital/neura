@@ -1,16 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { TextAdapter } from '@neura/types';
 import { PgliteStore } from '../stores/pglite-store.js';
 import { DiscoveryLoop, type DiscoveryNotification } from './discovery-loop.js';
 
-// Mock @google/genai so no real API call is attempted
-vi.mock('@google/genai', () => {
-  class MockGoogleGenAI {
-    models = {
-      generateContent: () => Promise.reject(new Error('mocked')),
-    };
-  }
-  return { GoogleGenAI: MockGoogleGenAI };
-});
+const mockTextAdapter: TextAdapter = {
+  chat: vi.fn().mockRejectedValue(new Error('mocked')),
+  chatStream: vi.fn(),
+  chatWithTools: vi.fn(),
+  chatWithToolsStream: vi.fn(),
+  close: vi.fn(),
+};
 
 let store: PgliteStore;
 
@@ -27,7 +26,7 @@ describe('DiscoveryLoop', () => {
     const onNotifications = vi.fn();
     const loop = new DiscoveryLoop({
       store,
-      googleApiKey: 'fake-key',
+      textAdapter: mockTextAdapter,
       onNotifications,
     });
 
@@ -42,7 +41,7 @@ describe('DiscoveryLoop', () => {
     const onNotifications = vi.fn();
     const loop = new DiscoveryLoop({
       store,
-      googleApiKey: 'fake-key',
+      textAdapter: mockTextAdapter,
       onNotifications,
     });
 
@@ -58,7 +57,7 @@ describe('DiscoveryLoop', () => {
     const onNotifications = vi.fn();
     const loop = new DiscoveryLoop({
       store,
-      googleApiKey: 'fake-key',
+      textAdapter: mockTextAdapter,
       onNotifications,
     });
 
@@ -90,7 +89,7 @@ describe('DiscoveryLoop', () => {
     const onNotifications = vi.fn();
     const loop = new DiscoveryLoop({
       store,
-      googleApiKey: 'fake-key',
+      textAdapter: mockTextAdapter,
       onNotifications,
     });
 
@@ -109,7 +108,7 @@ describe('DiscoveryLoop', () => {
   it('start()/stop() lifecycle works', () => {
     const loop = new DiscoveryLoop({
       store,
-      googleApiKey: 'fake-key',
+      textAdapter: mockTextAdapter,
     });
 
     // Should not throw

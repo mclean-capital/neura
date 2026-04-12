@@ -1,17 +1,15 @@
-import { GoogleGenAI } from '@google/genai';
 import { Logger } from '@neura/utils/logger';
-import type { FactEntry } from '@neura/types';
+import type { FactEntry, TextAdapter } from '@neura/types';
 
 const log = new Logger('reranker');
 
-const RERANK_MODEL = 'gemini-2.5-flash';
 const RERANK_TIMEOUT_MS = 3000;
 
 export class Reranker {
-  private readonly ai: GoogleGenAI;
+  private readonly textAdapter: TextAdapter;
 
-  constructor(googleApiKey: string) {
-    this.ai = new GoogleGenAI({ apiKey: googleApiKey });
+  constructor(textAdapter: TextAdapter) {
+    this.textAdapter = textAdapter;
   }
 
   async rerank(query: string, candidates: FactEntry[], topN = 10): Promise<FactEntry[]> {
@@ -26,13 +24,7 @@ Return ONLY a JSON array of indices (0-based) in order of relevance.
 Entries:
 ${candidates.map((f, i) => `[${i}] ${f.content} (${f.category})`).join('\n')}`;
 
-      const apiCall = this.ai.models.generateContent({
-        model: RERANK_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      const apiCall = this.textAdapter.chat([{ role: 'user', content: prompt }], { json: true });
 
       const timeoutPromise = new Promise<null>((resolve) =>
         setTimeout(() => resolve(null), RERANK_TIMEOUT_MS)
@@ -44,7 +36,7 @@ ${candidates.map((f, i) => `[${i}] ${f.content} (${f.category})`).join('\n')}`;
         return candidates.slice(0, topN);
       }
 
-      const text = response.text;
+      const text = response.content;
       if (!text) {
         log.warn('empty rerank response, returning candidates as-is');
         return candidates.slice(0, topN);

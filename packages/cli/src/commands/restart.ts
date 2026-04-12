@@ -15,7 +15,7 @@ export async function restartCommand(): Promise<void> {
   console.log('Restarting core...');
   svc.restart();
 
-  const health = await waitForHealthy(config.port);
+  const health = await waitForHealthy(config.port ?? 0);
   if (health) {
     console.log(chalk.green(`Core running on port ${health.port}`));
   } else {

@@ -15,7 +15,7 @@ function formatUptime(seconds: number): string {
 
 export async function statusCommand(): Promise<void> {
   const config = loadConfig();
-  const health = await checkHealth(config.port);
+  const health = await checkHealth(config.port ?? 0);
   const svc = await getServiceManager();
 
   console.log();

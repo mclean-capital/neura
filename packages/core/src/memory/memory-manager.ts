@@ -5,6 +5,8 @@ import type {
   RetrievalStrategy,
   TimelineEntry,
   MemoryStats,
+  TextAdapter,
+  EmbeddingAdapter,
 } from '@neura/types';
 import { buildMemoryPrompt } from './prompt-builder.js';
 import { ExtractionPipeline } from './extraction-pipeline.js';
@@ -14,7 +16,8 @@ const log = new Logger('memory');
 
 export interface MemoryManagerOptions {
   store: DataStore;
-  googleApiKey: string;
+  textAdapter: TextAdapter;
+  embeddingAdapter: EmbeddingAdapter;
   onExtractionComplete?: () => Promise<void>;
   /** Phase 5b: retrieval strategy. Default: 'hybrid' */
   retrievalStrategy?: RetrievalStrategy;
@@ -36,8 +39,8 @@ export class MemoryManager {
     this.store = options.store;
     this.strategy = options.retrievalStrategy ?? 'hybrid';
     this.assistantName = options.assistantName;
-    this.pipeline = new ExtractionPipeline(options.googleApiKey);
-    this.reranker = new Reranker(options.googleApiKey);
+    this.pipeline = new ExtractionPipeline(options.textAdapter, options.embeddingAdapter);
+    this.reranker = new Reranker(options.textAdapter);
     this.onExtractionComplete = options.onExtractionComplete;
   }
 
@@ -222,7 +225,7 @@ export class MemoryManager {
           topics: result.sessionSummary.topics,
           keyDecisions: result.sessionSummary.keyDecisions,
           openThreads: result.sessionSummary.openThreads,
-          extractionModel: 'gemini-2.5-flash',
+          extractionModel: 'adapter-text',
           extractionCostUsd: null,
         });
       }

@@ -3,7 +3,11 @@ import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { loadConfig, getConfigValue, setConfigValue, getNeuraHome } from '../config.js';
 
-const REDACTED_KEYS = new Set(['apiKeys.xai', 'apiKeys.google', 'authToken']);
+/** Keys that should be redacted when displayed */
+function isRedactedKey(key: string): boolean {
+  // Redact any providers.*.apiKey and authToken
+  return /^providers\.\w+\.apiKey$/.test(key) || key === 'authToken';
+}
 
 /** List available wake-word classifier names from ~/.neura/models/ */
 function getAvailableWakeWords(): string[] {
@@ -25,7 +29,7 @@ export function configGetCommand(key: string): void {
     console.log(chalk.red(`Key not found: ${key}`));
     process.exit(1);
   }
-  if (REDACTED_KEYS.has(key)) {
+  if (isRedactedKey(key)) {
     console.log(value.slice(0, 8) + '...');
   } else {
     console.log(value);
@@ -33,12 +37,8 @@ export function configGetCommand(key: string): void {
 }
 
 export function configSetCommand(key: string, value: string): void {
-  // Block setting assistantName to a name without a matching .onnx
-  // classifier. Without a classifier, wake-word detection silently
-  // disables and the user only discovers the breakage next time
-  // they go to passive mode. Failing fast with the list of valid
-  // options is far better UX.
-  if (key === 'assistantName') {
+  // Block setting wakeWord to a name without a matching .onnx classifier
+  if (key === 'wakeWord' || key === 'assistantName') {
     const classifierPath = join(getNeuraHome(), 'models', `${value}.onnx`);
     if (!existsSync(classifierPath)) {
       const available = getAvailableWakeWords();
@@ -62,16 +62,45 @@ export function configListCommand(): void {
   const config = loadConfig();
   console.log();
   console.log(chalk.bold('  Configuration'));
-  console.log(`  port:              ${config.port}`);
-  console.log(`  voice:             ${config.voice}`);
+
+  // Providers
+  const providerIds = Object.keys(config.providers);
+  if (providerIds.length > 0) {
+    console.log(chalk.bold('  Providers:'));
+    for (const id of providerIds) {
+      const key = config.providers[id].apiKey;
+      const display = key ? key.slice(0, 8) + '...' : chalk.dim('(not set)');
+      console.log(`    ${id}: ${display}`);
+    }
+  } else {
+    console.log(`  providers: ${chalk.dim('(none configured)')}`);
+  }
+
+  // Routing
+  console.log(chalk.bold('  Routing:'));
+  const r = config.routing;
+  const fmtRoute = (route?: { provider: string; model: string }) =>
+    route ? `${route.provider}/${route.model}` : chalk.dim('(not configured)');
+  if (r.voice) {
+    console.log(
+      `    voice:     ${r.voice.mode === 'realtime' ? `${r.voice.provider}/${r.voice.model}` : 'pipeline'}`
+    );
+  } else {
+    console.log(`    voice:     ${chalk.dim('(not configured)')}`);
+  }
   console.log(
-    `  apiKeys.xai:       ${config.apiKeys.xai ? config.apiKeys.xai.slice(0, 8) + '...' : chalk.dim('(not set)')}`
+    `    vision:    ${r.vision ? `${fmtRoute(r.vision)} (${r.vision.mode})` : chalk.dim('(not configured)')}`
   );
+  console.log(`    text:      ${fmtRoute(r.text)}`);
   console.log(
-    `  apiKeys.google:    ${config.apiKeys.google ? config.apiKeys.google.slice(0, 8) + '...' : chalk.dim('(not set)')}`
+    `    embedding: ${r.embedding ? `${fmtRoute(r.embedding)} (${r.embedding.dimensions}d)` : chalk.dim('(not configured)')}`
   );
-  console.log(`  service.autoStart: ${config.service.autoStart}`);
-  console.log(`  service.logLevel:  ${config.service.logLevel}`);
+  console.log(`    worker:    ${fmtRoute(r.worker)}`);
+
+  // Other settings
+  if (config.port != null) console.log(`  port: ${config.port}`);
+  if (config.wakeWord) console.log(`  wakeWord: ${config.wakeWord}`);
+  if (config.assistantName) console.log(`  assistantName: ${config.assistantName}`);
   console.log();
 }
 

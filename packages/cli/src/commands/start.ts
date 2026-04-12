@@ -21,7 +21,7 @@ export async function startCommand(): Promise<void> {
   console.log('Starting core...');
   svc.start();
 
-  const health = await waitForHealthy(config.port);
+  const health = await waitForHealthy(config.port ?? 0);
   if (health) {
     console.log(chalk.green(`Core running on port ${health.port}`));
   } else {

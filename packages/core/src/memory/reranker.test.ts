@@ -1,19 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockGenerateContent = vi.fn();
-
-vi.mock('@google/genai', () => {
-  return {
-    GoogleGenAI: class MockGoogleGenAI {
-      models = {
-        generateContent: mockGenerateContent,
-      };
-    },
-  };
-});
+import type { FactEntry, TextAdapter } from '@neura/types';
 
 import { Reranker } from './reranker.js';
-import type { FactEntry } from '@neura/types';
+
+const mockChat = vi.fn();
+
+const mockTextAdapter: TextAdapter = {
+  chat: mockChat,
+  chatStream: vi.fn(),
+  chatWithTools: vi.fn(),
+  chatWithToolsStream: vi.fn(),
+  close: vi.fn(),
+};
 
 function makeFact(id: string, content: string, category = 'general'): FactEntry {
   return {
@@ -32,7 +30,7 @@ function makeFact(id: string, content: string, category = 'general'): FactEntry 
 }
 
 describe('Reranker', () => {
-  const reranker = new Reranker('test-api-key');
+  const reranker = new Reranker(mockTextAdapter);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,11 +40,11 @@ describe('Reranker', () => {
     const candidates = [makeFact('1', 'fact one'), makeFact('2', 'fact two')];
     const result = await reranker.rerank('query', candidates, 5);
     expect(result).toEqual(candidates);
-    expect(mockGenerateContent).not.toHaveBeenCalled();
+    expect(mockChat).not.toHaveBeenCalled();
   });
 
   it('reranks candidates based on LLM-provided indices', async () => {
-    mockGenerateContent.mockResolvedValue({ text: '[2, 0, 1]' });
+    mockChat.mockResolvedValue({ content: '[2, 0, 1]' });
 
     const candidates = [
       makeFact('a', 'low relevance'),
@@ -61,7 +59,7 @@ describe('Reranker', () => {
   });
 
   it('filters out-of-bounds indices', async () => {
-    mockGenerateContent.mockResolvedValue({ text: '[0, 99, -1, 1]' });
+    mockChat.mockResolvedValue({ content: '[0, 99, -1, 1]' });
 
     const candidates = [makeFact('a', 'first'), makeFact('b', 'second'), makeFact('c', 'third')];
     const result = await reranker.rerank('query', candidates, 2);
@@ -72,7 +70,7 @@ describe('Reranker', () => {
   });
 
   it('returns candidates as-is on API failure', async () => {
-    mockGenerateContent.mockRejectedValue(new Error('API error'));
+    mockChat.mockRejectedValue(new Error('API error'));
 
     const candidates = [makeFact('a', 'first'), makeFact('b', 'second'), makeFact('c', 'third')];
     const result = await reranker.rerank('query', candidates, 2);
@@ -83,7 +81,7 @@ describe('Reranker', () => {
   });
 
   it('returns candidates as-is on empty response', async () => {
-    mockGenerateContent.mockResolvedValue({ text: null });
+    mockChat.mockResolvedValue({ content: '' });
 
     const candidates = [makeFact('a', 'first'), makeFact('b', 'second'), makeFact('c', 'third')];
     const result = await reranker.rerank('query', candidates, 2);
@@ -91,7 +89,7 @@ describe('Reranker', () => {
   });
 
   it('returns candidates as-is on malformed JSON response', async () => {
-    mockGenerateContent.mockResolvedValue({ text: 'not json' });
+    mockChat.mockResolvedValue({ content: 'not json' });
 
     const candidates = [makeFact('a', 'first'), makeFact('b', 'second'), makeFact('c', 'third')];
     const result = await reranker.rerank('query', candidates, 2);
@@ -100,8 +98,8 @@ describe('Reranker', () => {
 
   it('returns candidates as-is when API call exceeds timeout', async () => {
     // Simulate a long-running API call that exceeds the 3s timeout
-    mockGenerateContent.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ text: '[2, 0, 1]' }), 10000))
+    mockChat.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ content: '[2, 0, 1]' }), 10000))
     );
 
     const candidates = [makeFact('a', 'first'), makeFact('b', 'second'), makeFact('c', 'third')];

@@ -20,6 +20,7 @@
     "chokidar": "^5.0.0",
     "express": "^4",
     "onnxruntime-node": "^1.24.3",
+    "openai": "^6.26.0",
     "ws": "^8"
   },
   "devDependencies": {

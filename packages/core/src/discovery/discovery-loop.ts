@@ -7,10 +7,9 @@
  * that's the future Execution Loop.
  */
 
-import { GoogleGenAI } from '@google/genai';
 import { Logger } from '@neura/utils/logger';
 import { IntervalTimer } from '@neura/utils';
-import type { DataStore, WorkItemEntry } from '@neura/types';
+import type { DataStore, WorkItemEntry, TextAdapter } from '@neura/types';
 
 const log = new Logger('discovery');
 
@@ -22,7 +21,7 @@ export interface DiscoveryNotification {
 
 export interface DiscoveryLoopOptions {
   store: DataStore;
-  googleApiKey: string;
+  textAdapter: TextAdapter;
   intervalMs?: number;
   onNotifications?: (summary: string, items: DiscoveryNotification[]) => void;
 }
@@ -31,7 +30,7 @@ const DEFAULT_INTERVAL_MS = 15 * 60_000;
 
 export class DiscoveryLoop {
   private readonly store: DataStore;
-  private readonly ai: GoogleGenAI;
+  private readonly textAdapter: TextAdapter;
   private readonly onNotifications?: (summary: string, items: DiscoveryNotification[]) => void;
   private readonly timer: IntervalTimer;
   private readonly intervalMs: number;
@@ -39,7 +38,7 @@ export class DiscoveryLoop {
 
   constructor(options: DiscoveryLoopOptions) {
     this.store = options.store;
-    this.ai = new GoogleGenAI({ apiKey: options.googleApiKey });
+    this.textAdapter = options.textAdapter;
     this.onNotifications = options.onNotifications;
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.timer = new IntervalTimer(() => {
@@ -93,36 +92,29 @@ export class DiscoveryLoop {
 
     log.info('items need attention', { count: needsAttention.length });
 
-    // Use Gemini Flash for a conversational summary
+    // Use text adapter for a conversational summary
     let summary: string;
     try {
       const itemList = needsAttention
         .map((a) => `- "${a.item.title}" (${a.item.priority} priority): ${a.reason}`)
         .join('\n');
 
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: [
-                  `Current time: ${now.toLocaleString()}.`,
-                  ``,
-                  `These tasks need the user's attention:`,
-                  itemList,
-                  ``,
-                  `Write a brief, conversational summary (1-2 sentences) suitable for a voice assistant to speak aloud. Focus on what's most urgent.`,
-                ].join('\n'),
-              },
-            ],
-          },
-        ],
-      });
-      summary = (response.text ?? '').trim();
+      const response = await this.textAdapter.chat([
+        {
+          role: 'user',
+          content: [
+            `Current time: ${now.toLocaleString()}.`,
+            ``,
+            `These tasks need the user's attention:`,
+            itemList,
+            ``,
+            `Write a brief, conversational summary (1-2 sentences) suitable for a voice assistant to speak aloud. Focus on what's most urgent.`,
+          ].join('\n'),
+        },
+      ]);
+      summary = (response.content ?? '').trim();
     } catch (err) {
-      log.warn('gemini summary failed, using fallback', { err: String(err) });
+      log.warn('summary generation failed, using fallback', { err: String(err) });
       summary =
         needsAttention.length === 1
           ? `Your task "${needsAttention[0].item.title}" is ${needsAttention[0].reason}.`

@@ -66,10 +66,14 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config).toEqual({
-      port: 0,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: {},
+      routing: {
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+        text: { provider: 'google', model: 'gemini-2.5-flash' },
+        embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+        worker: { provider: 'xai', model: 'grok-4-fast' },
+      },
     });
   });
 
@@ -77,10 +81,15 @@ describe('loadConfig', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
       JSON.stringify({
+        providers: { xai: { apiKey: 'xai-key-123' }, google: { apiKey: 'goog-key-456' } },
+        routing: {
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+          text: { provider: 'google', model: 'gemini-2.5-flash' },
+          embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+          worker: { provider: 'xai', model: 'grok-4-fast' },
+        },
         port: 4000,
-        voice: 'custom',
-        apiKeys: { xai: 'xai-key-123', google: 'goog-key-456' },
-        service: { autoStart: false, logLevel: 'debug' },
         pgDataPath: '/data/pgdata',
       })
     );
@@ -88,11 +97,13 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config.port).toBe(4000);
-    expect(config.voice).toBe('custom');
-    expect(config.apiKeys.xai).toBe('xai-key-123');
-    expect(config.apiKeys.google).toBe('goog-key-456');
-    expect(config.service.autoStart).toBe(false);
-    expect(config.service.logLevel).toBe('debug');
+    expect(config.providers.xai?.apiKey).toBe('xai-key-123');
+    expect(config.providers.google?.apiKey).toBe('goog-key-456');
+    expect(config.routing.voice).toEqual({
+      mode: 'realtime',
+      provider: 'xai',
+      model: 'grok-3-fast',
+    });
     expect(config.pgDataPath).toBe('/data/pgdata');
   });
 
@@ -103,11 +114,14 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config.port).toBe(5000);
-    expect(config.voice).toBe('eve');
-    expect(config.apiKeys.xai).toBe('');
-    expect(config.apiKeys.google).toBe('');
-    expect(config.service.autoStart).toBe(true);
-    expect(config.service.logLevel).toBe('info');
+    expect(config.providers).toEqual({});
+    expect(config.routing).toEqual({
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+      text: { provider: 'google', model: 'gemini-2.5-flash' },
+      embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+      worker: { provider: 'xai', model: 'grok-4-fast' },
+    });
   });
 
   it('returns defaults on malformed JSON', () => {
@@ -117,10 +131,14 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config).toEqual({
-      port: 0,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: {},
+      routing: {
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+        text: { provider: 'google', model: 'gemini-2.5-flash' },
+        embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+        worker: { provider: 'xai', model: 'grok-4-fast' },
+      },
     });
   });
 });
@@ -128,10 +146,14 @@ describe('loadConfig', () => {
 describe('saveConfig', () => {
   it('writes JSON to the correct path', () => {
     const config = {
-      port: 0,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' as string },
+      providers: {},
+      routing: {
+        voice: { mode: 'realtime' as const, provider: 'xai', model: 'grok-3-fast' },
+        vision: { mode: 'streaming' as const, provider: 'google', model: 'gemini-2.5-flash' },
+        text: { provider: 'google', model: 'gemini-2.5-flash' },
+        embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+        worker: { provider: 'xai', model: 'grok-4-fast' },
+      },
     };
 
     saveConfig(config);
@@ -147,10 +169,14 @@ describe('saveConfig', () => {
     mockedPlatform.mockReturnValue('linux');
 
     saveConfig({
-      port: 0,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: {},
+      routing: {
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+        text: { provider: 'google', model: 'gemini-2.5-flash' },
+        embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+        worker: { provider: 'xai', model: 'grok-4-fast' },
+      },
     });
 
     expect(mockedChmodSync).toHaveBeenCalledWith(expect.stringContaining('config.json'), 0o600);
@@ -160,10 +186,14 @@ describe('saveConfig', () => {
     mockedPlatform.mockReturnValue('win32');
 
     saveConfig({
-      port: 0,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: {},
+      routing: {
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+        text: { provider: 'google', model: 'gemini-2.5-flash' },
+        embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+        worker: { provider: 'xai', model: 'grok-4-fast' },
+      },
     });
 
     expect(mockedChmodSync).not.toHaveBeenCalled();
@@ -171,28 +201,37 @@ describe('saveConfig', () => {
 });
 
 describe('getConfigValue', () => {
-  it('resolves dot-notation keys (e.g., apiKeys.xai)', () => {
+  it('resolves dot-notation keys (e.g., providers.xai.apiKey)', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
       JSON.stringify({
-        port: 0,
-        voice: 'eve',
-        apiKeys: { xai: 'my-xai-key', google: '' },
-        service: { autoStart: true, logLevel: 'info' },
+        providers: { xai: { apiKey: 'my-xai-key' } },
+        routing: {
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+          text: { provider: 'google', model: 'gemini-2.5-flash' },
+          embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+          worker: { provider: 'xai', model: 'grok-4-fast' },
+        },
       })
     );
 
-    expect(getConfigValue('apiKeys.xai')).toBe('my-xai-key');
+    expect(getConfigValue('providers.xai.apiKey')).toBe('my-xai-key');
   });
 
   it('resolves top-level keys', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
       JSON.stringify({
+        providers: {},
+        routing: {
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+          text: { provider: 'google', model: 'gemini-2.5-flash' },
+          embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+          worker: { provider: 'xai', model: 'grok-4-fast' },
+        },
         port: 4000,
-        voice: 'eve',
-        apiKeys: { xai: '', google: '' },
-        service: { autoStart: true, logLevel: 'info' },
       })
     );
 
@@ -209,14 +248,18 @@ describe('getConfigValue', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
       JSON.stringify({
-        port: 0,
-        voice: 'eve',
-        apiKeys: { xai: '', google: '' },
-        service: { autoStart: true, logLevel: 'info' },
+        providers: { xai: { apiKey: 'test' } },
+        routing: {
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+          text: { provider: 'google', model: 'gemini-2.5-flash' },
+          embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+          worker: { provider: 'xai', model: 'grok-4-fast' },
+        },
       })
     );
 
-    expect(getConfigValue('apiKeys.openai')).toBeUndefined();
+    expect(getConfigValue('providers.openai.apiKey')).toBeUndefined();
   });
 });
 
@@ -226,34 +269,38 @@ describe('setConfigValue', () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReadFileSync.mockReturnValue(
       JSON.stringify({
-        port: 0,
-        voice: 'eve',
-        apiKeys: { xai: '', google: '' },
-        service: { autoStart: true, logLevel: 'info' },
+        providers: { xai: { apiKey: '' }, google: { apiKey: '' } },
+        routing: {
+          voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+          vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+          text: { provider: 'google', model: 'gemini-2.5-flash' },
+          embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+          worker: { provider: 'xai', model: 'grok-4-fast' },
+        },
       })
     );
   });
 
   it('sets nested keys correctly', () => {
-    setConfigValue('apiKeys.xai', 'new-key-value');
+    setConfigValue('providers.xai.apiKey', 'new-key-value');
 
     expect(mockedWriteFileSync).toHaveBeenCalledOnce();
     const written = JSON.parse(String(mockedWriteFileSync.mock.calls[0][1]));
-    expect(written.apiKeys.xai).toBe('new-key-value');
+    expect(written.providers.xai.apiKey).toBe('new-key-value');
   });
 
   it('coerces "true" to boolean true', () => {
-    setConfigValue('service.autoStart', 'true');
+    setConfigValue('autoUpdate', 'true');
 
     const written = JSON.parse(String(mockedWriteFileSync.mock.calls[0][1]));
-    expect(written.service.autoStart).toBe(true);
+    expect(written.autoUpdate).toBe(true);
   });
 
   it('coerces "false" to boolean false', () => {
-    setConfigValue('service.autoStart', 'false');
+    setConfigValue('autoUpdate', 'false');
 
     const written = JSON.parse(String(mockedWriteFileSync.mock.calls[0][1]));
-    expect(written.service.autoStart).toBe(false);
+    expect(written.autoUpdate).toBe(false);
   });
 
   it('coerces "3002" to number', () => {
@@ -264,10 +311,10 @@ describe('setConfigValue', () => {
   });
 
   it('keeps non-numeric, non-boolean strings as strings', () => {
-    setConfigValue('voice', 'custom-voice');
+    setConfigValue('assistantName', 'jarvis');
 
     const written = JSON.parse(String(mockedWriteFileSync.mock.calls[0][1]));
-    expect(written.voice).toBe('custom-voice');
+    expect(written.assistantName).toBe('jarvis');
   });
 
   it('creates intermediate objects for new nested paths', () => {

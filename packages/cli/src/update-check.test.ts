@@ -17,7 +17,17 @@ vi.mock('os', () => ({
 }));
 
 vi.mock('./config.js', () => ({
-  loadConfig: vi.fn(() => ({ autoUpdate: true })),
+  loadConfig: vi.fn(() => ({
+    providers: {},
+    routing: {
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+      text: { provider: 'google', model: 'gemini-2.5-flash' },
+      embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+      worker: { provider: 'xai', model: 'grok-4-fast' },
+    },
+    autoUpdate: true,
+  })),
   getNeuraHome: vi.fn(() => '/home/testuser/.neura'),
 }));
 
@@ -39,10 +49,14 @@ const mockedLoadConfig = vi.mocked(loadConfig);
 beforeEach(() => {
   vi.clearAllMocks();
   mockedLoadConfig.mockReturnValue({
-    port: 0,
-    voice: 'eve',
-    apiKeys: { xai: '', google: '' },
-    service: { autoStart: true, logLevel: 'info' },
+    providers: {},
+    routing: {
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+      text: { provider: 'google', model: 'gemini-2.5-flash' },
+      embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+      worker: { provider: 'xai', model: 'grok-4-fast' },
+    },
     autoUpdate: true,
   });
 });
@@ -150,10 +164,14 @@ describe('checkForUpdateInBackground', () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     mockedLoadConfig.mockReturnValue({
-      port: 0,
-      voice: 'eve',
-      apiKeys: { xai: '', google: '' },
-      service: { autoStart: true, logLevel: 'info' },
+      providers: {},
+      routing: {
+        voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+        vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+        text: { provider: 'google', model: 'gemini-2.5-flash' },
+        embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+        worker: { provider: 'xai', model: 'grok-4-fast' },
+      },
       autoUpdate: false,
     });
 

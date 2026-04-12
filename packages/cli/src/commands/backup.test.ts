@@ -2,7 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { backupCommand, restoreCommand } from './backup.js';
 
 vi.mock('../config.js', () => ({
-  loadConfig: vi.fn(() => ({ port: 3002 })),
+  loadConfig: vi.fn(() => ({
+    providers: {},
+    routing: {
+      voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+      vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+      text: { provider: 'google', model: 'gemini-2.5-flash' },
+      embedding: { provider: 'google', model: 'gemini-embedding-2-preview', dimensions: 3072 },
+      worker: { provider: 'xai', model: 'grok-4-fast' },
+    },
+    port: 3002,
+  })),
 }));
 
 vi.mock('../health.js', () => ({

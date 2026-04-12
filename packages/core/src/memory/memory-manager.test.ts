@@ -1,22 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// Mock @google/genai before importing memory-manager (which imports memory-extractor)
-const mockGenerateContent = vi.fn();
-const mockEmbedContent = vi.fn();
-
-vi.mock('@google/genai', () => {
-  return {
-    GoogleGenAI: class MockGoogleGenAI {
-      models = {
-        generateContent: mockGenerateContent,
-        embedContent: mockEmbedContent,
-      };
-    },
-  };
-});
-
+import type { TextAdapter, EmbeddingAdapter } from '@neura/types';
 import { PgliteStore } from '../stores/pglite-store.js';
 import { MemoryManager } from './memory-manager.js';
+
+const mockChat = vi.fn();
+const mockEmbed = vi.fn();
+
+const mockTextAdapter: TextAdapter = {
+  chat: mockChat,
+  chatStream: vi.fn(),
+  chatWithTools: vi.fn(),
+  chatWithToolsStream: vi.fn(),
+  close: vi.fn(),
+};
+
+const mockEmbeddingAdapter: EmbeddingAdapter = {
+  embed: mockEmbed,
+  dimensions: () => 3072,
+  close: vi.fn(),
+};
 
 let store: PgliteStore;
 
@@ -25,9 +27,7 @@ beforeEach(async () => {
   store = await PgliteStore.create(); // in-memory
 
   // Default: embedding returns 3072-dim vector
-  mockEmbedContent.mockResolvedValue({
-    embeddings: [{ values: new Array(3072).fill(0.1) }],
-  });
+  mockEmbed.mockResolvedValue([new Array(3072).fill(0.1)]);
 });
 
 afterEach(async () => {
@@ -37,7 +37,11 @@ afterEach(async () => {
 describe('MemoryManager', () => {
   describe('buildSystemPrompt', () => {
     it('returns a non-empty prompt with identity', async () => {
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       const prompt = await manager.buildSystemPrompt();
 
       expect(prompt).toContain('Neura');
@@ -49,7 +53,11 @@ describe('MemoryManager', () => {
       await store.upsertUserProfile('name', 'Don', 0.9);
       await store.upsertFact('User likes TypeScript', 'technical', []);
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       const prompt = await manager.buildSystemPrompt();
 
       expect(prompt).toContain('Don');
@@ -59,11 +67,15 @@ describe('MemoryManager', () => {
 
   describe('storeFact', () => {
     it('generates embedding and persists fact', async () => {
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       const id = await manager.storeFact('User lives in Seattle', 'personal', ['location']);
 
       expect(id).toBeTruthy();
-      expect(mockEmbedContent).toHaveBeenCalledOnce();
+      expect(mockEmbed).toHaveBeenCalledOnce();
 
       const facts = await store.getFacts();
       expect(facts).toHaveLength(1);
@@ -71,9 +83,13 @@ describe('MemoryManager', () => {
     });
 
     it('stores fact even if embedding fails', async () => {
-      mockEmbedContent.mockRejectedValue(new Error('API down'));
+      mockEmbed.mockRejectedValue(new Error('API down'));
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       const id = await manager.storeFact('Important fact', 'general', []);
 
       expect(id).toBeTruthy();
@@ -94,7 +110,11 @@ describe('MemoryManager', () => {
         new Array(3072).fill(0.5)
       );
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       const results = await manager.recall('dark theme');
 
       expect(results.length).toBeGreaterThanOrEqual(1);
@@ -102,11 +122,15 @@ describe('MemoryManager', () => {
     });
 
     it('falls back to text search if embedding fails', async () => {
-      mockEmbedContent.mockRejectedValue(new Error('API down'));
+      mockEmbed.mockRejectedValue(new Error('API down'));
 
       await store.upsertFact('User lives in Seattle', 'personal', []);
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       const results = await manager.recall('Seattle');
 
       expect(results).toHaveLength(1);
@@ -116,7 +140,11 @@ describe('MemoryManager', () => {
 
   describe('storePreference', () => {
     it('stores a preference', async () => {
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       await manager.storePreference('Be more concise', 'response_style');
 
       const prefs = await store.getPreferences();
@@ -131,11 +159,15 @@ describe('MemoryManager', () => {
       await store.appendTranscript(sessionId, 'user', 'Hello');
       await store.appendTranscript(sessionId, 'assistant', 'Hi');
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       await manager.queueExtraction(sessionId);
 
       // No extraction record should be created
-      expect(mockGenerateContent).not.toHaveBeenCalled();
+      expect(mockChat).not.toHaveBeenCalled();
     });
 
     it('extracts and stores data from sufficient transcript', async () => {
@@ -147,8 +179,8 @@ describe('MemoryManager', () => {
       await store.appendTranscript(sessionId, 'user', 'I prefer concise responses');
       await store.appendTranscript(sessionId, 'assistant', 'Got it, I will be concise.');
 
-      mockGenerateContent.mockResolvedValue({
-        text: JSON.stringify({
+      mockChat.mockResolvedValue({
+        content: JSON.stringify({
           facts: [{ content: 'User lives in Seattle', category: 'personal', tags: ['location'] }],
           preferences: [{ preference: 'Be concise', category: 'response_style' }],
           userProfile: [{ field: 'name', value: 'Don' }],
@@ -162,7 +194,11 @@ describe('MemoryManager', () => {
         }),
       });
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       await manager.queueExtraction(sessionId);
 
       // Verify extracted data was stored
@@ -186,9 +222,13 @@ describe('MemoryManager', () => {
         await store.appendTranscript(sessionId, i % 2 === 0 ? 'user' : 'assistant', `msg ${i}`);
       }
 
-      mockGenerateContent.mockRejectedValue(new Error('API rate limit'));
+      mockChat.mockRejectedValue(new Error('API rate limit'));
 
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
 
       // Should not throw
       await expect(manager.queueExtraction(sessionId)).resolves.not.toThrow();
@@ -197,7 +237,11 @@ describe('MemoryManager', () => {
 
   describe('close', () => {
     it('resolves when no pending extractions', async () => {
-      const manager = new MemoryManager({ store, googleApiKey: 'test-key' });
+      const manager = new MemoryManager({
+        store,
+        textAdapter: mockTextAdapter,
+        embeddingAdapter: mockEmbeddingAdapter,
+      });
       await expect(manager.close()).resolves.not.toThrow();
     });
   });

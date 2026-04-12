@@ -1,22 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { TranscriptEntry, MemoryContext } from '@neura/types';
-
-// Mock @google/genai
-const mockGenerateContent = vi.fn();
-const mockEmbedContent = vi.fn();
-
-vi.mock('@google/genai', () => {
-  return {
-    GoogleGenAI: class MockGoogleGenAI {
-      models = {
-        generateContent: mockGenerateContent,
-        embedContent: mockEmbedContent,
-      };
-    },
-  };
-});
+import type { TranscriptEntry, MemoryContext, TextAdapter, EmbeddingAdapter } from '@neura/types';
 
 import { ExtractionPipeline } from './extraction-pipeline.js';
+
+const mockChat = vi.fn();
+const mockEmbed = vi.fn();
+
+const mockTextAdapter: TextAdapter = {
+  chat: mockChat,
+  chatStream: vi.fn(),
+  chatWithTools: vi.fn(),
+  chatWithToolsStream: vi.fn(),
+  close: vi.fn(),
+};
+
+const mockEmbeddingAdapter: EmbeddingAdapter = {
+  embed: mockEmbed,
+  dimensions: () => 3072,
+  close: vi.fn(),
+};
 
 const emptyContext: MemoryContext = {
   identity: [],
@@ -64,21 +66,19 @@ beforeEach(() => {
 describe('ExtractionPipeline', () => {
   describe('extract', () => {
     it('returns null for short transcripts', async () => {
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const result = await pipeline.extract(makeTranscript(3), emptyContext);
       expect(result).toBeNull();
-      expect(mockGenerateContent).not.toHaveBeenCalled();
+      expect(mockChat).not.toHaveBeenCalled();
     });
 
     it('extracts structured data from transcript', async () => {
-      mockGenerateContent.mockResolvedValue({
-        text: JSON.stringify(sampleExtraction),
+      mockChat.mockResolvedValue({
+        content: JSON.stringify(sampleExtraction),
       });
-      mockEmbedContent.mockResolvedValue({
-        embeddings: [{ values: new Array(3072).fill(0.1) }],
-      });
+      mockEmbed.mockResolvedValue([new Array(3072).fill(0.1)]);
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const output = await pipeline.extract(makeTranscript(6), emptyContext);
 
       expect(output).not.toBeNull();
@@ -90,58 +90,56 @@ describe('ExtractionPipeline', () => {
     });
 
     it('generates embeddings for each extracted fact', async () => {
-      mockGenerateContent.mockResolvedValue({
-        text: JSON.stringify(sampleExtraction),
+      mockChat.mockResolvedValue({
+        content: JSON.stringify(sampleExtraction),
       });
-      mockEmbedContent.mockResolvedValue({
-        embeddings: [{ values: new Array(3072).fill(0.5) }],
-      });
+      mockEmbed.mockResolvedValue([new Array(3072).fill(0.5)]);
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const output = await pipeline.extract(makeTranscript(6), emptyContext);
 
       expect(output!.factEmbeddings).toHaveLength(2);
       expect(output!.factEmbeddings[0]).toHaveLength(3072);
       // 2 fact embeddings + 3 overlapping transcript chunks (6 entries, step=2: [0,1,2] [2,3,4] [4,5])
-      expect(mockEmbedContent).toHaveBeenCalledTimes(5);
+      expect(mockEmbed).toHaveBeenCalledTimes(5);
     });
 
     it('handles malformed JSON response gracefully', async () => {
-      mockGenerateContent.mockResolvedValue({
-        text: 'not valid json {{{',
+      mockChat.mockResolvedValue({
+        content: 'not valid json {{{',
       });
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const output = await pipeline.extract(makeTranscript(6), emptyContext);
 
       expect(output).toBeNull();
     });
 
     it('handles API failure gracefully', async () => {
-      mockGenerateContent.mockRejectedValue(new Error('API rate limit'));
+      mockChat.mockRejectedValue(new Error('API rate limit'));
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const output = await pipeline.extract(makeTranscript(6), emptyContext);
 
       expect(output).toBeNull();
     });
 
     it('handles empty response text as failure', async () => {
-      mockGenerateContent.mockResolvedValue({ text: null });
+      mockChat.mockResolvedValue({ content: '' });
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const output = await pipeline.extract(makeTranscript(6), emptyContext);
 
       expect(output).toBeNull();
     });
 
     it('handles embedding failure without blocking extraction', async () => {
-      mockGenerateContent.mockResolvedValue({
-        text: JSON.stringify(sampleExtraction),
+      mockChat.mockResolvedValue({
+        content: JSON.stringify(sampleExtraction),
       });
-      mockEmbedContent.mockRejectedValue(new Error('embedding API down'));
+      mockEmbed.mockRejectedValue(new Error('embedding API down'));
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const output = await pipeline.extract(makeTranscript(6), emptyContext);
 
       expect(output!.result.facts).toHaveLength(2);
@@ -151,8 +149,8 @@ describe('ExtractionPipeline', () => {
     });
 
     it('includes existing context for deduplication', async () => {
-      mockGenerateContent.mockResolvedValue({
-        text: JSON.stringify({ ...sampleExtraction, facts: [] }),
+      mockChat.mockResolvedValue({
+        content: JSON.stringify({ ...sampleExtraction, facts: [] }),
       });
 
       const contextWithFacts: MemoryContext = {
@@ -174,41 +172,30 @@ describe('ExtractionPipeline', () => {
         ],
       };
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       await pipeline.extract(makeTranscript(6), contextWithFacts);
 
-      const call = mockGenerateContent.mock.calls[0][0];
-      expect(call.contents).toContain('User lives in Seattle');
+      // Check that the user message contains existing context
+      const call = mockChat.mock.calls[0][0];
+      const userMsg = call.find((m: { role: string }) => m.role === 'user');
+      expect(userMsg.content).toContain('User lives in Seattle');
     });
   });
 
   describe('generateEmbedding', () => {
-    it('returns 3072-dim vector on success', async () => {
-      mockEmbedContent.mockResolvedValue({
-        embeddings: [{ values: new Array(3072).fill(0.1) }],
-      });
+    it('returns embedding vector on success', async () => {
+      mockEmbed.mockResolvedValue([new Array(3072).fill(0.1)]);
 
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const embedding = await pipeline.generateEmbedding('test text');
 
       expect(embedding).toHaveLength(3072);
     });
 
     it('returns null on failure', async () => {
-      mockEmbedContent.mockRejectedValue(new Error('API error'));
+      mockEmbed.mockRejectedValue(new Error('API error'));
 
-      const pipeline = new ExtractionPipeline('test-key');
-      const embedding = await pipeline.generateEmbedding('test text');
-
-      expect(embedding).toBeNull();
-    });
-
-    it('returns null for unexpected dimensions', async () => {
-      mockEmbedContent.mockResolvedValue({
-        embeddings: [{ values: new Array(768).fill(0.1) }],
-      });
-
-      const pipeline = new ExtractionPipeline('test-key');
+      const pipeline = new ExtractionPipeline(mockTextAdapter, mockEmbeddingAdapter);
       const embedding = await pipeline.generateEmbedding('test text');
 
       expect(embedding).toBeNull();

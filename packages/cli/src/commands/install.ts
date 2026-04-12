@@ -79,7 +79,8 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
 
   // Check if already installed (skip if port not yet assigned)
   const currentConfig = loadConfig();
-  const existing = currentConfig.port > 0 ? await checkHealth(currentConfig.port) : null;
+  const existing =
+    (currentConfig.port ?? 0) > 0 ? await checkHealth(currentConfig.port ?? 0) : null;
   if (existing) {
     console.log(chalk.green('  Core is already running on port ' + existing.port));
     if (!nonInteractive) {
@@ -137,29 +138,29 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
   // API keys — in --yes mode, reuse whatever is already in config.json.
   // The user already entered these on a previous install; the update
   // flow should not re-prompt for them.
-  let xaiKey = config.apiKeys.xai;
-  let googleKey = config.apiKeys.google;
+  let xaiKey = config.providers?.xai?.apiKey ?? '';
+  let googleKey = config.providers?.google?.apiKey ?? '';
   if (!nonInteractive) {
     console.log(chalk.dim('  API Keys'));
     xaiKey =
       (await password({
-        message: `XAI_API_KEY${config.apiKeys.xai ? ' (press Enter to keep existing)' : ''}:`,
+        message: `XAI_API_KEY${xaiKey ? ' (press Enter to keep existing)' : ''}:`,
         mask: '*',
-      })) || config.apiKeys.xai;
+      })) || xaiKey;
     googleKey =
       (await password({
-        message: `GOOGLE_API_KEY${config.apiKeys.google ? ' (press Enter to keep existing)' : ''}:`,
+        message: `GOOGLE_API_KEY${googleKey ? ' (press Enter to keep existing)' : ''}:`,
         mask: '*',
-      })) || config.apiKeys.google;
+      })) || googleKey;
   }
 
   // Port — auto-assign unless user already has one configured
   console.log();
   console.log(chalk.dim('  Port'));
   let port: number;
-  if (config.port > 0) {
+  if ((config.port ?? 0) > 0) {
     // User has a previously configured port — keep it
-    port = config.port;
+    port = config.port!;
     console.log(`  Using configured port: ${port}`);
   } else {
     // Auto-assign a free port in the 18000-19000 range
@@ -184,11 +185,15 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
   }
 
   // Voice
+  const currentVoice =
+    config.routing?.voice?.mode === 'realtime'
+      ? ((config.routing.voice as { voice?: string }).voice ?? 'eve')
+      : 'eve';
   const voice = nonInteractive
-    ? config.voice
+    ? currentVoice
     : await input({
         message: 'Voice:',
-        default: config.voice,
+        default: currentVoice,
       });
 
   // Generate auth token if not already set
@@ -196,11 +201,14 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
     config.authToken = generateAuthToken();
   }
 
-  // Save config
-  config.apiKeys.xai = xaiKey;
-  config.apiKeys.google = googleKey;
+  // Save config in v3 format
+  if (!config.providers) config.providers = {};
+  if (xaiKey) config.providers.xai = { apiKey: xaiKey };
+  if (googleKey) config.providers.google = { apiKey: googleKey };
   config.port = port;
-  config.voice = voice;
+  if (config.routing?.voice?.mode === 'realtime') {
+    (config.routing.voice as unknown as Record<string, unknown>).voice = voice;
+  }
   saveConfig(config);
 
   console.log();
@@ -283,7 +291,7 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
   // Wait for health (only if service was started)
   if (serviceRegistered) {
     console.log(chalk.dim('  Starting core...'));
-    const health = await waitForHealthy(config.port);
+    const health = await waitForHealthy(config.port ?? 0);
     if (health) {
       console.log(chalk.green(`  ✓ Core running on ws://localhost:${health.port}`));
       console.log(chalk.green('  ✓ Health check: ok'));

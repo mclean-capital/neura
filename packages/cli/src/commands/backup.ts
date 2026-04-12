@@ -9,7 +9,7 @@ function authHeaders(token?: string): Record<string, string> {
 
 export async function backupCommand(): Promise<void> {
   const config = loadConfig();
-  const health = await checkHealth(config.port);
+  const health = await checkHealth(config.port ?? 0);
 
   if (!health) {
     console.log(chalk.red('Core is not running. Start it with: neura start'));
@@ -40,7 +40,7 @@ export async function backupCommand(): Promise<void> {
 
 export async function restoreCommand(options: { force?: boolean }): Promise<void> {
   const config = loadConfig();
-  const health = await checkHealth(config.port);
+  const health = await checkHealth(config.port ?? 0);
 
   if (!health) {
     console.log(chalk.red('Core is not running. Start it with: neura start'));

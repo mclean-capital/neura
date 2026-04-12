@@ -6,12 +6,18 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     'wizard:save-config',
-    (
-      _event: Electron.IpcMainInvokeEvent,
-      config: { xaiApiKey: string; googleApiKey: string; voice: string }
-    ) => {
-      store.setApiKeys(config.xaiApiKey, config.googleApiKey);
-      store.setVoice(config.voice);
+    (_event: Electron.IpcMainInvokeEvent, config: Record<string, unknown>) => {
+      // Extract API keys from v3 config format
+      const providers = config.providers as Record<string, { apiKey?: string }> | undefined;
+      const xaiKey = providers?.xai?.apiKey ?? '';
+      const googleKey = providers?.google?.apiKey ?? '';
+      store.setApiKeys(xaiKey, googleKey);
+
+      // Extract voice from routing
+      const routing = config.routing as Record<string, unknown> | undefined;
+      const voice = routing?.voice as { voice?: string } | undefined;
+      if (voice?.voice) store.setVoice(voice.voice);
+
       store.setSetupComplete(true);
       return { success: true };
     }

@@ -6,7 +6,7 @@ import { checkHealth } from '../health.js';
 
 export async function openCommand(): Promise<void> {
   const config = loadConfig();
-  const health = await checkHealth(config.port);
+  const health = await checkHealth(config.port ?? 3002);
 
   if (!health) {
     console.log(chalk.red('Core is not running. Start it with: neura start'));

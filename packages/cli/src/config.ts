@@ -7,10 +7,18 @@ import type { NeuraConfigFile } from '@neura/types';
 export type { NeuraConfigFile };
 
 const DEFAULT_CONFIG: NeuraConfigFile = {
-  port: 0, // 0 = not yet assigned; neura install will auto-assign
-  voice: 'eve',
-  apiKeys: { xai: '', google: '' },
-  service: { autoStart: true, logLevel: 'info' },
+  providers: {},
+  routing: {
+    voice: { mode: 'realtime', provider: 'xai', model: 'grok-3-fast' },
+    vision: { mode: 'streaming', provider: 'google', model: 'gemini-2.5-flash' },
+    text: { provider: 'google', model: 'gemini-2.5-flash' },
+    embedding: {
+      provider: 'google',
+      model: 'gemini-embedding-2-preview',
+      dimensions: 3072,
+    },
+    worker: { provider: 'xai', model: 'grok-4-fast' },
+  },
 };
 
 export function getNeuraHome(): string {
@@ -36,27 +44,24 @@ export function ensureNeuraHome(): void {
 
 export function loadConfig(): NeuraConfigFile {
   const configPath = getConfigPath();
-  if (!existsSync(configPath)) return { ...DEFAULT_CONFIG };
+  if (!existsSync(configPath)) return structuredClone(DEFAULT_CONFIG);
 
   try {
     const raw = JSON.parse(readFileSync(configPath, 'utf-8')) as Partial<NeuraConfigFile>;
     return {
-      port: raw.port ?? DEFAULT_CONFIG.port,
-      voice: raw.voice ?? DEFAULT_CONFIG.voice,
-      apiKeys: {
-        xai: raw.apiKeys?.xai ?? '',
-        google: raw.apiKeys?.google ?? '',
-      },
-      service: {
-        autoStart: raw.service?.autoStart ?? true,
-        logLevel: raw.service?.logLevel ?? 'info',
-      },
+      providers: raw.providers ?? DEFAULT_CONFIG.providers,
+      routing: raw.routing ?? DEFAULT_CONFIG.routing,
+      assistantName: raw.assistantName,
+      wakeWord: raw.wakeWord,
+      port: raw.port,
       pgDataPath: raw.pgDataPath,
       autoUpdate: raw.autoUpdate,
       authToken: process.env.NEURA_AUTH_TOKEN ?? raw.authToken,
+      retrievalStrategy: raw.retrievalStrategy,
+      memoryTiers: raw.memoryTiers,
     };
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return structuredClone(DEFAULT_CONFIG);
   }
 }
 
