@@ -280,17 +280,42 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         send({ type: 'sessionClosed' });
       },
       onReady() {
-        // Grok session is configured — seed the wake transcript if available
+        // Grok session is configured — replay the buffered audio in
+        // chronological order:
+        //
+        //   1. pendingWakeAudio   = the ~2.4s of audio BEFORE the wake
+        //                           detector fired (rolling replay
+        //                           buffer inside OnnxWakeDetector).
+        //                           Contains "Hey Jarvis" and whatever
+        //                           ambient context preceded it.
+        //   2. pendingActivationAudio = audio frames that arrived AFTER
+        //                               the wake fired but BEFORE this
+        //                               onReady callback — the rest of
+        //                               the user's initial utterance
+        //                               ("how's it going?") captured
+        //                               during the async activation
+        //                               window. Without this replay
+        //                               Grok only hears the wake word
+        //                               itself and has nothing to
+        //                               respond to.
+        //   3. pendingText         = any text messages that also
+        //                            arrived during activation.
+        //
+        // All three get drained into the session in order.
         if (pendingWakeAudio) {
           const chunks = pendingWakeAudio;
           pendingWakeAudio = null;
-          // Replay buffered audio so Grok hears the original wake speech
           for (const chunk of chunks) {
             session?.sendAudio(chunk);
           }
         }
-        // Replay any text messages that arrived during the async activation
-        // window (before the Grok session was ready to receive them).
+        if (pendingActivationAudio.length > 0) {
+          const chunks = pendingActivationAudio;
+          pendingActivationAudio = [];
+          for (const chunk of chunks) {
+            session?.sendAudio(chunk);
+          }
+        }
         if (pendingText.length > 0) {
           const texts = pendingText;
           pendingText = [];
@@ -325,6 +350,17 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     // asynchronously activated (between presence.state=active and
     // session.connect() completing). Replayed in onReady().
     let pendingText: string[] = [];
+    // Audio frames that arrived while the voice session was still being
+    // asynchronously activated. The user keeps talking after the wake
+    // word fires ("Hey Jarvis, how's it going?"), and those audio frames
+    // need to reach Grok when it comes up — otherwise Grok only hears
+    // the pre-wake replay ("Hey Jarvis") and has nothing to respond to.
+    // Capped to prevent unbounded growth if the session never becomes
+    // ready (e.g. Grok API is down). 100 frames ≈ 20s of audio at the
+    // 200ms/chunk cadence the client sends, which is far longer than a
+    // normal activation window (typically 200-1000ms).
+    let pendingActivationAudio: string[] = [];
+    const MAX_PENDING_ACTIVATION_AUDIO = 100;
 
     async function activateVoiceSession(wakeTranscript: string) {
       if (connectionClosed || session) return;
@@ -394,6 +430,7 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     function deactivateVoiceSession() {
       log.info('deactivating voice session');
       pendingWakeAudio = null;
+      pendingActivationAudio = [];
       pendingText = [];
       costTracker.stopInterval();
       triggerExtraction();
@@ -475,12 +512,31 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         const msg = JSON.parse(raw.toString()) as ClientMessage;
         switch (msg.type) {
           case 'audio':
-            if (presence.state === 'active' && session) {
-              // Active: forward audio to Grok
-              resetIdleTimer();
-              presence.resetIdleTimer();
-              extractionTriggered = false;
-              session.sendAudio(msg.data);
+            if (presence.state === 'active') {
+              if (session) {
+                // Active + session ready: forward audio to Grok directly.
+                resetIdleTimer();
+                presence.resetIdleTimer();
+                extractionTriggered = false;
+                session.sendAudio(msg.data);
+              } else {
+                // Active but session is still asynchronously activating
+                // (memory prompt build + Grok WebSocket connect). The
+                // user's continued speech after the wake word — e.g. the
+                // "how's it going?" in "Hey Jarvis, how's it going?" —
+                // arrives during this window and would otherwise be
+                // silently dropped. Buffer it so onReady() can replay
+                // it after the pre-wake audio, preserving the full
+                // utterance from the user's point of view.
+                //
+                // Capped to avoid unbounded growth if activation hangs;
+                // when we hit the cap we drop OLDEST frames so the tail
+                // (what the user most recently said) stays intact.
+                pendingActivationAudio.push(msg.data);
+                if (pendingActivationAudio.length > MAX_PENDING_ACTIVATION_AUDIO) {
+                  pendingActivationAudio.shift();
+                }
+              }
             } else if (presence.state === 'passive') {
               if (wakeDetector) {
                 wakeDetector.feedAudio(msg.data);
