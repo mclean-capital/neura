@@ -1,3 +1,9 @@
+## [2.2.2](https://github.com/mclean-capital/neura/compare/v2.2.1...v2.2.2) (2026-04-12)
+
+### Bug Fixes
+
+- **cli:** validate assistantName against available classifiers and show available wake words ([4970b24](https://github.com/mclean-capital/neura/commit/4970b2446ad3ceb30ed1b8a080da75ec595315f4))
+
 ## [2.2.1](https://github.com/mclean-capital/neura/compare/v2.2.0...v2.2.1) (2026-04-12)
 
 ### Bug Fixes
