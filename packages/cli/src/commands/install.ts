@@ -1,5 +1,7 @@
 import { input, password, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { join } from 'path';
 import {
   ensureNeuraHome,
   loadConfig,
@@ -10,8 +12,46 @@ import {
 import { getServiceManager } from '../service/manager.js';
 import { getPlatformLabel } from '../service/detect.js';
 import { checkHealth, waitForHealthy } from '../health.js';
-import { hasCoreBinary } from '../download.js';
+import { hasCoreBinary, getBundledModelsDir } from '../download.js';
 import { findFreePort } from '../port.js';
+
+/**
+ * Copy any ONNX wake-word models shipped inside the CLI package into
+ * `$NEURA_HOME/models/`, but NEVER overwrite files that already exist.
+ *
+ * Why "never overwrite": users who train their own classifiers with
+ * `tools/wake-word/scripts/train.sh` deploy them to the same directory
+ * via `deploy.sh`. Overwriting on every `neura install` would clobber
+ * their trained models on each upgrade. First-write-wins means the
+ * bundled defaults only fill in gaps — once a user has their own
+ * `jarvis.onnx` in place, the bundled one stops being used.
+ *
+ * Returns the list of files actually copied so the caller can print a
+ * one-line summary to the user.
+ */
+function installBundledModels(neuraHome: string): string[] {
+  const src = getBundledModelsDir();
+  if (!existsSync(src)) return []; // Running from dev / unusual layout
+
+  const dest = join(neuraHome, 'models');
+  mkdirSync(dest, { recursive: true });
+
+  const copied: string[] = [];
+  try {
+    for (const entry of readdirSync(src)) {
+      if (!entry.endsWith('.onnx')) continue;
+      const destPath = join(dest, entry);
+      if (existsSync(destPath)) continue; // Keep user-trained models
+      copyFileSync(join(src, entry), destPath);
+      copied.push(entry);
+    }
+  } catch {
+    // Non-fatal: failing to seed the bundled models shouldn't block the
+    // whole install. The core will print a clear warning at connection
+    // time if models are missing, and the user can copy them manually.
+  }
+  return copied;
+}
 
 export interface InstallOptions {
   /**
@@ -55,6 +95,17 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
   // Ensure directory structure
   ensureNeuraHome();
   const config = loadConfig();
+
+  // Seed the wake-word models if they aren't already installed. This
+  // runs every `neura install` but is a no-op after the first one —
+  // existing files are never overwritten, so user-trained classifiers
+  // take priority. Prints a one-line summary if anything was copied.
+  const seededModels = installBundledModels(home);
+  if (seededModels.length > 0) {
+    console.log();
+    console.log(chalk.dim('  Wake word models'));
+    console.log(chalk.green(`  ✓ Installed ${seededModels.length} model(s) to ${home}/models/`));
+  }
 
   // API keys — in --yes mode, reuse whatever is already in config.json.
   // The user already entered these on a previous install; the update
@@ -228,3 +279,8 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
   }
   console.log();
 }
+
+// Exported for tests only.
+export const __test__ = {
+  installBundledModels,
+};

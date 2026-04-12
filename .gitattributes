@@ -1,0 +1,6 @@
+# ONNX wake-word models are binary — don't try to line-ending-convert,
+# diff, or merge them. They're small enough (~3MB total) that we ship
+# them committed rather than downloaded at install time so fresh
+# `npm install -g @mclean-capital/neura` users get working wake detection
+# out of the box.
+*.onnx binary
