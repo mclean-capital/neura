@@ -1,3 +1,9 @@
+# [3.1.0](https://github.com/mclean-capital/neura/compare/v3.0.0...v3.1.0) (2026-04-13)
+
+### Features
+
+- **core:** add ONNX native → WASM fallback for intel mac wake word support ([37fcf01](https://github.com/mclean-capital/neura/commit/37fcf01270b86996d0dc9738d491da2afdadee4b))
+
 # [3.0.0](https://github.com/mclean-capital/neura/compare/v2.4.2...v3.0.0) (2026-04-12)
 
 ### Bug Fixes
