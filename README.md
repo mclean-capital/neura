@@ -41,21 +41,20 @@ Mic audio → Grok (Eve voice)
 
 ### Supported platforms
 
-| Platform                            | Supported |
-| ----------------------------------- | :-------: |
-| macOS — Apple Silicon (M1/M2/M3/M4) |    Yes    |
-| macOS — Intel (x64)                 |  **No**   |
-| Windows — x64 / arm64               |    Yes    |
-| Linux — x64 / arm64                 |    Yes    |
+| Platform                            | Supported | Wake-word backend |
+| ----------------------------------- | :-------: | :---------------: |
+| macOS — Apple Silicon (M1/M2/M3/M4) |    Yes    |   Native (CPU)    |
+| macOS — Intel (x64)                 |    Yes    | WASM (automatic)  |
+| Windows — x64 / arm64               |    Yes    |   Native (CPU)    |
+| Linux — x64 / arm64                 |    Yes    |   Native (CPU)    |
 
-**Intel Macs are not supported.** Neura's wake-word detector runs on
-`onnxruntime-node`, and upstream dropped Intel Mac (darwin/x64) binaries
-starting with version 1.24. Because voice is a required feature — not an
-optional one — the `npm install -g` will fail loudly on Intel Mac rather
-than silently disabling wake-word. If you're on Intel Mac and want to try
-Neura anyway, your options are to run it on a supported platform (any
-recent Mac, Windows, or Linux box) or to self-build against an older
-onnxruntime-node.
+Neura's wake-word detector uses `onnxruntime-node` for native CPU
+inference where available (~5-20 ms). On platforms without native binaries
+(Intel Macs — upstream dropped darwin/x64 in onnxruntime 1.24), it
+automatically falls back to `onnxruntime-web`'s WASM backend (~50-300 ms).
+Wake-word detection works on all platforms; Intel Macs just use the
+slightly slower WASM path. No configuration needed — the fallback is
+transparent.
 
 ### One command (recommended)
 

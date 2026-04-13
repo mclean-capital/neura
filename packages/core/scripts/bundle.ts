@@ -84,6 +84,7 @@ await esbuild.build({
     '../stores/index.js',
     '@electric-sql/pglite',
     'onnxruntime-node',
+    'onnxruntime-web',
     '@mariozechner/pi-coding-agent',
     '@mariozechner/pi-agent-core',
     '@mariozechner/pi-ai',

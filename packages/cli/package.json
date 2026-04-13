@@ -57,9 +57,10 @@
     "commander": "^13",
     "ws": "^8.20.0",
     "@electric-sql/pglite": "0.4.3",
-    "onnxruntime-node": "1.24.3"
+    "onnxruntime-web": "1.24.3"
   },
   "optionalDependencies": {
+    "onnxruntime-node": "1.24.3",
     "@picovoice/pvspeaker-node": "^1.0.3",
     "decibri": "^1.0.0",
     "speaker": "^0.5.5"

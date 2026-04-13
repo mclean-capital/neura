@@ -1,16 +1,19 @@
 /**
  * ONNX-based wake word detector using LiveKit's mel → embedding → classifier pipeline.
  *
- * Runs entirely on-device via onnxruntime-node. No cloud API calls, ~5-20ms inference,
- * zero cost. Trained wake word models are stored at ~/.neura/models/{name}.onnx.
+ * Runs entirely on-device via onnxruntime-node (native CPU) or onnxruntime-web (WASM
+ * fallback for platforms without native binaries, e.g. Intel Macs). No cloud API
+ * calls, ~5-20ms native / ~50-300ms WASM inference, zero cost. Trained wake word
+ * models are stored at ~/.neura/models/{name}.onnx.
  *
  * Pipeline: audio (24kHz) → resample (16kHz) → mel spectrogram → speech embeddings → classifier → score
  */
 
 import { existsSync } from 'fs';
 import { join } from 'path';
-import * as ort from 'onnxruntime-node';
+import type * as OrtTypes from 'onnxruntime-node';
 import { Logger } from '@neura/utils/logger';
+import { loadOrt, type OrtModule, type OrtBackend } from './ort-loader.js';
 
 const log = new Logger('onnx-wake');
 
@@ -65,15 +68,17 @@ export interface OnnxWakeDetectorConfig {
 export class OnnxWakeDetector {
   private readonly config: OnnxWakeDetectorConfig;
   private readonly threshold: number;
+  private readonly ort: OrtModule;
+  private readonly backend: OrtBackend;
 
   // ONNX sessions
-  private melSession: ort.InferenceSession;
+  private melSession: OrtTypes.InferenceSession;
   private melInputName: string;
   private melOutputName: string;
-  private embeddingSession: ort.InferenceSession;
+  private embeddingSession: OrtTypes.InferenceSession;
   private embeddingInputName: string;
   private embeddingOutputName: string;
-  private classifierSession: ort.InferenceSession;
+  private classifierSession: OrtTypes.InferenceSession;
   private classifierInputName: string;
   private classifierOutputName: string;
 
@@ -99,12 +104,16 @@ export class OnnxWakeDetector {
 
   private constructor(
     config: OnnxWakeDetectorConfig,
-    melSession: ort.InferenceSession,
-    embeddingSession: ort.InferenceSession,
-    classifierSession: ort.InferenceSession
+    ort: OrtModule,
+    backend: OrtBackend,
+    melSession: OrtTypes.InferenceSession,
+    embeddingSession: OrtTypes.InferenceSession,
+    classifierSession: OrtTypes.InferenceSession
   ) {
     this.config = config;
     this.threshold = config.threshold ?? 0.5;
+    this.ort = ort;
+    this.backend = backend;
     this.melSession = melSession;
     this.melInputName = melSession.inputNames[0];
     this.melOutputName = melSession.outputNames[0];
@@ -117,6 +126,12 @@ export class OnnxWakeDetector {
   }
 
   static async create(config: OnnxWakeDetectorConfig): Promise<OnnxWakeDetector> {
+    const result = await loadOrt();
+    if (!result) {
+      throw new Error('No ONNX runtime available (tried native and WASM)');
+    }
+    const { ort, backend } = result;
+
     const melPath = join(config.modelsDir, 'melspectrogram.onnx');
     const embeddingPath = join(config.modelsDir, 'embedding_model.onnx');
     const classifierPath = join(config.modelsDir, `${config.assistantName}.onnx`);
@@ -131,10 +146,13 @@ export class OnnxWakeDetector {
       }
     }
 
-    const opts: ort.InferenceSession.SessionOptions = {
-      executionProviders: ['cpu'],
-      interOpNumThreads: 1,
-      intraOpNumThreads: 1,
+    // Native uses 'cpu'; WASM backend uses 'wasm' execution provider.
+    // interOp/intraOp thread options are only valid for the native backend;
+    // WASM threading is configured globally via env.wasm.numThreads in ort-loader.
+    const provider = backend === 'native' ? 'cpu' : 'wasm';
+    const opts: OrtTypes.InferenceSession.SessionOptions = {
+      executionProviders: [provider],
+      ...(backend === 'native' && { interOpNumThreads: 1, intraOpNumThreads: 1 }),
     };
 
     const [melSession, embeddingSession, classifierSession] = await Promise.all([
@@ -144,12 +162,20 @@ export class OnnxWakeDetector {
     ]);
 
     log.info('ONNX models loaded', {
+      backend,
       mel: melPath,
       embedding: embeddingPath,
       classifier: classifierPath,
     });
 
-    return new OnnxWakeDetector(config, melSession, embeddingSession, classifierSession);
+    return new OnnxWakeDetector(
+      config,
+      ort,
+      backend,
+      melSession,
+      embeddingSession,
+      classifierSession
+    );
   }
 
   feedAudio(base64Pcm: string): void {
@@ -217,8 +243,9 @@ export class OnnxWakeDetector {
       return;
     }
 
-    void ort.InferenceSession.create(classifierPath, {
-      executionProviders: ['cpu'],
+    const provider = this.backend === 'native' ? 'cpu' : 'wasm';
+    void this.ort.InferenceSession.create(classifierPath, {
+      executionProviders: [provider],
     }).then((session) => {
       this.classifierSession = session;
       this.classifierInputName = session.inputNames[0];
@@ -313,7 +340,7 @@ export class OnnxWakeDetector {
   private async runPipeline(audio16k: Float32Array): Promise<number> {
     // Stage 1: Mel spectrogram
     // Input: (1, samples), Output: (1, 1, time_frames, 32)
-    const melInput = new ort.Tensor('float32', audio16k, [1, audio16k.length]);
+    const melInput = new this.ort.Tensor('float32', audio16k, [1, audio16k.length]);
     const melResult = await this.melSession.run({ [this.melInputName]: melInput });
     const melOutput = melResult[this.melOutputName];
     const melData = melOutput.data as Float32Array;
@@ -345,7 +372,7 @@ export class OnnxWakeDetector {
       }
     }
 
-    const embInput = new ort.Tensor('float32', windowData, [
+    const embInput = new this.ort.Tensor('float32', windowData, [
       nWindows,
       EMBEDDING_WINDOW,
       melBands,
@@ -366,7 +393,7 @@ export class OnnxWakeDetector {
       classifierData.set(embData.subarray(srcOffset, srcOffset + embDim), i * embDim);
     }
 
-    const classInput = new ort.Tensor('float32', classifierData, [1, MIN_EMBEDDINGS, embDim]);
+    const classInput = new this.ort.Tensor('float32', classifierData, [1, MIN_EMBEDDINGS, embDim]);
     const classResult = await this.classifierSession.run({
       [this.classifierInputName]: classInput,
     });

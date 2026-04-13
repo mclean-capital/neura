@@ -34,6 +34,7 @@ const STAGING = join(ROOT, 'packages/desktop/build-resources/node_modules');
 // for the matching esbuild externals.
 const SEEDS = [
   'onnxruntime-node',
+  'onnxruntime-web',
   '@electric-sql/pglite',
   '@mariozechner/pi-coding-agent',
   '@mariozechner/pi-agent-core',
