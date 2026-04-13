@@ -21,28 +21,15 @@ Requires **Node.js >= 22**.
 | Platform                            | Supported |
 | ----------------------------------- | :-------: |
 | macOS — Apple Silicon (M1/M2/M3/M4) |    Yes    |
-| macOS — Intel (x64)                 |  **No**   |
+| macOS — Intel (x64)                 |    Yes    |
 | Windows — x64 / arm64               |    Yes    |
 | Linux — x64 / arm64                 |    Yes    |
 
-**Intel Macs are not supported.** Neura's wake-word detector runs on
-`onnxruntime-node`, and upstream dropped Intel Mac (`darwin/x64`) binaries
-starting with version 1.24. Because voice is a required feature — not an
-optional one — `npm install -g @mclean-capital/neura` will appear to
-succeed but core will crash at startup with
-`Cannot find module '../bin/napi-v6/darwin/x64/onnxruntime_binding.node'`.
-
-If you're on an Apple Silicon Mac but see the `darwin/x64` error, you've
-installed the Intel build of Node under Rosetta. Reinstall Node as arm64:
-
-```bash
-nvm uninstall <version>
-arch -arm64 nvm install <version>
-```
-
-For true Intel Macs, there's no workaround short of self-building against
-an older onnxruntime-node — we recommend running Neura on a supported
-machine instead.
+All platforms are fully supported. On Intel Macs, native binaries for
+ONNX runtime and PortAudio (decibri) are unavailable, so Neura
+automatically falls back to WASM-based wake-word detection and
+`@picovoice/pvrecorder-node` for mic capture. No manual configuration
+needed — the fallbacks are transparent.
 
 ## Quick start
 
@@ -134,7 +121,8 @@ After this one-time step, `neura update` works normally for all future upgrades.
 
 `neura listen` uses optional native audio dependencies:
 
-- **`decibri`** — microphone capture via PortAudio
+- **`decibri`** (optional) — microphone capture via PortAudio (arm64 prebuilts)
+- **`@picovoice/pvrecorder-node`** — microphone capture fallback (prebuilts for all platforms incl. Intel Mac)
 - **`speaker`**, **`@picovoice/pvspeaker-node`**, or **`sox`** — speaker playback
 
 These are marked as `optionalDependencies` so `npm install -g @mclean-capital/neura` won't fail if your platform lacks the required build tools. If audio init fails at runtime, `neura listen` will print install instructions for your platform.

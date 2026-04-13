@@ -50,19 +50,20 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.4.3",
     "@inquirer/prompts": "^7",
     "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@picovoice/pvrecorder-node": "^1.2.8",
     "chalk": "^5",
     "chokidar": "^5.0.0",
     "commander": "^13",
-    "ws": "^8.20.0",
-    "@electric-sql/pglite": "0.4.3",
-    "onnxruntime-web": "1.24.3"
+    "onnxruntime-web": "1.24.3",
+    "ws": "^8.20.0"
   },
   "optionalDependencies": {
-    "onnxruntime-node": "1.24.3",
     "@picovoice/pvspeaker-node": "^1.0.3",
     "decibri": "^1.0.0",
+    "onnxruntime-node": "1.24.3",
     "speaker": "^0.5.5"
   },
   "devDependencies": {
