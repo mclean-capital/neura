@@ -1,3 +1,9 @@
+# [3.2.0](https://github.com/mclean-capital/neura/compare/v3.1.0...v3.2.0) (2026-04-13)
+
+### Features
+
+- **cli:** pvrecorder fallback for mic capture on Intel Mac ([a27da3f](https://github.com/mclean-capital/neura/commit/a27da3fef51724e094e3f1e984da219d661031b5)), closes [decibri/decibri#15](https://github.com/decibri/decibri/issues/15)
+
 # [3.1.0](https://github.com/mclean-capital/neura/compare/v3.0.0...v3.1.0) (2026-04-13)
 
 ### Features
