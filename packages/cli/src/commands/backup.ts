@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { confirm } from '@inquirer/prompts';
+import { confirm, isCancel } from '@clack/prompts';
 import { loadConfig } from '../config.js';
 import { checkHealth } from '../health.js';
 
@@ -50,10 +50,10 @@ export async function restoreCommand(options: { force?: boolean }): Promise<void
   if (!options.force) {
     const confirmed = await confirm({
       message: 'Restore memories from backup? Existing memories may be overwritten.',
-      default: false,
+      initialValue: false,
     });
 
-    if (!confirmed) {
+    if (isCancel(confirmed) || !confirmed) {
       console.log(chalk.dim('Restore cancelled.'));
       return;
     }

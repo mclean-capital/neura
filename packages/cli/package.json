@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "0.4.3",
-    "@inquirer/prompts": "^7",
+    "@clack/prompts": "^1.2.0",
     "@mariozechner/pi-coding-agent": "^0.66.1",
     "@picovoice/pvrecorder-node": "^1.2.8",
     "chalk": "^5",

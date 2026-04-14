@@ -19,15 +19,16 @@ vi.mock('../health.js', () => ({
   checkHealth: vi.fn(),
 }));
 
-vi.mock('@inquirer/prompts', () => ({
+vi.mock('@clack/prompts', () => ({
   confirm: vi.fn(),
+  isCancel: vi.fn(() => false),
 }));
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 const { checkHealth } = await import('../health.js');
-const { confirm } = await import('@inquirer/prompts');
+const { confirm } = await import('@clack/prompts');
 const mockedCheckHealth = vi.mocked(checkHealth);
 const mockedConfirm = vi.mocked(confirm);
 

@@ -1,4 +1,4 @@
-import { confirm } from '@inquirer/prompts';
+import { confirm, isCancel } from '@clack/prompts';
 import chalk from 'chalk';
 import { rmSync, existsSync } from 'fs';
 import { basename } from 'path';
@@ -33,9 +33,9 @@ export async function uninstallCommand(options: { force?: boolean }): Promise<vo
   if (!options.force) {
     const cleanData = await confirm({
       message: `Delete all data in ${home}?`,
-      default: false,
+      initialValue: false,
     });
-    if (!cleanData) {
+    if (isCancel(cleanData) || !cleanData) {
       console.log(chalk.dim('Config and data preserved at ' + home));
       return;
     }

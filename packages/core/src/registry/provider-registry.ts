@@ -30,6 +30,7 @@ const KNOWN_BASE_URLS: Record<string, string> = {
   google: 'https://generativelanguage.googleapis.com/v1beta/openai',
   deepinfra: 'https://api.deepinfra.com/v1/openai',
   together: 'https://api.together.xyz/v1',
+  anthropic: 'https://api.anthropic.com/v1',
 };
 
 /**
