@@ -607,11 +607,11 @@ async function registerServiceAndFinish(config: NeuraConfigFile): Promise<void> 
     const svc = await getServiceManager();
     const wasInstalled = svc.isInstalled();
 
-    if (wasInstalled) {
+    if (wasInstalled && svc.isRunning()) {
       try {
         svc.stop();
       } catch {
-        // Service may not be running
+        // Race condition: service may have stopped between check and stop
       }
     }
     await svc.install();
