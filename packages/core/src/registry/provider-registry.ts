@@ -31,6 +31,7 @@ const KNOWN_BASE_URLS: Record<string, string> = {
   deepinfra: 'https://api.deepinfra.com/v1/openai',
   together: 'https://api.together.xyz/v1',
   anthropic: 'https://api.anthropic.com/v1',
+  vercel: 'https://ai-gateway.vercel.sh/v1',
 };
 
 /**

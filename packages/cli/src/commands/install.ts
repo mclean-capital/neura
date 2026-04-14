@@ -248,6 +248,7 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
       { value: 'anthropic', label: 'Anthropic (Claude)' },
       { value: 'xai', label: 'xAI (Grok)' },
       { value: 'openrouter', label: 'OpenRouter', hint: 'gateway to many models' },
+      { value: 'vercel', label: 'Vercel AI Gateway', hint: 'multi-provider gateway' },
       { value: 'custom', label: 'Custom', hint: 'any OpenAI-compatible endpoint' },
     ],
   });
@@ -291,6 +292,7 @@ export async function installCommand(opts: InstallOptions = {}): Promise<void> {
         hint: 'recommended, best recall quality',
       },
       { value: 'openai', label: 'OpenAI Embedding' },
+      { value: 'vercel', label: 'Vercel AI Gateway Embedding' },
       { value: 'skip', label: 'Skip', hint: 'keyword search only, no semantic recall' },
     ],
   });

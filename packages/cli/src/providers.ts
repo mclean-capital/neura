@@ -167,6 +167,22 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
       worker: { model: 'google/gemini-2.5-flash' },
     },
   },
+  vercel: {
+    id: 'vercel',
+    label: 'Vercel AI Gateway',
+    capabilities: ['text', 'embedding', 'worker'],
+    consoleUrl: 'https://vercel.com/ai-gateway',
+    validation: {
+      url: 'https://ai-gateway.vercel.sh/v1/models',
+      headerKey: 'Authorization',
+      headerFormat: 'Bearer {key}',
+    },
+    defaultModels: {
+      text: { model: 'anthropic/claude-sonnet-4-6' },
+      embedding: { model: 'openai/text-embedding-3-small', extra: { dimensions: 1536 } },
+      worker: { model: 'anthropic/claude-sonnet-4-6' },
+    },
+  },
 };
 
 // ─── Feature Selections ────────────────────────────────────────

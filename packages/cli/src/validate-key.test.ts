@@ -93,6 +93,20 @@ describe('validateProviderKey', () => {
     );
   });
 
+  it('validates Vercel AI Gateway key with Bearer auth', async () => {
+    mockFetch.mockResolvedValue({ ok: true });
+
+    const result = await validateProviderKey('vercel', 'vcel-test');
+
+    expect(result.valid).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://ai-gateway.vercel.sh/v1/models',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer vcel-test' },
+      })
+    );
+  });
+
   it('returns invalid for HTTP error responses', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 401 });
 

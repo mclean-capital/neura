@@ -279,6 +279,7 @@ describe('PROVIDER_PRESETS', () => {
     expect(ids).toContain('deepgram');
     expect(ids).toContain('elevenlabs');
     expect(ids).toContain('openrouter');
+    expect(ids).toContain('vercel');
   });
 
   it('every preset has a label, capabilities, consoleUrl, and validation', () => {
@@ -301,5 +302,11 @@ describe('PROVIDER_PRESETS', () => {
   it('Anthropic has text and vision-snapshot capabilities', () => {
     expect(PROVIDER_PRESETS.anthropic.capabilities).toContain('text');
     expect(PROVIDER_PRESETS.anthropic.capabilities).toContain('vision-snapshot');
+  });
+
+  it('Vercel has text, embedding, and worker capabilities', () => {
+    expect(PROVIDER_PRESETS.vercel.capabilities).toContain('text');
+    expect(PROVIDER_PRESETS.vercel.capabilities).toContain('embedding');
+    expect(PROVIDER_PRESETS.vercel.capabilities).toContain('worker');
   });
 });
