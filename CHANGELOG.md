@@ -1,3 +1,9 @@
+## [3.4.1](https://github.com/mclean-capital/neura/compare/v3.4.0...v3.4.1) (2026-04-14)
+
+### Bug Fixes
+
+- **cli:** check isRunning() before stopping service during install ([9fc4586](https://github.com/mclean-capital/neura/commit/9fc458631d7aa807d3986f1f5b647cafd0b51ba2))
+
 # [3.4.0](https://github.com/mclean-capital/neura/compare/v3.3.0...v3.4.0) (2026-04-14)
 
 ### Features
