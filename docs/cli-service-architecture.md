@@ -2,6 +2,8 @@
 
 > Implementation spec for `neura` CLI, persistent core daemon, and client coexistence model.
 
+> **Note (April 2026):** Parts of this document are historical. The binary distribution model (Bun compile, GitHub release tarballs, download at install time) described in the "Binary Distribution" and "Release Assets" sections was replaced in v1.11.0. Core now ships bundled inside the CLI npm package (`@mclean-capital/neura`) — one `npm install -g` installs everything. The architectural decisions, service registration, config model, and cloud deployment sections remain accurate. See `packages/cli/README.md` for the current install/update flow.
+
 ## Overview
 
 Neura Core becomes a standalone OS-managed background service. The `neura` CLI is the primary interface for installing, configuring, and managing it. Any client (desktop, web, mobile) connects to the running core over WebSocket — no client owns the core lifecycle.
@@ -54,11 +56,11 @@ Windows variant (`install.ps1`) uses `irm`/`iex`, detects arch via registry, mod
 ### Path 2: npm Global Install (developers)
 
 ```bash
-npm install -g @neura/cli
+npm install -g @mclean-capital/neura
 neura install
 ```
 
-Requires Node.js >= 22. The `neura install` command downloads the core binary from GitHub releases at install time.
+Requires Node.js >= 22. Since v1.11.0, the core ships bundled inside the npm package — no separate download step.
 
 ### End State (both paths)
 
@@ -338,12 +340,12 @@ WantedBy=default.target
 
 ### Service Lifecycle Commands (mapped to OS primitives)
 
-| CLI Command     | Windows                           | macOS                        | Linux                                 |
-| --------------- | --------------------------------- | ---------------------------- | ------------------------------------- |
-| `neura start`   | `sc start neura-core`             | `launchctl load -w <plist>`  | `systemctl --user start neura-core`   |
-| `neura stop`    | `sc stop neura-core`              | `launchctl unload <plist>`   | `systemctl --user stop neura-core`    |
-| `neura restart` | stop + start                      | unload + load                | `systemctl --user restart neura-core` |
-| `neura status`  | `sc query neura-core` + `/health` | `launchctl list` + `/health` | `systemctl --user status` + `/health` |
+| CLI Command     | Windows                              | macOS                        | Linux                                 |
+| --------------- | ------------------------------------ | ---------------------------- | ------------------------------------- |
+| `neura start`   | Spawn via `.cmd` shim + PID tracking | `launchctl load -w <plist>`  | `systemctl --user start neura-core`   |
+| `neura stop`    | `taskkill` via PID file              | `launchctl unload <plist>`   | `systemctl --user stop neura-core`    |
+| `neura restart` | stop + start                         | unload + load                | `systemctl --user restart neura-core` |
+| `neura status`  | PID file check + `/health`           | `launchctl list` + `/health` | `systemctl --user status` + `/health` |
 
 ---
 
@@ -622,7 +624,7 @@ Core currently accepts any WebSocket connection. Before cloud deployment, add:
 
 ## Package Structure
 
-### New: `packages/cli` (`@neura/cli`)
+### `packages/cli` (`@mclean-capital/neura`)
 
 ```
 packages/cli/
@@ -637,18 +639,31 @@ packages/cli/
 │   │   ├── status.ts            # Health check + service state
 │   │   ├── config.ts            # Get/set/list configuration
 │   │   ├── logs.ts              # Tail log files
-│   │   ├── update.ts            # Download latest binaries
+│   │   ├── update.ts            # Stop core + npm update + re-register
 │   │   ├── version.ts           # Show versions
-│   │   └── open.ts              # Open web UI in browser
+│   │   ├── open.ts              # Open web UI in browser
+│   │   ├── chat.ts              # Text chat over WebSocket
+│   │   ├── listen.ts            # Voice chat (mic + speaker)
+│   │   └── backup.ts            # Create/restore memory backups (exports backupCommand + restoreCommand)
 │   ├── service/
 │   │   ├── manager.ts           # Cross-platform dispatcher
 │   │   ├── windows.ts           # schtasks Scheduled Task + Startup folder fallback
 │   │   ├── macos.ts             # launchd plist generation
 │   │   ├── linux.ts             # systemd unit generation
 │   │   └── detect.ts            # OS detection, elevation check
+│   ├── audio/                   # Audio pipeline for `listen` command
+│   │   ├── capture.ts           # Mic capture (decibri / pvrecorder fallback)
+│   │   ├── playback.ts          # Speaker output (speaker / pvspeaker / sox)
+│   │   └── install-hints.ts     # Platform-specific install guidance
 │   ├── config.ts                # Load/save ~/.neura/config.json
 │   ├── health.ts                # HTTP health check client
-│   └── download.ts              # GitHub release asset downloader
+│   ├── download.ts              # Bundled core/UI/models path resolver
+│   ├── update-check.ts          # Background npm registry update check
+│   ├── port.ts                  # Auto-assign free port (18000-19000)
+│   └── version.ts               # CLI version reader
+├── core/                        # Bundled core (copied from packages/core/dist at build)
+├── ui/                          # Bundled web UI
+├── models/                      # Bundled ONNX wake-word models
 ├── package.json
 └── tsconfig.json
 ```
@@ -674,42 +689,40 @@ shell out to tools that ship with the OS: `launchctl` on macOS,
 
 ## Implementation Phases
 
-### Phase 1: Foundation (this PR)
+> All phases below are **complete** except Phase 3 (binary distribution via Bun compile was replaced by npm-bundled distribution in v1.11.0) and Phase 4 (desktop still spawns core rather than attaching to running service).
+
+### Phase 1: Foundation ✅
 
 1. **`packages/cli`** — Package scaffold, command structure, config loading
 2. **`/health` endpoint** — Add to core server
 3. **`config.ts` in core** — Load from `~/.neura/config.json` with env var override
-4. **`neura install`** — Interactive wizard, writes config, downloads core (placeholder: no service registration yet, just starts core directly)
-5. **`neura start/stop/status`** — Direct process management (kill/spawn) as stepping stone
+4. **`neura install`** — Interactive wizard, writes config, registers service
+5. **`neura start/stop/status`** — Platform-native service management
 
-### Phase 2: OS Service Registration
+### Phase 2: OS Service Registration ✅
 
-6. **Windows** — Scheduled Task via `schtasks.exe` (primary) + Startup folder shim (fallback); no admin, no bundled binaries
+6. **Windows** — Scheduled Task via `schtasks.exe` (primary) + Startup folder shim (fallback)
 7. **macOS agent** — launchd plist generation + launchctl
 8. **Linux service** — systemd unit generation + systemctl
 9. **`neura uninstall`** — Service removal per platform
 
-### Phase 3: Binary Distribution
+### Phase 3: Distribution ✅ (different approach)
 
-10. **Bun compile CI** — GitHub Actions workflow for cross-platform builds
-11. **`install.sh`** — Shell installer script (macOS/Linux)
-12. **`install.ps1`** — PowerShell installer script (Windows)
-13. **`neura update`** — Self-update mechanism for CLI + core binaries
-14. **GitHub release automation** — Tag → build → upload assets
+Bun compile was replaced by bundling core inside the CLI npm package. `npm install -g @mclean-capital/neura` installs CLI + core + native deps in one step. `neura update` wraps `npm install -g @mclean-capital/neura@latest` with service stop/restart.
 
-### Phase 4: Desktop Adaptation
+### Phase 4: Desktop Adaptation (partial)
 
-15. **Remove core-manager spawn logic** — Replace with health probe + attach
-16. **Shared config** — Desktop reads `~/.neura/config.json` for keys/port
-17. **Setup wizard** — Can run `neura install` flow inline if core not found
-18. **Config split** — Desktop-only settings stay in electron-store
+15. ~~**Remove core-manager spawn logic**~~ — Desktop still spawns core (planned: attach to running service)
+16. **Shared config** ✅ — Desktop reads `~/.neura/config.json` for keys/port
+17. **Setup wizard** ✅ — Can run `neura install` flow inline if core not found
+18. **Config split** ✅ — Desktop-only settings stay in electron-store
 
-### Phase 5: Cloud & Auth
+### Phase 5: Cloud & Auth ✅
 
-19. **Dockerfile + docker-compose.yml** — Container packaging
-20. **WebSocket auth** — Bearer token on upgrade handshake
-21. **`neura config set auth_token`** — Token management
-22. **Cloud deploy docs** — Fly.io, Railway, self-hosted guides
+19. **Dockerfile + docker-compose.yml** — Container packaging (documented)
+20. **WebSocket auth** ✅ — Shared-secret bearer token on upgrade handshake
+21. **Auth token management** ✅ — Auto-generated 256-bit token on install
+22. **Cloud deploy docs** — Fly.io, Railway, self-hosted (documented)
 
 ---
 

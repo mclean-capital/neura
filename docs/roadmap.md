@@ -8,24 +8,28 @@ Neura is a proactive, autonomous AI operating system. It combines real-time voic
 
 ## Current State
 
-Phase 5 Discovery Loop MVP and Security Hardening are complete. The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, PGlite backup/recovery, voice-managed tasks with deadline checking, shared-secret auth, and 270+ unit tests.
+Through Phase 5c and Security Hardening are complete. Skills and workers are partially built (Phase 6 in progress). The platform is a fully functional monorepo with 7 packages, a persistent service architecture, cross-session memory, ambient wake word detection, PGlite backup/recovery, voice-managed tasks with deadline checking, shared-secret auth, and 480+ unit tests.
 
 ### What's built
 
 - **Hybrid voice + vision** — Grok Eve for voice, Gemini Live for continuous vision watcher, bridged via tool calls
 - **Persistent core service** — Core runs as an OS-managed background process, independent of any client (launchd on macOS, systemd on Linux, per-user Scheduled Task with Startup folder fallback on Windows)
-- **`neura` CLI** — 13 commands to install, configure, and manage core: `install`, `start`, `stop`, `restart`, `status`, `config`, `logs`, `open`, `update`, `version`, `uninstall`, `backup`, `restore`
+- **`neura` CLI** — 15 commands to install, configure, and manage core: `install`, `start`, `stop`, `restart`, `status`, `config`, `logs`, `open`, `update`, `version`, `uninstall`, `backup`, `restore`, `chat`, `listen`
 - **Desktop app** — Electron with setup wizard, tray icon, global hotkey, auto-update
 - **Web UI** — React 19 + Vite 6 + Tailwind v4, connects to core via WebSocket
-- **Design system** — 11 shared React components, 6 hooks, Storybook, industrial precision aesthetic
+- **Design system** — 10 shared React components, 6 hooks, Storybook, industrial precision aesthetic
 - **Provider adapter layer** — Pluggable voice/vision providers behind typed interfaces
 - **PGlite persistence** — Sessions, transcripts, cost tracking (WASM PostgreSQL 17 + pgvector)
 - **Memory & Identity** — Cross-session memory via extraction pipeline (Gemini 2.5 Flash), semantic recall (Gemini Embedding 2, 3072-dim vectors), voice-callable memory tools, token-budgeted system prompt injection
 - **Presence & Wake** — On-device ONNX wake word detection (~5-20ms, zero cost, via livekit-wakeword pipeline), PASSIVE/ACTIVE/IDLE state machine, audio replay to Grok, multiple trained wake words (jarvis, neura), manual start fallback
 - **Discovery Loop (MVP)** — Voice-managed task CRUD, 15-min deadline checking with Gemini Flash summaries, presence-aware notifications (calendar/webhook/vision triggers upcoming)
 - **Security Hardening** — Shared-secret token auth on WebSocket and HTTP, localhost binding, maxPayload limits, security headers, timing-safe comparison
-- **`neura update`** — Downloads core bundles from GitHub releases, atomic extraction, background auto-update check with local cache
+- **`neura update`** — Stops core, runs `npm install -g @mclean-capital/neura@latest`, re-registers service, background auto-update check with local cache
 - **CI/CD** — Semantic release, desktop builds (Electron), core bundle builds for 5 platforms, auto-changelog
+- **CLI clients** — `neura chat` (text) and `neura listen` (voice with mic capture + speaker playback), proving protocol is client-agnostic
+- **Provider adapters** — Pluggable STT (Deepgram), TTS (ElevenLabs, OpenAI), text/embedding (OpenAI-compatible), snapshot vision adapters
+- **Skills (partial)** — Runtime skill loading from `SKILL.md` files, skill registry, file watcher for hot-reload
+- **Workers (partial)** — Agent worker runtime, Pi Coding Agent integration, voice fanout bridge, clarification bridge, worker cancellation
 - **Optional web UI serving** — Core serves pre-built UI from `~/.neura/ui/` if present
 
 ### Architecture (validated)
@@ -71,14 +75,16 @@ packages/
 ├── types/          # Pure types — protocol, tools, config, provider/store interfaces
 ├── utils/          # Shared runtime — Logger (pino), audio/frame constants
 ├── design-system/  # Shared React components, hooks, CSS tokens, Storybook
-├── core/           # Standalone server — orchestrator, providers, tools, stores,
-│                   #   optional UI static mount. Runs as OS service, Docker, or dev.
+├── core/           # Standalone server — orchestrator, providers, adapters, tools,
+│                   #   stores, skills, workers, registry. Runs as OS service,
+│                   #   Docker, or dev. Optional UI static mount.
 ├── cli/            # CLI for installing/managing core as persistent OS service.
 │                   #   Platform service managers (Windows, macOS, Linux).
+│                   #   Also a full client: `neura chat` (text) + `neura listen` (voice).
 ├── ui/             # React web UI — takes a WebSocket URL as config, nothing else.
 ├── desktop/        # Electron client — tray, hotkeys, auto-update, setup wizard.
 │                   #   Currently spawns core; planned: attach to running service.
-├── workers/        # Worker runtime, built-in worker types, MCP integrations (planned)
+├── workers/        # Standalone worker package (planned; runtime currently in core/src/workers/)
 ├── relay/          # Optional local relay for hybrid mode (planned)
 ├── mobile/         # React Native client (planned)
 ├── extension/      # Browser extension (planned)
@@ -105,9 +111,11 @@ docs/
 │  core (ws://localhost:{port})                        │
 │  ├── Grok WS (voice)           GET /health           │
 │  ├── Gemini WS (watcher)       GET / (web UI)        │
-│  ├── Tools (describe_camera, describe_screen, time)  │
+│  ├── Tools (vision, time, memory, presence, tasks,   │
+│  │         skills, worker-control)                   │
 │  ├── Cost tracker              PGlite persistence    │
-│  └── Future: discovery loop, workers, skills         │
+│  ├── Discovery loop            Skills + workers      │
+│  └── Provider registry + adapters                    │
 └──────────────────────┬──────────────────────────────┘
                        │ any client connects
           ┌────────────┼────────────┐
@@ -171,7 +179,7 @@ curl -fsSL https://neura.sh/install | bash
 irm https://neura.sh/install.ps1 | iex
 
 # Or via npm (requires Node.js >= 22)
-npm install -g @neura/cli
+npm install -g @mclean-capital/neura
 neura install
 ```
 
@@ -650,7 +658,7 @@ Continuous audio and video capture demands deliberate security and privacy desig
 - [x] Auto-port assignment (18000-19000 range)
 - [x] Optional web UI static mount from `~/.neura/ui/`
 - [x] Shared config schema in `@neura/types` (`NeuraConfigFile`)
-- [x] 98+ unit tests across core + CLI
+- [x] 480+ unit tests across all packages
 - [ ] Landing page at neura.ai (separate repo) + GitHub releases
 - [ ] Bun compile release pipeline for standalone binaries
 - [x] Windows service: per-user Scheduled Task via `schtasks.exe` + Startup folder fallback (openclaw pattern — no admin, no bundled wrapper binaries, runs in user session for mic access)
@@ -779,9 +787,11 @@ Standardize how tools/skills are defined, loaded, and created. This is the found
 
 **6a — Skill Template & Runtime**
 
-- [ ] Skill directory structure (`SKILL.md` with YAML frontmatter)
-- [ ] Runtime skill loading (no recompilation)
-- [ ] Skill discovery: scan `~/.neura/skills/` at startup
+- [x] Skill directory structure (`SKILL.md` with YAML frontmatter)
+- [x] Runtime skill loading (no recompilation) — `SkillLoader`
+- [x] Skill discovery: scan `~/.neura/skills/` and `.neura/skills/` at startup — `SkillRegistry`
+- [x] File watcher for hot-reload — `SkillWatcher` (chokidar)
+- [x] Skill tools: `execute_skill`, `list_skills`
 - [ ] Extract existing tools (vision, time, memory, presence, tasks) into skill format
 - [ ] User-installable skills from `~/.neura/skills/`
 
@@ -803,11 +813,13 @@ Now with skills infrastructure in place, the Discovery Loop can trigger skills a
 
 #### Phase 8 — Workers & Execution Loop
 
-- [ ] Worker runtime and lifecycle management
+- [x] Worker runtime and lifecycle management — `AgentWorker`, `WorkerRuntime`, `WorkerCancellation`
+- [x] Pi Coding Agent integration — `PiRuntime` (via `@mariozechner/pi-coding-agent`)
+- [x] Voice interaction with worker status — `VoiceFanoutBridge`, `ClarificationBridge`
+- [x] Worker control tools: `spawn_worker`, `list_workers`, `cancel_worker`, `get_worker_status`
+- [x] Work item persistence and audit trail — `worker-queries.ts`, `work-item-queries.ts`
 - [ ] Execution loop (autonomous task completion)
-- [ ] Built-in worker types: research, code, document, monitor
-- [ ] Voice interaction with worker status
-- [ ] Work item persistence and audit trail
+- [ ] Built-in worker types: research, document, monitor
 - [ ] Worker sandboxing (Docker containers)
 - [ ] Enable Grok's `web_search` and `x_search` tools
 - [ ] File/document upload

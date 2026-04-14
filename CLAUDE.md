@@ -51,7 +51,7 @@ npm run test -w @neura/core          # single package
 ```
 
 - **utils** — node env, tests for audio constants and Logger
-- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), pglite-store, memory, discovery
+- **core** — node env, unit tests for cost-tracker, tools, voice-session (mocked `ws`), pglite-store, memory, discovery, skills, workers
 - **cli** — node env, tests for config, health, port, service detection, download, commands
 - **design-system** — jsdom env, hook tests (`useWebSocket`) and component tests (`StatusBadge`, `CostIndicator`)
 
@@ -68,6 +68,9 @@ Pure types package — zero runtime dependencies. Defines the WebSocket protocol
 - `config.ts` — `CoreConfig`, `UIConfig`, `NeuraConfigFile` interfaces (includes `assistantName`)
 - `providers.ts` — `VoiceProvider`, `VisionProvider`, `DataStore` (session + memory methods), `ProviderPricing`, `SessionRecord`, `TranscriptEntry`
 - `memory.ts` — Memory types: `IdentityEntry`, `UserProfileEntry`, `FactEntry`, `PreferenceEntry`, `SessionSummaryEntry`, `MemoryContext`, `ExtractionResult`
+- `adapters.ts` — Provider adapter interfaces: `TextAdapter`, `STTAdapter`, `TTSAdapter`, `VisionAdapter`, `EmbeddingAdapter`
+- `workers.ts` — Worker types: `WorkerStatus`, `WorkerTaskType`, worker lifecycle interfaces
+- `skills.ts` — Skill types: `SkillLocation`, `NeuraSkill`, skill format interfaces
 
 ### utils
 
@@ -75,6 +78,7 @@ Shared runtime utilities used by core and clients.
 
 - `logger.ts` — `Logger` class wrapping pino (structured logging with namespaces)
 - `constants.ts` — `AUDIO_SAMPLE_RATE`, `AUDIO_CHANNELS`, `AUDIO_FORMAT`, `FRAME_CAPTURE_INTERVAL_MS`
+- `timer.ts` — `IntervalTimer` class (async-safe setInterval wrapper with `.unref()` lifecycle)
 
 ### core
 
@@ -82,16 +86,19 @@ Standalone server with provider adapter layer and pluggable storage. Organized i
 
 **Directory structure:**
 
-- `server/` — Express HTTP + WebSocket server, lifecycle management, per-client state machines
-- `auth/` — `auth.ts` shared-secret token verification (timing-safe comparison), `verifyClient` for WebSocket, middleware for HTTP
+- `server/` — Express HTTP + WebSocket server, lifecycle management, per-client state machines, `auth.ts` (shared-secret token verification, timing-safe comparison)
 - `memory/` — `MemoryManager`, `ExtractionPipeline`, `Reranker`, `BackupService`, prompt builder
 - `presence/` — `PresenceManager` state machine (PASSIVE/ACTIVE/IDLE), `OnnxWakeDetector` (on-device ONNX inference via livekit-wakeword pipeline)
-- `tools/` — Tool definitions and handlers split by domain (vision, time, memory, presence, tasks)
-- `providers/` — `GrokVoiceProvider` (xAI Realtime API), `GeminiVisionProvider` (Live API), delegation wrappers
-- `stores/` — `PgliteStore` facade (WASM PostgreSQL 17 + pgvector), split into query modules (migrations, mappers, session/memory/search/entity/work-item/backup queries)
+- `tools/` — Tool definitions and handlers split by domain (vision, time, memory, presence, tasks, skills, worker-control)
+- `providers/` — `GrokVoiceProvider` (xAI Realtime API), `GeminiVisionProvider` (Live API), `PipelineVoiceProvider` (STT→LLM→TTS), voice-session/vision-watcher factories
+- `adapters/` — Provider adapters: `DeepgramSTTAdapter`, `ElevenLabsTTSAdapter`, `OpenAITTSAdapter`, `OpenAICompatibleTextAdapter`, `OpenAICompatibleEmbeddingAdapter`, `SnapshotVisionAdapter`
+- `stores/` — `PgliteStore` facade (WASM PostgreSQL 17 + pgvector), split into query modules (migrations, mappers, session/memory/search/entity/work-item/worker/backup queries)
 - `cost/` — `CostTracker` per-session cost estimation
 - `discovery/` — `DiscoveryLoop` proactive task notifications via Gemini
 - `config/` — `loadConfig()` with env > config.json > defaults priority
+- `skills/` — `loadNeuraSkills()`, `SkillRegistry`, `SkillWatcher` — runtime skill loading from `SKILL.md` files
+- `workers/` — `AgentWorker`, `PiRuntime` (pi-coding-agent), `VoiceFanoutBridge`, `ClarificationBridge`, `WorkerCancellation`; `WorkerRuntime` interface
+- `registry/` — `ProviderRegistry` — manages provider instances and capability-based routing
 
 ```bash
 cd packages/core
@@ -164,7 +171,7 @@ Always read `DESIGN.md` before making any visual or UI decisions. All font choic
 - One class or closely related set of functions per file
 - Co-located tests: `foo.ts` + `foo.test.ts` in the same directory
 - Barrel `index.ts` in each domain directory
-- Domain directories group by concern: memory, presence, tools, providers, stores, cost, discovery, server, config
+- Domain directories group by concern: server, memory, presence, tools, providers, adapters, stores, cost, discovery, config, skills, workers, registry
 
 ## Environment
 

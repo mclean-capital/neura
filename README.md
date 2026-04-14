@@ -114,19 +114,24 @@ docs/
 
 ### Neura CLI (Service Management)
 
-| Command                        | Description                                |
-| ------------------------------ | ------------------------------------------ |
-| `neura install`                | Interactive setup wizard + service install |
-| `neura start`                  | Start the core service                     |
-| `neura stop`                   | Stop the core service                      |
-| `neura restart`                | Restart the core service                   |
-| `neura status`                 | Show service status, port, uptime, health  |
-| `neura config list`            | Show all configuration                     |
-| `neura config set <key> <val>` | Set a config value                         |
-| `neura logs`                   | Tail core service logs                     |
-| `neura open`                   | Open web UI in browser                     |
-| `neura update`                 | Download latest core binary                |
-| `neura uninstall`              | Remove service and optionally clean data   |
+| Command                        | Description                                     |
+| ------------------------------ | ----------------------------------------------- |
+| `neura install`                | Interactive setup wizard + service install      |
+| `neura start`                  | Start the core service                          |
+| `neura stop`                   | Stop the core service                           |
+| `neura restart`                | Restart the core service                        |
+| `neura status`                 | Show service status, port, uptime, health       |
+| `neura config list`            | Show all configuration                          |
+| `neura config set <key> <val>` | Set a config value                              |
+| `neura logs`                   | Tail core service logs                          |
+| `neura open`                   | Open web UI in browser                          |
+| `neura update`                 | Update to latest version (stop + npm + restart) |
+| `neura uninstall`              | Remove service and optionally clean data        |
+| `neura version`                | Show CLI and core versions                      |
+| `neura chat`                   | Interactive text chat over WebSocket            |
+| `neura listen`                 | Voice chat (mic capture + speaker playback)     |
+| `neura backup`                 | Create a memory backup                          |
+| `neura restore`                | Restore memories from backup                    |
 
 See [docs/cli-service-architecture.md](docs/cli-service-architecture.md) for the full CLI spec.
 
