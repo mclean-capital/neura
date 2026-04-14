@@ -1,3 +1,9 @@
+# [3.4.0](https://github.com/mclean-capital/neura/compare/v3.3.0...v3.4.0) (2026-04-14)
+
+### Features
+
+- **cli:** add Vercel AI Gateway as a provider option ([4981480](https://github.com/mclean-capital/neura/commit/4981480736f8096c7a546fba89829c2983124ed9))
+
 # [3.3.0](https://github.com/mclean-capital/neura/compare/v3.2.0...v3.3.0) (2026-04-14)
 
 ### Features
