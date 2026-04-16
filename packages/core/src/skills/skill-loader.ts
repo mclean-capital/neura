@@ -73,9 +73,13 @@ interface NeuraFrontmatter {
   description?: string;
   'disable-model-invocation'?: boolean;
   'allowed-tools'?: string;
+  license?: string;
+  compatibility?: string;
   metadata?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+const COMPATIBILITY_MAX_LENGTH = 500;
 
 /**
  * Load Neura skills from the three canonical locations (P4 order) plus any
@@ -118,14 +122,31 @@ export function loadNeuraSkills(options: LoadNeuraSkillsOptions = {}): LoadSkill
   const skills: NeuraSkill[] = [];
   for (const piSkill of piResult.skills) {
     try {
-      const neuraSkill = toNeuraSkill(piSkill, { repoLocal, global });
+      const { skill: neuraSkill, diagnostics: skillDiagnostics } = toNeuraSkill(piSkill, {
+        repoLocal,
+        global,
+      });
       skills.push(neuraSkill);
+      diagnostics.push(...skillDiagnostics);
 
       // Neura-specific diagnostic: warn on missing allowed-tools.
       if (!neuraSkill.hasExplicitAllowedTools) {
         diagnostics.push({
           type: 'warning',
           message: `Skill '${neuraSkill.name}' has no 'allowed-tools' field; will run with Neura's read-only default tool set (${MINIMAL_DEFAULT_ALLOWED_TOOLS.join(', ')}). See 'allowed-tools absence policy' in the design doc.`,
+          path: neuraSkill.filePath,
+        });
+      }
+
+      // Spec compliance: `compatibility` must be ≤ 500 chars (agentskills.io).
+      // Warning (not error): the skill still loads, author gets a nudge.
+      if (
+        neuraSkill.compatibility !== undefined &&
+        neuraSkill.compatibility.length > COMPATIBILITY_MAX_LENGTH
+      ) {
+        diagnostics.push({
+          type: 'warning',
+          message: `Skill '${neuraSkill.name}' has 'compatibility' field of ${neuraSkill.compatibility.length} characters; agentskills.io spec caps it at ${COMPATIBILITY_MAX_LENGTH}.`,
           path: neuraSkill.filePath,
         });
       }
@@ -147,6 +168,16 @@ export function loadNeuraSkills(options: LoadNeuraSkillsOptions = {}): LoadSkill
 }
 
 /**
+ * Result of converting a pi `Skill` to Neura's shape. Diagnostics are
+ * surfaced from frontmatter inspection so the caller can aggregate them
+ * alongside its own checks.
+ */
+export interface ToNeuraSkillResult {
+  skill: NeuraSkill;
+  diagnostics: SkillDiagnostic[];
+}
+
+/**
  * Convert a pi `Skill` to a `NeuraSkill` by re-reading the SKILL.md file and
  * extracting the custom frontmatter fields pi's type doesn't surface.
  *
@@ -155,9 +186,10 @@ export function loadNeuraSkills(options: LoadNeuraSkillsOptions = {}): LoadSkill
 export function toNeuraSkill(
   piSkill: PiSkill,
   paths: { repoLocal: string; global: string }
-): NeuraSkill {
+): ToNeuraSkillResult {
   const rawContent = readFileSync(piSkill.filePath, 'utf8');
   const { frontmatter, body } = parseFrontmatter<NeuraFrontmatter>(rawContent);
+  const diagnostics: SkillDiagnostic[] = [];
 
   // Parse `allowed-tools` (spec: space-delimited string)
   const allowedToolsRaw = frontmatter['allowed-tools'];
@@ -175,18 +207,56 @@ export function toNeuraSkill(
       ? { ...frontmatter.metadata }
       : {};
 
+  const license = parseStringField(frontmatter.license, 'license', piSkill, diagnostics);
+  const compatibility = parseStringField(
+    frontmatter.compatibility,
+    'compatibility',
+    piSkill,
+    diagnostics
+  );
+
   return {
-    name: piSkill.name,
-    description: piSkill.description,
-    filePath: piSkill.filePath,
-    baseDir: piSkill.baseDir,
-    location: resolveSkillLocation(piSkill.filePath, paths),
-    disableModelInvocation: piSkill.disableModelInvocation,
-    allowedTools,
-    hasExplicitAllowedTools,
-    metadata,
-    body,
+    skill: {
+      name: piSkill.name,
+      description: piSkill.description,
+      filePath: piSkill.filePath,
+      baseDir: piSkill.baseDir,
+      location: resolveSkillLocation(piSkill.filePath, paths),
+      disableModelInvocation: piSkill.disableModelInvocation,
+      allowedTools,
+      hasExplicitAllowedTools,
+      metadata,
+      license,
+      compatibility,
+      body,
+    },
+    diagnostics,
   };
+}
+
+/**
+ * Narrow an optional string frontmatter field, normalize whitespace/empty,
+ * and emit a diagnostic when the YAML value is the wrong type. Spec says
+ * these fields are strings; silently ignoring a number or array would hide
+ * an authoring bug from the skill author.
+ */
+function parseStringField(
+  raw: unknown,
+  fieldName: 'license' | 'compatibility',
+  piSkill: PiSkill,
+  diagnostics: SkillDiagnostic[]
+): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string') {
+    diagnostics.push({
+      type: 'warning',
+      message: `Skill '${piSkill.name}' has '${fieldName}' field of type ${typeof raw}; agentskills.io spec requires a string. Value ignored.`,
+      path: piSkill.filePath,
+    });
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
 }
 
 /**

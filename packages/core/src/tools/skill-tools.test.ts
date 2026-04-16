@@ -96,6 +96,27 @@ describe('handleSkillTool', () => {
       expect(payload.count).toBe(1);
       expect(payload.skills[0]?.name).toBe('red-test-triage');
     });
+
+    it('surfaces license + compatibility for each skill (agentskills.io spec)', async () => {
+      const ctx = makeCtx({
+        listSkills: () => [
+          makeSkill({
+            license: 'Apache-2.0',
+            compatibility: 'Requires macOS and ffmpeg',
+          }),
+        ],
+      });
+      const result = await handleSkillTool('list_skills', {}, ctx);
+      const payload = (
+        result as {
+          result: {
+            skills: { license?: string; compatibility?: string }[];
+          };
+        }
+      ).result;
+      expect(payload.skills[0]?.license).toBe('Apache-2.0');
+      expect(payload.skills[0]?.compatibility).toBe('Requires macOS and ffmpeg');
+    });
   });
 
   describe('get_skill', () => {
@@ -114,6 +135,23 @@ describe('handleSkillTool', () => {
       expect(payload.found).toBe(true);
       expect(payload.name).toBe('red-test-triage');
       expect(payload.allowedTools).toEqual(['describe_screen', 'create_task']);
+    });
+
+    it('surfaces license + compatibility when present (agentskills.io spec)', async () => {
+      const ctx = makeCtx({
+        getSkill: (name) =>
+          name === 'red-test-triage'
+            ? makeSkill({ license: 'MIT', compatibility: 'Requires git, jq' })
+            : undefined,
+      });
+      const result = await handleSkillTool('get_skill', { name: 'red-test-triage' }, ctx);
+      const payload = (
+        result as {
+          result: { license?: string; compatibility?: string };
+        }
+      ).result;
+      expect(payload.license).toBe('MIT');
+      expect(payload.compatibility).toBe('Requires git, jq');
     });
   });
 

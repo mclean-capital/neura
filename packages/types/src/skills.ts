@@ -76,6 +76,20 @@ export interface NeuraSkill {
    */
   metadata: Record<string, unknown>;
 
+  /**
+   * Optional `license` frontmatter field (agentskills.io spec). License name
+   * or a reference to a bundled license file. Absent if not declared.
+   */
+  license?: string;
+
+  /**
+   * Optional `compatibility` frontmatter field (agentskills.io spec). Free-
+   * form string (≤ 500 chars) describing environment requirements — intended
+   * product, required system packages, network access, etc. Absent if not
+   * declared.
+   */
+  compatibility?: string;
+
   /** Markdown body (everything after the YAML frontmatter). */
   body: string;
 }

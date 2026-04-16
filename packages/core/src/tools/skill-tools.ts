@@ -147,6 +147,8 @@ export async function handleSkillTool(
               location: s.location,
               draft: s.disableModelInvocation,
               allowedTools: s.allowedTools,
+              license: s.license,
+              compatibility: s.compatibility,
             })),
           },
         };
@@ -165,6 +167,8 @@ export async function handleSkillTool(
             draft: skill.disableModelInvocation,
             allowedTools: skill.allowedTools,
             metadata: skill.metadata,
+            license: skill.license,
+            compatibility: skill.compatibility,
           },
         };
       }

@@ -1209,7 +1209,8 @@ The orchestrator dispatches this worker with a task description containing the c
 **Optional frontmatter fields (all standard Agent Skills):**
 
 - `version` (semver string). If present, the promotion worker bumps the patch version on every update. If absent, it's added as `0.1.0` on first promotion update.
-- `license`, `compatibility` (spec-defined, documented but not used by Neura in Phase 6)
+- `license` (spec-defined, free-form string). Parsed by Neura's loader, surfaced in `list_skills` / `get_skill` output so the model can reason about license before dispatching a worker.
+- `compatibility` (spec-defined, ≤ 500 chars). Parsed by Neura's loader; over-length values emit a `warning` diagnostic and the skill still loads. Surfaced in `list_skills` / `get_skill` so the model can check environment requirements (e.g. "requires ffmpeg") before dispatching.
 - `disable-model-invocation` (boolean, default false). When true, the skill is loaded by the registry but excluded from the Grok system prompt catalog by pi's `formatSkillsForPrompt()`. This is Neura's "draft" state. Cleared via the `promote_skill` tool to "activate" a skill. **Verified end-to-end by Spike #4d.**
 - `allowed-tools` (space-delimited string per spec). When present, Neura enforces that the worker can only call tools in this list. **Required-in-practice by Neura:** see "allowed-tools absence policy" below for what happens when it's missing. **Verified end-to-end by Spike #4c.**
 - `metadata` (arbitrary nested key-value mapping per spec). Used by Neura for tracking fields like `neura_source`, `neura_created_at`, `neura_created_by`. Other runtimes that don't care about these fields silently ignore them.
