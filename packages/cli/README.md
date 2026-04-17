@@ -117,6 +117,14 @@ After this one-time step, `neura update` works normally for all future upgrades.
 | `neura backup`                 | Create a memory backup       |
 | `neura restore`                | Restore memories from backup |
 
+### Skill authoring
+
+| Command                       | Description                                        |
+| ----------------------------- | -------------------------------------------------- |
+| `neura skill validate <path>` | Validate skills at `<path>` against agentskills.io |
+
+`neura skill validate` checks a skill directory (or a parent directory containing multiple skills) against the [agentskills.io specification](https://agentskills.io/specification): name format, description length, frontmatter parse, `license` and `compatibility` types, and the 500-char `compatibility` cap. Exits non-zero on any diagnostic — suitable for pre-commit hooks or CI checks on shared skill repositories.
+
 ## Voice client notes
 
 `neura listen` uses optional native audio dependencies:
