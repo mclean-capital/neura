@@ -21,6 +21,7 @@ import { updateCommand } from './commands/update.js';
 import { backupCommand, restoreCommand } from './commands/backup.js';
 import { chatCommand } from './commands/chat.js';
 import { listenCommand } from './commands/listen.js';
+import { skillValidateCommand } from './commands/skill.js';
 
 const program = new Command();
 
@@ -100,5 +101,13 @@ program
   .option('-p, --port <port>', 'Core server port (default: config or 3002)')
   .option('--debug', 'Print audio pipeline stats every 2s')
   .action(listenCommand);
+
+// Skill authoring / validation
+const skillCmd = program.command('skill').description('Skill authoring tools');
+
+skillCmd
+  .command('validate <path>')
+  .description('Validate skills at <path> against the agentskills.io spec')
+  .action(skillValidateCommand);
 
 program.parse();
