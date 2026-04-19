@@ -3,6 +3,7 @@
 > **Version**: v2 (shipped)
 > **Date**: 2026-04-18 (planned) — 2026-04-19 (shipped through Wave 5)
 > **Status**: Shipped. Waves 1–5 landed on `main`; follow-ups tracked in `docs/roadmap.md` §Phase 6b follow-ups.
+> **Simulation guide**: see [`phase6b-simulation.md`](phase6b-simulation.md) for when to run the live smoke + how to read the audit.
 > **Scope**: Core orchestrator ↔ worker protocol + task model overhaul
 > **Review round 1**: general-purpose subagent + Codex (gpt-5.4) — 2026-04-18
 >
