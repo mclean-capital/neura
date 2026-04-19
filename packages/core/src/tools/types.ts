@@ -1,7 +1,15 @@
 import type {
   FactEntry,
   NeuraSkill,
+  SystemStateSnapshot,
+  TaskCommentEntry,
+  TaskCommentType,
+  TaskCommentUrgency,
+  TaskContext,
+  TaskSource,
   WorkItemEntry,
+  WorkItemPriority,
+  WorkItemStatus,
   TimelineEntry,
   MemoryStats,
   WorkerResult,
@@ -20,13 +28,92 @@ export interface MemoryToolHandler {
 export interface TaskToolHandler {
   createTask(
     title: string,
-    priority: string,
-    options?: { description?: string; dueAt?: string; sourceSessionId?: string }
+    priority: WorkItemPriority,
+    options?: {
+      description?: string;
+      dueAt?: string;
+      sourceSessionId?: string;
+      // Phase 6b enrichments — orchestrator provides at create time when it
+      // has enough goal-level clarity; worker fills in more during execution.
+      goal?: string;
+      context?: TaskContext;
+      relatedSkills?: string[];
+      repoPath?: string;
+      baseBranch?: string;
+      source?: TaskSource;
+    }
   ): Promise<string>;
-  listTasks(status?: string): Promise<WorkItemEntry[]>;
+  listTasks(filter?: {
+    status?: WorkItemStatus | WorkItemStatus[] | 'all';
+    source?: TaskSource;
+    needsAttention?: boolean;
+    since?: string;
+    limit?: number;
+  }): Promise<WorkItemEntry[]>;
   getTask(idOrTitle: string): Promise<WorkItemEntry | null>;
-  updateTask(idOrTitle: string, updates: Record<string, unknown>): Promise<boolean>;
+  /**
+   * Update a task. Payload can include field changes, a comment, and/or
+   * explicit status transitions. Returns the updated task + the new version
+   * number (from the optimistic lock). `null` when the task can't be found.
+   */
+  updateTask(
+    idOrTitle: string,
+    payload: UpdateTaskPayload
+  ): Promise<{ task: WorkItemEntry; version: number; comment?: TaskCommentEntry } | null>;
   deleteTask(idOrTitle: string): Promise<boolean>;
+}
+
+/**
+ * Payload for {@link TaskToolHandler.updateTask}. Workers and the orchestrator
+ * share this shape; the handler derives the author tag from the tool-call
+ * context and enforces which actors may set which fields (see
+ * docs/phase6b-task-driven-execution.md §Concurrency → Handler-level
+ * backstops).
+ */
+export interface UpdateTaskPayload {
+  /** Optional status transition (subject to the transition matrix). */
+  status?: WorkItemStatus;
+  /** Optional comment to append. */
+  comment?: {
+    type: TaskCommentType;
+    content: string;
+    urgency?: TaskCommentUrgency;
+    metadata?: Record<string, unknown>;
+    attachmentPath?: string;
+  };
+  /** Optional field updates the caller is authorized to make. */
+  fields?: {
+    title?: string;
+    priority?: WorkItemPriority;
+    description?: string | null;
+    dueAt?: string | null;
+    goal?: string | null;
+    context?: TaskContext | null;
+    relatedSkills?: string[];
+    repoPath?: string | null;
+    baseBranch?: string | null;
+    workerId?: string | null;
+    leaseExpiresAt?: string | null;
+  };
+  /** Optimistic-lock version the caller read before editing. */
+  expectVersion?: number;
+}
+
+/**
+ * Phase 6b — worker dispatch handler. Single entry point for "kick off an
+ * agent worker against an existing task row." Returns the worker id
+ * immediately; progress flows via comments on the task.
+ */
+export interface WorkerDispatchHandler {
+  dispatchWorker(taskId: string): Promise<{ workerId: string } | { error: string }>;
+}
+
+/**
+ * Phase 6b — system-state handler. Returns a single snapshot the
+ * orchestrator queries opportunistically to know what needs attention.
+ */
+export interface SystemStateHandler {
+  getSystemState(): Promise<SystemStateSnapshot>;
 }
 
 /**
@@ -95,6 +182,14 @@ export interface ToolCallContext {
   taskTools?: TaskToolHandler;
   skillTools?: SkillToolHandler;
   workerControl?: WorkerControlHandler;
+  workerDispatch?: WorkerDispatchHandler;
+  systemState?: SystemStateHandler;
+  /**
+   * Actor identity for `update_task`. Workers pass `worker:<workerId>`;
+   * orchestrator leaves it unset (defaults to `orchestrator`). The handler
+   * uses this to enforce transition-matrix + author-scoping invariants.
+   */
+  actor?: string;
 }
 
 /** Re-export for convenience — callers depend on these along with the context. */

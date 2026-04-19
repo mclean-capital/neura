@@ -318,25 +318,72 @@ export async function initServices(): Promise<CoreServices> {
           }
         : undefined;
 
+      // Worker-side task tools. Workers can create sub-tasks, read task
+      // state, and update their own task (post comments + status
+      // transitions via the 6-verb protocol). Deletion is
+      // orchestrator-only — stub-refused for workers.
       const workerTaskTools: TaskToolHandler = {
-        createTask: (title, priority, opts) =>
-          store.createWorkItem(title, priority as 'low' | 'medium' | 'high', opts),
-        listTasks: async (status) => {
-          if (!status) return store.getOpenWorkItems(100);
-          return store.getWorkItems({ status, limit: 100 });
+        createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
+        listTasks: async (filter) => {
+          const limit = filter?.limit ?? 100;
+          if (!filter || (!filter.status && !filter.needsAttention && !filter.source)) {
+            return store.getOpenWorkItems(limit);
+          }
+          if (filter.status === 'all') return store.getWorkItems({ limit });
+          if (typeof filter.status === 'string')
+            return store.getWorkItems({ status: filter.status, limit });
+          return store.getOpenWorkItems(limit);
         },
         getTask: (idOrTitle) => store.getWorkItem(idOrTitle),
-        updateTask: (idOrTitle) => {
-          // Minimal: workers can reference tasks but the update path
-          // needs id resolution logic that lives in the voice-side
-          // handler. For Phase 6 workers don't edit tasks, they create
-          // them — this stub returns false so the worker observes a
-          // "not supported" result.
-          log.warn('worker tried updateTask (not supported for workers yet)', { idOrTitle });
-          return Promise.resolve(false);
+        updateTask: async (idOrTitle, payload) => {
+          // Worker can update its own task: post comments + status
+          // transitions. Wave 3 Pass 1 keeps this minimal — Pass 3 will
+          // add per-worker author tagging + transition-matrix enforcement.
+          const current = await store.getWorkItem(idOrTitle);
+          if (!current) return null;
+
+          const updates: Record<string, unknown> = {};
+          if (payload.status !== undefined) updates.status = payload.status;
+          if (payload.fields) {
+            for (const [k, v] of Object.entries(payload.fields)) {
+              if (v !== undefined) updates[k] = v;
+            }
+          }
+          let version = current.version;
+          if (Object.keys(updates).length > 0) {
+            version = await store.updateWorkItem(
+              current.id,
+              updates as Parameters<typeof store.updateWorkItem>[1],
+              payload.expectVersion !== undefined
+                ? { expectVersion: payload.expectVersion }
+                : undefined
+            );
+          }
+
+          let comment:
+            | Awaited<ReturnType<typeof import('../stores/task-comment-queries.js').insertComment>>
+            | undefined;
+          if (payload.comment) {
+            const { insertComment } = await import('../stores/task-comment-queries.js');
+            comment = await insertComment(
+              (store as unknown as { db: import('@electric-sql/pglite').PGlite }).db,
+              {
+                taskId: current.id,
+                type: payload.comment.type,
+                author: 'worker',
+                content: payload.comment.content,
+                attachmentPath: payload.comment.attachmentPath ?? null,
+                urgency: payload.comment.urgency ?? null,
+                metadata: payload.comment.metadata ?? null,
+              }
+            );
+          }
+
+          const task = (await store.getWorkItem(current.id))!;
+          return { task, version, ...(comment ? { comment } : {}) };
         },
         deleteTask: (idOrTitle) => {
-          log.warn('worker tried deleteTask (not supported for workers yet)', { idOrTitle });
+          log.warn('worker tried deleteTask (not supported for workers)', { idOrTitle });
           return Promise.resolve(false);
         },
       };

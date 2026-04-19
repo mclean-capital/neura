@@ -1,7 +1,12 @@
 export interface ToolParameter {
   type: string;
-  description: string;
+  description?: string;
   enum?: string[];
+  /** Array-type parameters may carry an `items` schema. */
+  items?: ToolParameter;
+  /** Object-type parameters may nest a `properties` map + `required`. */
+  properties?: Record<string, ToolParameter>;
+  required?: string[];
 }
 
 export interface ToolDefinition {

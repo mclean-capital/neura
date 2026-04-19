@@ -212,43 +212,107 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
         }
       : undefined;
 
-    // Build task tools handler (closes over store)
+    // Build task tools handler (closes over store). Phase 6b: unified
+    // update_task takes a structured payload (status / comment / fields)
+    // and returns { task, version, comment? } so the orchestrator can
+    // relay details to the user.
     const taskTools: TaskToolHandler | undefined = store
       ? {
-          createTask: (title, priority, opts) =>
-            store.createWorkItem(title, priority as 'low' | 'medium' | 'high', opts),
-          listTasks: async (status) => {
-            if (!status) return store.getOpenWorkItems(100);
-            return store.getWorkItems({ status, limit: 100 });
+          createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
+          listTasks: async (filter) => {
+            const limit = filter?.limit ?? 100;
+            if (!filter || (!filter.status && !filter.needsAttention && !filter.source)) {
+              return store.getOpenWorkItems(limit);
+            }
+            if (filter.needsAttention) {
+              const items = await store.getWorkItems({ limit: 500 });
+              return items.filter(
+                (t) =>
+                  t.status === 'awaiting_clarification' ||
+                  t.status === 'awaiting_approval' ||
+                  (t.source !== 'user' && t.status === 'pending')
+              );
+            }
+            if (filter.status === 'all') {
+              return store.getWorkItems({ limit });
+            }
+            if (Array.isArray(filter.status)) {
+              const items = await store.getWorkItems({ limit: 500 });
+              const statuses = new Set(filter.status);
+              return items.filter((t) => statuses.has(t.status));
+            }
+            if (typeof filter.status === 'string') {
+              return store.getWorkItems({ status: filter.status, limit });
+            }
+            return store.getOpenWorkItems(limit);
           },
           getTask: async (idOrTitle) => {
             const byId = await store.getWorkItem(idOrTitle);
             if (byId) return byId;
-            // Fall back to title substring match across all items
             const all = await store.getWorkItems({ limit: 200 });
             const lower = idOrTitle.toLowerCase();
             return all.find((t) => t.title.toLowerCase().includes(lower)) ?? null;
           },
-          updateTask: async (idOrTitle, updates) => {
+          updateTask: async (idOrTitle, payload) => {
             let id = idOrTitle;
-            const byId = await store.getWorkItem(idOrTitle);
-            if (!byId) {
+            let current = await store.getWorkItem(idOrTitle);
+            if (!current) {
               const all = await store.getWorkItems({ limit: 200 });
               const lower = idOrTitle.toLowerCase();
               const match = all.find((t) => t.title.toLowerCase().includes(lower));
-              if (!match) return false;
+              if (!match) return null;
               id = match.id;
+              current = match;
             }
-            await store.updateWorkItem(
-              id,
-              updates as Partial<
-                Pick<
-                  import('@neura/types').WorkItemEntry,
-                  'status' | 'priority' | 'title' | 'description' | 'dueAt'
+
+            // Field updates + status change go through updateWorkItem with
+            // optimistic-lock version check. Translate payload.fields to
+            // the UpdateWorkItemFields shape.
+            const updates: Record<string, unknown> = {};
+            if (payload.status !== undefined) updates.status = payload.status;
+            if (payload.fields) {
+              for (const [k, v] of Object.entries(payload.fields)) {
+                if (v !== undefined) updates[k] = v;
+              }
+            }
+
+            let version = current.version;
+            if (Object.keys(updates).length > 0) {
+              version = await store.updateWorkItem(
+                id,
+                updates as Parameters<typeof store.updateWorkItem>[1],
+                payload.expectVersion !== undefined
+                  ? { expectVersion: payload.expectVersion }
+                  : undefined
+              );
+            }
+
+            // Comment append (optional). Uses the insertComment query
+            // directly since it's not part of DataStore yet — Phase 6b
+            // Wave 3 keeps this lean; Wave 5 will wire DataStore.addComment.
+            let comment:
+              | Awaited<
+                  ReturnType<typeof import('../stores/task-comment-queries.js').insertComment>
                 >
-              >
-            );
-            return true;
+              | undefined;
+            if (payload.comment) {
+              const { insertComment } = await import('../stores/task-comment-queries.js');
+              comment = await insertComment(
+                (store as unknown as { db: import('@electric-sql/pglite').PGlite }).db,
+                {
+                  taskId: id,
+                  type: payload.comment.type,
+                  author: 'orchestrator',
+                  content: payload.comment.content,
+                  attachmentPath: payload.comment.attachmentPath ?? null,
+                  urgency: payload.comment.urgency ?? null,
+                  metadata: payload.comment.metadata ?? null,
+                }
+              );
+            }
+
+            const task = (await store.getWorkItem(id))!;
+            return { task, version, ...(comment ? { comment } : {}) };
           },
           deleteTask: async (idOrTitle) => {
             const byId = await store.getWorkItem(idOrTitle);

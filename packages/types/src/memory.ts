@@ -252,6 +252,47 @@ export interface TaskCommentEntry {
   createdAt: string;
 }
 
+/**
+ * Compact summary of a task for orchestrator "what needs attention" snapshots.
+ * Drops heavy fields (context, description) and keeps only what the voice
+ * orchestrator needs to decide whether to surface the item.
+ */
+export interface TaskSummary {
+  id: string;
+  title: string;
+  status: WorkItemStatus;
+  priority: WorkItemPriority;
+  source: TaskSource;
+  /** Latest urgency across any unresolved *_request comments. */
+  urgency?: TaskCommentUrgency;
+  goal: string | null;
+  dueAt: string | null;
+  leaseExpiresAt: string | null;
+  updatedAt: string;
+  /** Version number from the optimistic lock — caller uses this on update. */
+  version: number;
+}
+
+/**
+ * Single snapshot the orchestrator queries opportunistically to know what
+ * needs attention. Empty arrays where nothing applies. See
+ * docs/phase6b-task-driven-execution.md §get_system_state.
+ */
+export interface SystemStateSnapshot {
+  /** Number of workers currently in non-terminal status. */
+  activeWorkers: number;
+  /** Tasks blocked on user input (awaiting_clarification / awaiting_approval). */
+  attentionRequired: TaskSummary[];
+  /** Tasks that reached `done` since `lastStateFetchAt` (or all if first call). */
+  recentCompletions: TaskSummary[];
+  /** Tasks with `due_at` inside the next 30 minutes. */
+  upcomingDeadlines: TaskSummary[];
+  /** Tasks created by system_proactive / discovery_loop that haven't surfaced yet. */
+  pendingProactive: TaskSummary[];
+  /** Timestamp of this snapshot (ISO 8601). */
+  lastStateFetchAt: string;
+}
+
 /** Output from the extraction pipeline */
 export interface ExtractionResult {
   facts: {

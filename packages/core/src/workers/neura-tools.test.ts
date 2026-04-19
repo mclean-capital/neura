@@ -189,7 +189,7 @@ describe('task adapter', () => {
     });
     const tool = getTool(buildNeuraTools(ctx), 'list_tasks');
     await tool.execute('call-1', { status: 'pending' });
-    expect(listTasks).toHaveBeenCalledWith('pending');
+    expect(listTasks).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' }));
   });
 });
 

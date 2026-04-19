@@ -1,15 +1,66 @@
-import type { ToolDefinition } from '@neura/types';
+/**
+ * Phase 6b task + orchestration tools.
+ *
+ * Task CRUD (`create_task`, `list_tasks`, `get_task`, `update_task`,
+ * `delete_task`) plus two new orchestration tools introduced by Phase 6b:
+ *
+ *   - `dispatch_worker(task_id)` — kicks off a worker against an existing
+ *     task row. Replaces `run_skill` from Phase 6.
+ *   - `get_system_state()` — single snapshot the orchestrator queries
+ *     opportunistically to find out what needs attention.
+ *
+ * `update_task` is now the unified entry point for everything editable:
+ * field changes, status transitions, and comment appends. Workers and the
+ * orchestrator share the tool; the handler uses `ctx.actor` to scope which
+ * actor may do what (see docs/phase6b-task-driven-execution.md §Concurrency).
+ */
+
+import type {
+  TaskCommentType,
+  TaskCommentUrgency,
+  TaskContext,
+  ToolDefinition,
+  WorkItemPriority,
+  WorkItemStatus,
+} from '@neura/types';
 import { Logger } from '@neura/utils/logger';
-import type { ToolCallContext } from './types.js';
+import type { ToolCallContext, UpdateTaskPayload } from './types.js';
 
 const log = new Logger('tool:task');
+
+const ALL_STATUSES: WorkItemStatus[] = [
+  'pending',
+  'awaiting_dispatch',
+  'in_progress',
+  'awaiting_clarification',
+  'awaiting_approval',
+  'paused',
+  'done',
+  'cancelled',
+  'failed',
+];
+
+const COMMENT_TYPES: TaskCommentType[] = [
+  'progress',
+  'heartbeat',
+  'clarification_request',
+  'approval_request',
+  'clarification_response',
+  'approval_response',
+  'error',
+  'result',
+  'system',
+  'deferred',
+];
+
+const URGENCIES: TaskCommentUrgency[] = ['low', 'normal', 'high', 'critical'];
 
 export const taskToolDefs: ToolDefinition[] = [
   {
     type: 'function',
     name: 'create_task',
     description:
-      'Create a task or reminder. Use when the user asks you to remember to do something, set a reminder, or track a to-do item.',
+      'Create a new task. Use when the user asks you to do something actionable (file operations, research, code changes, reminders). Orchestrator uses create_task to brief a worker BEFORE dispatching — pair with dispatch_worker when the user confirms. Include `goal` whenever possible (what success looks like).',
     parameters: {
       type: 'object',
       properties: {
@@ -23,7 +74,29 @@ export const taskToolDefs: ToolDefinition[] = [
           type: 'string',
           description: 'Due date/time in ISO 8601 format (e.g., 2026-04-08T15:00:00)',
         },
-        description: { type: 'string', description: 'Optional longer description' },
+        description: { type: 'string', description: 'Free-form description' },
+        goal: {
+          type: 'string',
+          description: "User's success condition for this task (what 'done' looks like).",
+        },
+        context: {
+          type: 'object',
+          description:
+            'Structured context for the worker. Freeform keys; common fields: references[], constraints[], acceptance_criteria[].',
+        },
+        related_skills: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Skill names (kebab-case) to load as reference documentation at dispatch.',
+        },
+        repo_path: {
+          type: 'string',
+          description: 'Absolute path to a user repo; triggers git-worktree-scoped dispatch.',
+        },
+        base_branch: {
+          type: 'string',
+          description: 'Branch for the worktree (default: HEAD).',
+        },
       },
       required: ['title'],
     },
@@ -32,15 +105,30 @@ export const taskToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'list_tasks',
     description:
-      "List the user's tasks. Use when the user asks what's on their plate, what tasks they have, or wants to see their to-do list.",
+      "List the user's tasks. Filter by status array or needs_attention for blocked-on-user items. Default returns all non-terminal tasks.",
     parameters: {
       type: 'object',
       properties: {
         status: {
-          type: 'string',
-          enum: ['pending', 'in_progress', 'done', 'cancelled', 'failed', 'all'],
-          description: "Filter by status (default: open tasks only — 'pending' and 'in_progress')",
+          type: 'array',
+          items: { type: 'string', enum: [...ALL_STATUSES, 'all'] },
+          description: "Status filter. Pass ['all'] for every task; omit for non-terminal only.",
         },
+        needs_attention: {
+          type: 'boolean',
+          description:
+            'Shortcut for status in [awaiting_clarification, awaiting_approval] plus pending system_proactive tasks.',
+        },
+        source: {
+          type: 'string',
+          enum: ['user', 'system_proactive', 'discovery_loop'],
+          description: 'Filter by task origin.',
+        },
+        since: {
+          type: 'string',
+          description: 'ISO timestamp; only return tasks updated after this.',
+        },
+        limit: { type: 'number', description: 'Max rows to return (default 100).' },
       },
       required: [],
     },
@@ -48,14 +136,12 @@ export const taskToolDefs: ToolDefinition[] = [
   {
     type: 'function',
     name: 'get_task',
-    description: 'Get details about a specific task by title or ID.',
+    description:
+      'Get full details about a specific task by title or ID. Includes all Phase 6b fields (goal, context, related_skills, worker_id, version).',
     parameters: {
       type: 'object',
       properties: {
-        query: {
-          type: 'string',
-          description: 'Task title (partial match) or ID',
-        },
+        query: { type: 'string', description: 'Task title (partial match) or ID' },
       },
       required: ['query'],
     },
@@ -64,23 +150,53 @@ export const taskToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'update_task',
     description:
-      'Update an existing task. Use to change status (e.g., mark as done), priority, due date, or description. Find the task by title or ID.',
+      'Update a task: field changes, status transitions, and/or comment appends (unified with the worker protocol). Workers use this for report_progress / heartbeat / request_clarification / request_approval / complete_task / fail_task. Orchestrator uses it for user responses (clarification_response / approval_response) and field edits.',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Task title (partial match) or ID to update' },
+        query: { type: 'string', description: 'Task title (partial match) or ID' },
         status: {
           type: 'string',
-          enum: ['pending', 'in_progress', 'done', 'cancelled', 'failed'],
-          description: 'New status',
+          enum: ALL_STATUSES,
+          description: 'New status (subject to the transition matrix).',
         },
-        priority: {
-          type: 'string',
-          enum: ['low', 'medium', 'high'],
-          description: 'New priority',
+        comment: {
+          type: 'object',
+          description: 'Append a comment to the task timeline.',
+          properties: {
+            type: { type: 'string', enum: COMMENT_TYPES },
+            content: { type: 'string' },
+            urgency: { type: 'string', enum: URGENCIES },
+            attachment_path: {
+              type: 'string',
+              description: 'Path to overflow content (use when body is >32KB).',
+            },
+            metadata: { type: 'object' },
+          },
+          required: ['type', 'content'],
         },
-        due_at: { type: 'string', description: 'New due date/time in ISO 8601 format' },
-        description: { type: 'string', description: 'New description' },
+        fields: {
+          type: 'object',
+          description: 'Field updates.',
+          properties: {
+            title: { type: 'string' },
+            priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+            description: { type: 'string' },
+            due_at: { type: 'string' },
+            goal: { type: 'string' },
+            context: { type: 'object' },
+            related_skills: { type: 'array', items: { type: 'string' } },
+            repo_path: { type: 'string' },
+            base_branch: { type: 'string' },
+            worker_id: { type: 'string' },
+            lease_expires_at: { type: 'string' },
+          },
+        },
+        expect_version: {
+          type: 'number',
+          description:
+            'Optimistic-lock guard: pass the version you read from get_task. Failure throws version_conflict.',
+        },
       },
       required: ['query'],
     },
@@ -88,7 +204,7 @@ export const taskToolDefs: ToolDefinition[] = [
   {
     type: 'function',
     name: 'delete_task',
-    description: 'Delete a task permanently. Find the task by title or ID.',
+    description: 'Delete a task permanently (cascades to its comments).',
     parameters: {
       type: 'object',
       properties: {
@@ -97,7 +213,36 @@ export const taskToolDefs: ToolDefinition[] = [
       required: ['query'],
     },
   },
+  {
+    type: 'function',
+    name: 'dispatch_worker',
+    description:
+      'Dispatch a worker to execute an existing task. The task must already have a clear goal + context — call create_task first, confirm with the user for non-trivial / destructive work, then dispatch. Returns a worker_id immediately; progress flows via comments on the task.',
+    parameters: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'ID of an existing task to run.' },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_system_state',
+    description:
+      "Single snapshot of what's happening: active workers, tasks blocked on user input, recent completions, upcoming deadlines, pending proactive items. Call opportunistically at conversation start and after long pauses. Empty arrays mean nothing needs attention.",
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ];
+
+const TASK_NAMES = new Set(taskToolDefs.map((d) => d.name));
+
+export function isTaskTool(name: string): boolean {
+  return TASK_NAMES.has(name);
+}
 
 export async function handleTaskTool(
   name: string,
@@ -105,23 +250,35 @@ export async function handleTaskTool(
   ctx: ToolCallContext
 ): Promise<Record<string, unknown> | null> {
   if (!TASK_NAMES.has(name)) return null;
-  if (!ctx.taskTools) return { error: 'Task system not available' };
 
   try {
     switch (name) {
       case 'create_task': {
+        if (!ctx.taskTools) return { error: 'Task system not available' };
         const title = args.title as string;
-        const priority = (args.priority as string) || 'medium';
+        const priority = (args.priority as WorkItemPriority) ?? 'medium';
         const id = await ctx.taskTools.createTask(title, priority, {
           description: args.description as string | undefined,
           dueAt: args.due_at as string | undefined,
+          goal: args.goal as string | undefined,
+          context: args.context as TaskContext | undefined,
+          relatedSkills: args.related_skills as string[] | undefined,
+          repoPath: args.repo_path as string | undefined,
+          baseBranch: args.base_branch as string | undefined,
         });
         return { result: { created: true, id, title } };
       }
 
       case 'list_tasks': {
-        const status = args.status as string | undefined;
-        const tasks = await ctx.taskTools.listTasks(status);
+        if (!ctx.taskTools) return { error: 'Task system not available' };
+        const filter = {
+          status: args.status as WorkItemStatus | WorkItemStatus[] | 'all' | undefined,
+          source: args.source as 'user' | 'system_proactive' | 'discovery_loop' | undefined,
+          needsAttention: args.needs_attention as boolean | undefined,
+          since: args.since as string | undefined,
+          limit: args.limit as number | undefined,
+        };
+        const tasks = await ctx.taskTools.listTasks(filter);
         return {
           result: {
             count: tasks.length,
@@ -131,12 +288,17 @@ export async function handleTaskTool(
               status: t.status,
               priority: t.priority,
               dueAt: t.dueAt,
+              goal: t.goal,
+              source: t.source,
+              version: t.version,
+              workerId: t.workerId,
             })),
           },
         };
       }
 
       case 'get_task': {
+        if (!ctx.taskTools) return { error: 'Task system not available' };
         const query = args.query as string;
         const task = await ctx.taskTools.getTask(query);
         if (!task) return { result: { found: false } };
@@ -144,22 +306,84 @@ export async function handleTaskTool(
       }
 
       case 'update_task': {
+        if (!ctx.taskTools) return { error: 'Task system not available' };
         const query = args.query as string;
-        const updates: Record<string, unknown> = {};
-        if (args.status !== undefined) updates.status = args.status;
-        if (args.priority !== undefined) updates.priority = args.priority;
-        if (args.due_at !== undefined) updates.dueAt = args.due_at;
-        if (args.description !== undefined) updates.description = args.description;
-        const updated = await ctx.taskTools.updateTask(query, updates);
+        const payload: UpdateTaskPayload = {};
+        if (args.status !== undefined) payload.status = args.status as WorkItemStatus;
+        if (args.expect_version !== undefined)
+          payload.expectVersion = args.expect_version as number;
+        if (args.comment !== undefined) {
+          const c = args.comment as Record<string, unknown>;
+          payload.comment = {
+            type: c.type as TaskCommentType,
+            content: c.content as string,
+            ...(c.urgency !== undefined ? { urgency: c.urgency as TaskCommentUrgency } : {}),
+            ...(c.metadata !== undefined
+              ? { metadata: c.metadata as Record<string, unknown> }
+              : {}),
+            ...(c.attachment_path !== undefined
+              ? { attachmentPath: c.attachment_path as string }
+              : {}),
+          };
+        }
+        if (args.fields !== undefined) {
+          const f = args.fields as Record<string, unknown>;
+          payload.fields = {
+            ...(f.title !== undefined ? { title: f.title as string } : {}),
+            ...(f.priority !== undefined ? { priority: f.priority as WorkItemPriority } : {}),
+            ...(f.description !== undefined ? { description: f.description as string | null } : {}),
+            ...(f.due_at !== undefined ? { dueAt: f.due_at as string | null } : {}),
+            ...(f.goal !== undefined ? { goal: f.goal as string | null } : {}),
+            ...(f.context !== undefined ? { context: f.context as TaskContext | null } : {}),
+            ...(f.related_skills !== undefined
+              ? { relatedSkills: f.related_skills as string[] }
+              : {}),
+            ...(f.repo_path !== undefined ? { repoPath: f.repo_path as string | null } : {}),
+            ...(f.base_branch !== undefined ? { baseBranch: f.base_branch as string | null } : {}),
+            ...(f.worker_id !== undefined ? { workerId: f.worker_id as string | null } : {}),
+            ...(f.lease_expires_at !== undefined
+              ? { leaseExpiresAt: f.lease_expires_at as string | null }
+              : {}),
+          };
+        }
+        const updated = await ctx.taskTools.updateTask(query, payload);
         if (!updated) return { result: { found: false } };
-        return { result: { updated: true } };
+        return {
+          result: {
+            updated: true,
+            version: updated.version,
+            status: updated.task.status,
+            comment: updated.comment,
+          },
+        };
       }
 
       case 'delete_task': {
+        if (!ctx.taskTools) return { error: 'Task system not available' };
         const query = args.query as string;
         const deleted = await ctx.taskTools.deleteTask(query);
         if (!deleted) return { result: { found: false } };
         return { result: { deleted: true } };
+      }
+
+      case 'dispatch_worker': {
+        if (!ctx.workerDispatch) return { error: 'Worker dispatch not available' };
+        const taskId = args.task_id as string;
+        const outcome = await ctx.workerDispatch.dispatchWorker(taskId);
+        if ('error' in outcome) return { error: outcome.error };
+        return {
+          result: {
+            dispatched: true,
+            workerId: outcome.workerId,
+            message: `Worker ${outcome.workerId} dispatched. You'll hear progress updates as it works.`,
+          },
+        };
+      }
+
+      case 'get_system_state': {
+        if (!ctx.systemState) return { error: 'System state not available' };
+        const snapshot = await ctx.systemState.getSystemState();
+        return { result: snapshot };
       }
 
       default:
@@ -170,5 +394,3 @@ export async function handleTaskTool(
     return { error: `Failed: ${String(err)}` };
   }
 }
-
-const TASK_NAMES = new Set(['create_task', 'list_tasks', 'get_task', 'update_task', 'delete_task']);
