@@ -1,3 +1,20 @@
+# [3.5.0](https://github.com/mclean-capital/neura/compare/v3.4.1...v3.5.0) (2026-04-19)
+
+### Bug Fixes
+
+- **core:** Phase 6b review round 2 — 7 findings from subagent + Codex ([136495b](https://github.com/mclean-capital/neura/commit/136495bbb15687cda03bc5bae658b767eedb1e1a)), closes [#1](https://github.com/mclean-capital/neura/issues/1) [#2](https://github.com/mclean-capital/neura/issues/2) [#3](https://github.com/mclean-capital/neura/issues/3) [#4](https://github.com/mclean-capital/neura/issues/4) [#5](https://github.com/mclean-capital/neura/issues/5) [#6](https://github.com/mclean-capital/neura/issues/6) [#7](https://github.com/mclean-capital/neura/issues/7)
+- **core:** Wave 3 Pass 1 nits — filter handling + Pass 2 prerequisites ([c5fa99c](https://github.com/mclean-capital/neura/commit/c5fa99c05e09aceba3f1bb09c744480b466b23e1))
+
+### Features
+
+- **cli:** add neura skill validate command ([f1f0214](https://github.com/mclean-capital/neura/commit/f1f02142eadbad0d55580286dc5a1f7f6422ebeb))
+- **core:** surface license + compatibility on skills (agentskills.io spec) ([ddd9ee1](https://github.com/mclean-capital/neura/commit/ddd9ee1d0381663325a77227259261920b40d70c))
+- **core:** Wave 2 — schema migration for task-driven execution ([5df5e2e](https://github.com/mclean-capital/neura/commit/5df5e2ef510dd4e86d3a1252edbc01fd93a03b43))
+- **core:** Wave 3 Pass 1 — orchestrator task-driven tool surface ([6967af9](https://github.com/mclean-capital/neura/commit/6967af98a9af67521bb0179288e301621636dae6))
+- **core:** Wave 3 Pass 2 — dispatch wiring + invariant layer ([39dd5fb](https://github.com/mclean-capital/neura/commit/39dd5fbb96a30cafac796b9f7d7ac8cdef5fadc1))
+- **core:** Wave 3 Pass 3 — 6-verb worker protocol tools ([f1713f6](https://github.com/mclean-capital/neura/commit/f1713f645434002b51b97b9f7ae6ccf195f48d11))
+- **core:** Wave 4 — worktrees + canonical worker prompt ([2f3c1a1](https://github.com/mclean-capital/neura/commit/2f3c1a15c028556d3b3c08564b4c7604936b1cd5))
+
 ## [3.4.1](https://github.com/mclean-capital/neura/compare/v3.4.0...v3.4.1) (2026-04-14)
 
 ### Bug Fixes
