@@ -456,14 +456,21 @@ Verb adapter tests (`worker-protocol-tools.test.ts`) pin each verb's parameter t
 
 **Risk:** high. Load-bearing change; lots of tests to rewire.
 
-### Wave 4 — get_system_state, worktrees, canonical prompts
+### Wave 4 — get_system_state, worktrees, canonical prompts (shipped)
 
-- Implement `get_system_state()` tool
-- Global worktree base dir management + dispatch integration
-- Draft + iterate canonical worker system prompt
-- Update orchestrator system prompt (or `orchestrator-worker-control` skill)
+- `WorktreeManager` (`packages/core/src/workers/worktree-manager.ts`) owns per-worker isolation:
+  - `create({ repoPath, baseBranch })` — runs `git worktree add` when a repo is attached, falls back to plain `mkdir` otherwise. Clobbers a pre-existing dir so crash-retry is safe.
+  - `cleanup(workerId)` — uses `git worktree remove --force` on git-backed worktrees, plain `rm -rf` otherwise.
+  - `scheduleCleanup(workerId)` — retention-aware cleanup for `failed` / `crashed` outcomes (default 24h window).
+  - `sweepOrphans(liveIds)` — called from `AgentWorker.recoverFromCrash()` at startup.
+- `AgentWorker.dispatchForTask` uses the manager's `create` — passes `cwd` through to pi. Terminal results (`persistTerminalResult`) now drive cleanup: immediate on `completed` / `cancelled`, retention-scheduled on `failed` / `crashed`.
+- `CANONICAL_WORKER_SYSTEM_PROMPT` exported from `agent-worker.ts`: the ~500-word role + tool posture + reversibility rule + 6-verb protocol + heartbeat cadence + escalation discipline prompt prepended to every task-driven dispatch. Kept in code (not a skill) so every worker depends on it without coupling dispatch to skill loading.
+- `orchestrator-worker-control` skill upgraded to v0.2.0 with PM guidance: task two-step pattern (`create_task` → confirm → `dispatch_worker`), goal/context schema expectations, confirmation policy matrix, attention-ticket walkthrough, urgency policy, clarification vs resume distinction.
+- `get_system_state()` already shipped in Pass 2 — the Wave 4 slot just validates it against the expanded prompts.
 
-**Risk:** medium. Prompts need iteration against real scenarios.
+Out of scope for now (rolls into follow-ups): submodule init, LFS hydration, `copy_paths` support, Windows MAX_PATH mitigation, disk-cap enforcement. None of these block the end-to-end capability path; each has a concrete failure mode we can address when a real user repo surfaces it.
+
+**Risk:** medium → low; the happy path lands clean and the canonical prompt matches the protocol we already tested against.
 
 ### Wave 5 — Tests, docs, verification
 

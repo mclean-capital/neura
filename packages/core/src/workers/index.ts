@@ -20,3 +20,9 @@ export {
   WORKER_PROTOCOL_TOOL_NAMES,
   type WorkerProtocolToolsOptions,
 } from './worker-protocol-tools.js';
+export {
+  WorktreeManager,
+  type WorktreeManagerOptions,
+  type CreateWorktreeArgs,
+  type CreateWorktreeResult,
+} from './worktree-manager.js';

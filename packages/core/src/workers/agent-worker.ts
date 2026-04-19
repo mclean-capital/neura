@@ -26,9 +26,7 @@
  *      no SIGCHLD handlers — just observing the event stream.
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { PGlite } from '@electric-sql/pglite';
 import { Logger } from '@neura/utils/logger';
 import type {
@@ -49,6 +47,7 @@ import {
 import { getWorkItem, updateWorkItem } from '../stores/work-item-queries.js';
 import type { WorkerHandle, WorkerRuntime } from './worker-runtime.js';
 import { WorkerCancellation } from './worker-cancellation.js';
+import { WorktreeManager } from './worktree-manager.js';
 
 const log = new Logger('agent-worker');
 
@@ -61,12 +60,72 @@ export interface AgentWorkerOptions {
    * becomes the pi session `cwd`. See plan §Git Worktree Isolation.
    */
   worktreeBasePath?: string;
+  /** Retention window (hours) for failed/cancelled worktrees. Default 24. */
+  worktreeRetentionHours?: number;
+  /**
+   * Optional pre-built WorktreeManager (for tests). When omitted, the
+   * agent builds one from the path + retention options above.
+   */
+  worktreeManager?: WorktreeManager;
 }
 
-/** Build the canonical task-driven prompt from a work_items row. */
+/**
+ * Canonical Neura worker system-prompt preamble. Injected ahead of every
+ * task-driven dispatch via {@link buildCanonicalWorkerPrompt}. Defines the
+ * role, tool posture, the reversibility rule, the 6-verb protocol, and
+ * heartbeat cadence — things every worker reads the same way regardless
+ * of the specific task.
+ *
+ * Target length: ~500-700 words. Kept in code (not a skill) because
+ * every worker in the system depends on it being present; treating it
+ * as a skill would couple dispatch to skill loading and fail-open if
+ * the skill file is missing.
+ */
+export const CANONICAL_WORKER_SYSTEM_PROMPT = `You are a Neura worker — a capable engineering agent executing a task dispatched by the Neura orchestrator. The orchestrator is a voice-first assistant that briefed this task with the user, confirmed intent, and handed it off to you.
+
+Your posture: be decisive. You have full tool access — Read, Write, Edit, Bash — scoped to an isolated worktree directory (your cwd). Make progress. Don't ask the user to double-check obvious things. Don't propose a plan and wait for approval when the path is clear.
+
+Reversibility rule: before any destructive or hard-to-reverse action **outside** your worktree, call \`request_approval\` and wait for the user's answer. Examples that require approval:
+- Deleting files the user owns
+- Force-pushing branches, rewriting git history
+- Sending email, SMS, or other external messages
+- Spending money (API calls with cost, cloud resources)
+- Running \`rm\` outside your cwd
+
+Actions inside your worktree (creating new files, editing files you created, running tests, installing deps) are reversible — just act.
+
+Communication protocol — use these tools to report back, not prose:
+
+- \`report_progress(message)\` — brief status updates. Surfaces to the user as ambient voice. Use sparingly: one update per meaningful step, not one per tool call.
+- \`heartbeat(note?)\` — signal you're alive on long tasks. Emit at least every 2 minutes when you expect to run longer than that, or the orchestrator will treat you as crashed.
+- \`request_clarification(question, context?, urgency?)\` — ask the user a blocking question. Returns their answer. Only escalate when you genuinely cannot resolve ambiguity from the task context. Try to answer from context first.
+- \`request_approval(action, rationale?, urgency?)\` — mandatory before destructive actions (see reversibility rule above).
+- \`complete_task(summary)\` — mark the task done. Include a short summary of what you did, keyed to the acceptance criteria. The invariant layer will reject this if any clarification or approval is still unresolved.
+- \`fail_task(reason, reason_code)\` — mark the task failed. Use the right reason_code: \`impossible\` (missing precondition), \`already_done\` (no-op), \`user_aborted\` (user stopped you), \`hard_error\` (exception/timeout).
+
+Escalation discipline: escalate sparingly. The orchestrator is mediating a voice conversation with a human — every clarification interrupts it. Only escalate when:
+- You cannot determine which of several paths the user wants (and context doesn't make it obvious).
+- You hit a blocker that requires user authorization (destructive action, external side effect).
+- You genuinely lack required information (credentials, API endpoints, user preferences).
+
+Don't escalate for things you can try yourself. Don't escalate to confirm a plan before acting when the plan is obvious.
+
+Reference skills: if your task's \`reference_skills\` is populated, skill docs appear in your context. They are reference material, not capability gates — consult them for domain specifics (e.g. "how does our CMS auth work") but you aren't required to follow them verbatim. Skills are snapshotted at dispatch; edits mid-run won't reach you.
+
+Complete what you were asked to complete. If the task is done, call \`complete_task\`. If you cannot finish, call \`fail_task\` with the best-fit reason_code — do not stall or exit silently.`;
+
+/**
+ * Build the canonical task-driven prompt. Prepends
+ * {@link CANONICAL_WORKER_SYSTEM_PROMPT} to the task-specific context
+ * block (goal, acceptance criteria, references, related skills) and the
+ * update-task reminder.
+ */
 export function buildCanonicalWorkerPrompt(task: WorkItemEntry): string {
   const lines: string[] = [];
-  lines.push(`Your task: ${task.title}`);
+  lines.push(CANONICAL_WORKER_SYSTEM_PROMPT);
+  lines.push('\n<task>');
+  lines.push(`Title: ${task.title}`);
+  lines.push(`Task ID: ${task.id}`);
   if (task.goal) lines.push(`\nGoal (what success looks like): ${task.goal}`);
   if (task.description) lines.push(`\nDescription:\n${task.description}`);
   const ctx = task.context;
@@ -89,8 +148,9 @@ export function buildCanonicalWorkerPrompt(task: WorkItemEntry): string {
       `\nReference skills available: ${task.relatedSkills.join(', ')}. Consult them for domain specifics if relevant.`
     );
   }
+  lines.push('</task>');
   lines.push(
-    `\nReport progress, ask for clarification, or request approval via update_task on task id ${task.id}. Complete with status: done when finished.`
+    `\nWhen the task is complete, call \`complete_task\` with your summary. If you cannot finish, call \`fail_task\` with a reason_code.`
   );
   return lines.join('\n');
 }
@@ -99,12 +159,19 @@ export class AgentWorker {
   private readonly db: PGlite;
   private readonly runtime: WorkerRuntime;
   private readonly cancellation: WorkerCancellation;
-  private readonly worktreeBasePath: string;
+  private readonly worktrees: WorktreeManager;
+  /** Tracks worktree paths per workerId so terminal handlers can clean up. */
+  private readonly workerTaskIds = new Map<string, string>();
 
   constructor(options: AgentWorkerOptions) {
     this.db = options.db;
     this.runtime = options.runtime;
-    this.worktreeBasePath = options.worktreeBasePath ?? join(homedir(), '.neura', 'worktrees');
+    this.worktrees =
+      options.worktreeManager ??
+      new WorktreeManager({
+        basePath: options.worktreeBasePath,
+        retentionHours: options.worktreeRetentionHours,
+      });
     this.cancellation = new WorkerCancellation({
       runtime: options.runtime,
       onWorkerAborted: async (workerId) => {
@@ -127,12 +194,25 @@ export class AgentWorker {
 
   /**
    * Run the startup recovery sweep. Must be called before any new
-   * workers are dispatched. Marks mid-execution orphans as crashed and
-   * preserves idle_partial rows with a valid session_file.
+   * workers are dispatched. Marks mid-execution orphans as crashed,
+   * preserves idle_partial rows with a valid session_file, and sweeps
+   * orphaned worktrees whose backing worker row is no longer live.
    */
   async recoverFromCrash(): Promise<void> {
     const summary = await sweepCrashedWorkers(this.db, (path) => existsSync(path));
     log.info('crash recovery sweep complete', { ...summary });
+
+    // Worktree orphan sweep. Any non-terminal worker is considered live
+    // for the purposes of retaining its worktree; everything else is a
+    // cleanup candidate (subject to the retention window inside
+    // WorktreeManager.sweepOrphans).
+    const liveWorkers = await listWorkers(this.db, {
+      status: ['spawning', 'running', 'blocked_clarifying', 'idle_partial'],
+      limit: 1000,
+    });
+    const liveIds = new Set(liveWorkers.map((w) => w.workerId));
+    const wtSummary = this.worktrees.sweepOrphans(liveIds);
+    log.info('worktree orphan sweep complete', { ...wtSummary });
   }
 
   /**
@@ -218,9 +298,9 @@ export class AgentWorker {
    * in_progress` back onto the task, and kicks off a pi AgentSession with
    * `cwd` set to the worktree.
    *
-   * Worktree is scratch-only in Pass 2. Wave 4 adds `git worktree add` for
-   * repo-scoped tasks, LFS hydration, disk-cap enforcement, and the
-   * terminal-status cleanup sweep.
+   * Wave 4 adds `git worktree add` for repo-scoped tasks, retention-aware
+   * cleanup on failed / cancelled outcomes, and the orphan-sweep hook
+   * (wired via `recoverFromCrash` below).
    */
   async dispatchForTask(taskId: string, callbacks: WorkerCallbacks = {}): Promise<WorkerHandle> {
     const task = await getWorkItem(this.db, taskId);
@@ -241,24 +321,20 @@ export class AgentWorker {
     // workerId to `runtime.dispatch` keeps the active-map key and the
     // db-row id in lockstep (B1 fix from Phase 6).
     const workerId = await createWorker(this.db, workerTask);
-    const worktreePath = join(this.worktreeBasePath, workerId);
-    try {
-      mkdirSync(worktreePath, { recursive: true });
-    } catch (err) {
-      log.warn('failed to create worktree dir; continuing with runtime default cwd', {
+    this.workerTaskIds.set(workerId, task.id);
+    const wt = this.worktrees.create({
+      workerId,
+      repoPath: task.repoPath,
+      baseBranch: task.baseBranch,
+    });
+    const worktreePath = wt.path;
+    if (task.repoPath && !wt.gitBacked) {
+      // The manager already logged the fallback; surface a task comment
+      // via the regular persist path so the operator sees the downgrade
+      // without digging through logs. Best-effort, no await.
+      log.warn('worker fell back to scratch worktree despite repo_path', {
         workerId,
-        worktreePath,
-        err: String(err),
-      });
-    }
-    if (task.repoPath) {
-      // Wave 4: `git worktree add <worktreePath> <base-branch>` goes here.
-      // For now, we log that git isolation isn't active yet — the worker
-      // gets a plain scratch dir, not a working-tree view of the repo.
-      log.info('repo_path set but git worktree not yet integrated (Wave 4)', {
-        workerId,
-        repoPath: task.repoPath,
-        baseBranch: task.baseBranch,
+        taskId: task.id,
       });
     }
 
@@ -500,6 +576,22 @@ export class AgentWorker {
       }
     } catch (err) {
       log.error('failed to persist terminal result', { workerId, err: String(err) });
+    }
+
+    // Worktree cleanup policy:
+    //  - `completed` / `cancelled`: clean up immediately
+    //  - `failed` / `crashed`: keep for the retention window so the operator
+    //    can inspect the state, then schedule a sweep
+    //  - `idle_partial`: leave alone (resumable)
+    try {
+      if (status === 'completed' || status === 'cancelled') {
+        this.worktrees.cleanup(workerId);
+        this.workerTaskIds.delete(workerId);
+      } else if (status === 'failed' || status === 'crashed') {
+        this.worktrees.scheduleCleanup(workerId);
+      }
+    } catch (err) {
+      log.warn('worktree cleanup failed', { workerId, status, err: String(err) });
     }
   }
 }
