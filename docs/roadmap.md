@@ -781,26 +781,43 @@ Makes the CLI a full voice/text client, proving the WebSocket protocol is truly 
 
 ### Upcoming
 
-#### Phase 6 — Skill Framework & Self-Extension
+#### Phase 6 — Skill Framework (reference docs) + Task-Driven Execution
 
-Standardize how tools/skills are defined, loaded, and created. This is the foundation for everything that follows — Discovery Loop triggers skills, self-extension creates skills.
+Phase 6 shipped the skill loader and pi-coding-agent worker runtime. Phase 6b pivoted on what "skill" means: agentskills.io-spec reference documentation, not capability gates. Capability now flows through **tasks** — the orchestrator briefs a task, confirms intent with the user, and dispatches a generic worker via `dispatch_worker`. See [`phase6b-task-driven-execution.md`](phase6b-task-driven-execution.md) for the detailed design.
 
-**6a — Skill Template & Runtime**
+**6a — Skill Template & Runtime (shipped)**
 
-- [x] Skill directory structure (`SKILL.md` with YAML frontmatter)
-- [x] Runtime skill loading (no recompilation) — `SkillLoader`
-- [x] Skill discovery: scan `~/.neura/skills/` and `.neura/skills/` at startup — `SkillRegistry`
-- [x] File watcher for hot-reload — `SkillWatcher` (chokidar)
-- [x] Skill tools: `execute_skill`, `list_skills`
-- [ ] Extract existing tools (vision, time, memory, presence, tasks) into skill format
-- [ ] User-installable skills from `~/.neura/skills/`
+- [x] Skill directory structure (`SKILL.md` with YAML frontmatter, agentskills.io v1 compliant)
+- [x] Runtime skill loading + hot-reload — `SkillRegistry` + `SkillWatcher`
+- [x] Skill discovery: repo-local `.neura/skills/` + global `~/.neura/skills/`
+- [x] `neura skill validate` CLI command
 
-**6b — Self-Extension**
+**6b — Task-Driven Execution (shipped)**
 
-- [ ] `create_skill` tool: Neura writes new skills autonomously via voice/text
-- [ ] Skill validation (syntax check, dry-run before activation)
-- [ ] Skill testing framework (verify new skills work before committing)
-- [ ] Bootstrap: ship enough base skills that Neura can extend itself for common use cases
+- [x] Task model expanded: `goal`, `context`, `related_skills`, `repo_path`, `base_branch`, `worker_id`, `source`, `version`, `lease_expires_at`
+- [x] `task_comments` table as the durable source of truth for worker ↔ orchestrator communication
+- [x] Orchestrator tool surface: `create_task`, `dispatch_worker(task_id)`, unified `update_task(taskId, payload)`, `list_tasks(filter)`, `get_task`, `delete_task`, `get_system_state()`
+- [x] `applyTaskUpdate` invariant layer: cross-task write guard, transition matrix, author-spoofing guard, completion gate (no `done` while requests open)
+- [x] 6-verb worker protocol tools: `report_progress`, `heartbeat`, `request_clarification`, `request_approval`, `complete_task`, `fail_task`
+- [x] `AgentWorker.dispatchForTask` — loads work_items row, builds canonical prompt, mirrors worker_id + in_progress back onto the task
+- [x] `WorktreeManager` — per-worker filesystem isolation (git worktree add for repo-backed tasks, mkdir scratch otherwise, retention-aware cleanup, startup orphan sweep)
+- [x] Canonical worker system prompt (role, tool posture, reversibility rule, 6-verb protocol, heartbeat cadence)
+- [x] Orchestrator PM skill (`orchestrator-worker-control` v0.2.0) with task two-step pattern + confirmation policy
+
+**6b — follow-ups (when a real user repo surfaces the need)**
+
+- [ ] `git worktree` submodule init / LFS hydration
+- [ ] `worktreeMaxTotalBytes` disk-cap enforcement
+- [ ] Windows MAX_PATH short workerId mitigation
+- [ ] `copy_paths` support for build caches the worker needs pre-seeded
+- [ ] `DataStore.addComment` first-class method (retire the `getRawDb()` cast in websocket.ts)
+- [ ] Resume path forwards `taskId` to `buildTools` so the 6 verb tools are available after a core restart
+- [ ] `create_skill` voice authoring flow — revisit post-Phase 6b based on user feedback
+
+**6c — Task testing & bootstrap (deferred)**
+
+- [ ] End-to-end scenario tests: "create hello.txt on desktop" through orchestrator + worker
+- [ ] Bootstrap skill library for common domains (filesystem ops, web research, code review)
 
 #### Phase 7 — Discovery Loop (integrations & triggers)
 

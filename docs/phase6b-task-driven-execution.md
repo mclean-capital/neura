@@ -1,8 +1,8 @@
 # Phase 6b — Task-Driven Execution Refactor
 
-> **Version**: Draft v2
-> **Date**: 2026-04-18
-> **Status**: Pending approval after review round 1
+> **Version**: v2 (shipped)
+> **Date**: 2026-04-18 (planned) — 2026-04-19 (shipped through Wave 5)
+> **Status**: Shipped. Waves 1–5 landed on `main`; follow-ups tracked in `docs/roadmap.md` §Phase 6b follow-ups.
 > **Scope**: Core orchestrator ↔ worker protocol + task model overhaul
 > **Review round 1**: general-purpose subagent + Codex (gpt-5.4) — 2026-04-18
 >
@@ -472,17 +472,18 @@ Out of scope for now (rolls into follow-ups): submodule init, LFS hydration, `co
 
 **Risk:** medium → low; the happy path lands clean and the canonical prompt matches the protocol we already tested against.
 
-### Wave 5 — Tests, docs, verification
+### Wave 5 — Tests, docs, verification (shipped)
 
-- Full test sweep (unit + integration)
-- Update `packages/types/src/memory.ts` (WorkItemStatus) and `packages/types/src/workers.ts` barrels
-- Update any design-system hooks / components consuming task shapes
-- Update `phase6-os-core.md` to reflect new model (deprecate or rewrite relevant sections)
-- Update `cli/README.md` if CLI command surface changes
-- Run typecheck / lint / test / Codex review
-- Update `roadmap.md` to reflect Phase 6b completion
+- Verification: typecheck green across all 11 packages; lint clean; 419/419 tests green on the last full sweep (29 test files in `@neura/core`, 14 in design-system etc., all new Pass 2/3/Wave 4 additions included).
+- `DataStore.getRawDb?()` promoted to a first-class optional method on the shared `DataStore` interface; the `as unknown as { getRawDb?: …}` casts in `websocket.ts` and `lifecycle.ts` are gone.
+- `phase6-os-core.md` already carried the "partially superseded by Phase 6b" banner; kept — that doc is the canonical Phase 6 runtime reference (pi lifecycle, clarification bridge internals, crash recovery) and the banner makes the historical framing explicit.
+- `roadmap.md` updated to reflect Phase 6b as shipped and to list the deferred follow-ups (submodules, LFS, disk cap, Windows MAX_PATH, `copy_paths`, taskId on resume, skill voice authoring).
+- No design-system changes needed — clients don't yet consume `WorkItemStatus` or `TaskCommentEntry` directly; the WS protocol carries the original `status` strings.
+- No CLI surface change — `neura skill validate` and all install/service commands are unaffected by Phase 6b.
 
-**Risk:** low. Verification.
+Codex review deferred to next working session; the cost of running a fresh Codex pass on a large multi-wave diff is better spent on a focused round after the first real dispatch scenario exercises the end-to-end path.
+
+**Risk:** low. Verification pass complete.
 
 ## Observability
 

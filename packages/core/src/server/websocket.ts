@@ -286,10 +286,8 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
           updateTask: async (idOrTitle, payload) => {
             const current = await resolveTask(store, idOrTitle);
             if (!current) return null;
-            const db = (
-              store as unknown as { getRawDb?: () => import('@electric-sql/pglite').PGlite }
-            ).getRawDb?.();
-            if (!db) throw new Error('store does not expose getRawDb');
+            const db = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
+            if (!db) throw new Error('store does not expose a raw PGlite handle');
             return applyTaskUpdate({ db, task: current, payload, actor: 'orchestrator' });
           },
           deleteTask: async (idOrTitle) => {

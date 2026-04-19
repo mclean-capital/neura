@@ -224,6 +224,21 @@ export interface DataStore {
   exportMemories(): Promise<MemoryBackup>;
   importMemories(backup: MemoryBackup): Promise<{ imported: number; skipped: number }>;
 
+  /**
+   * Escape hatch: return the underlying raw database handle for layers
+   * that run their own queries (task_comments, workers table, invariant
+   * layer). Implementations that don't expose a raw handle return `null`
+   * and callers should fall back to higher-level methods or feature-
+   * detect before invoking DB-specific paths. Today the only
+   * implementation is {@link PgliteStore} and it always returns a PGlite
+   * handle; future implementations (remote postgres, sqlite) can return
+   * their native driver object or null if no direct access is exposed.
+   *
+   * The return type is unknown because this package has zero runtime
+   * deps — callers cast to their driver's type.
+   */
+  getRawDb?(): unknown;
+
   close(): Promise<void>;
 }
 

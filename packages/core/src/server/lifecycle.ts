@@ -334,11 +334,11 @@ export async function initServices(): Promise<CoreServices> {
       // transitions via the 6-verb protocol). Deletion is
       // orchestrator-only — stub-refused for workers.
       const buildWorkerTaskTools = (workerId: string): TaskToolHandler => {
-        const rawDb = (
-          store as unknown as { getRawDb?: () => import('@electric-sql/pglite').PGlite }
-        ).getRawDb?.();
+        const rawDb = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
         if (!rawDb) {
-          throw new Error('store does not expose getRawDb (required for worker task tools)');
+          throw new Error(
+            'store does not expose a raw PGlite handle (required for worker task tools)'
+          );
         }
         return {
           createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
@@ -512,15 +512,12 @@ export async function initServices(): Promise<CoreServices> {
       });
 
       // The agent worker needs direct PGlite access for its worker
-      // queries — PgliteStore exposes it via getRawDb(). We assume the
-      // store is a PgliteStore at this point since that's the only
-      // DataStore implementation Neura currently ships; if a future
-      // DataStore doesn't have raw pglite, Phase 6 just disables.
-      const rawDb = (
-        store as unknown as { getRawDb?: () => import('@electric-sql/pglite').PGlite }
-      ).getRawDb?.();
+      // queries. `DataStore.getRawDb()` is the documented escape hatch;
+      // PgliteStore exposes the handle, future remote / SQLite stores
+      // return null and Phase 6 disables gracefully.
+      const rawDb = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
       if (!rawDb) {
-        throw new Error('store does not expose getRawDb (required for worker-queries)');
+        throw new Error('store does not expose a raw PGlite handle (required for worker-queries)');
       }
       agentWorker = new AgentWorker({ db: rawDb, runtime: piRuntime });
 
