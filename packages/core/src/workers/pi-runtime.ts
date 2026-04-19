@@ -98,9 +98,12 @@ export interface PiRuntimeOptions {
    * Factory that builds the full pi tool set for a new worker. Called
    * once per `createAgentSession` with the worker id so per-worker
    * custom tools (e.g. `request_clarification`) can close over the
-   * id for status updates and callback routing.
+   * id for status updates and callback routing. `taskId` is populated
+   * by the Phase 6b task-driven dispatch path so worker protocol tools
+   * (report_progress, complete_task, …) can close over it and post to
+   * the right work_items row.
    */
-  buildTools: (ctx: { workerId: string }) => NeuraAgentTool[];
+  buildTools: (ctx: { workerId: string; taskId?: string }) => NeuraAgentTool[];
 
   /** Voice fanout bridge. Shared across workers — one per active voice session. */
   voiceFanoutBridge: VoiceFanoutBridge;
@@ -161,9 +164,10 @@ export class PiRuntime implements WorkerRuntime {
   private async buildSession(
     sessionManager: SessionManager,
     workerId: string,
-    cwd?: string
+    cwd?: string,
+    taskId?: string
   ): Promise<AgentSession> {
-    const tools = this.opts.buildTools({ workerId });
+    const tools = this.opts.buildTools({ workerId, taskId });
     const sessionCwd = cwd ?? this.opts.cwd;
 
     // B2 fix: feed Neura's SkillRegistry into pi's resource loader so
@@ -366,7 +370,7 @@ export class PiRuntime implements WorkerRuntime {
     // load-bearing restart-safe identifier for this worker.
     const sessionCwd = task.cwd ?? this.opts.cwd;
     const sessionManager = SessionManager.create(sessionCwd, this.opts.sessionDir);
-    const session = await this.buildSession(sessionManager, workerId, sessionCwd);
+    const session = await this.buildSession(sessionManager, workerId, sessionCwd, task.taskId);
 
     let resolveDone!: (result: WorkerResult) => void;
     const done = new Promise<WorkerResult>((resolve) => {

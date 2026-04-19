@@ -439,11 +439,20 @@ Split into three passes for reviewability:
 
 Worktree is scratch-only in Pass 2 — `git worktree add`, LFS hydration, submodule init, disk-cap enforcement, and terminal-status cleanup all roll into Wave 4.
 
-**Pass 3** (upcoming): worker protocol tools
+**Pass 3** (shipped): worker protocol tools
 
-- Add pi AgentTool adapters for the 6 worker verbs (`report_progress`, `heartbeat`, `request_clarification`, `request_approval`, `complete_task`, `fail_task`) that wrap `update_task`
-- Demote `ClarificationBridge` to transport optimization; task comments are SoT
-- `VoiceFanoutBridge` updated: progress comments → ambient voice
+- `worker-protocol-tools.ts` exports `buildWorkerProtocolTools({ workerId, taskId, taskTools, clarificationBridge? })` returning 6 pi AgentTool adapters:
+  - `report_progress` — appends a `progress` comment, no status change
+  - `heartbeat` — appends a `heartbeat` comment and refreshes `lease_expires_at` by 5 min
+  - `request_clarification` — transitions to `awaiting_clarification`, posts `clarification_request`, blocks on the bridge's `askUser` for the user's next turn
+  - `request_approval` — transitions to `awaiting_approval`, posts `approval_request`, blocks on the bridge
+  - `complete_task` — transitions to `done`, posts `result`. Rejected by the invariant layer if any `*_request` is still unresolved.
+  - `fail_task(reason, reason_code)` — transitions to `failed`, posts `error` with the `reason_code` on `metadata`. Allowed even with open requests so the worker can bail cleanly.
+- `ClarificationBridge` demoted to a transport optimization. The ticket (task row + `task_comments`) is the source of truth; the bridge just fans the next voice turn back to the blocked verb tool. Legacy `buildClarificationTool` preserved for dispatch paths that don't yet thread `taskId` (resume after core restart).
+- `buildTools` now receives `{ workerId, taskId? }`. When `taskId` is present, the 6 verbs are appended; when absent (resume without task linkage), the legacy standalone `request_clarification` is used instead.
+- `PiRuntime.buildSession` + `PiRuntime.dispatch` plumb `task.taskId` through to `buildTools`. Resume doesn't yet pass `taskId` (tracked for Wave 5).
+
+Verb adapter tests (`worker-protocol-tools.test.ts`) pin each verb's parameter translation and the invariant-layer passthrough.
 
 **Risk:** high. Load-bearing change; lots of tests to rewire.
 

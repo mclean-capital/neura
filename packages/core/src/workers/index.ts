@@ -15,3 +15,8 @@ export {
   REQUEST_CLARIFICATION_TOOL_NAME,
   type ClarificationBridgeOptions,
 } from './clarification-bridge.js';
+export {
+  buildWorkerProtocolTools,
+  WORKER_PROTOCOL_TOOL_NAMES,
+  type WorkerProtocolToolsOptions,
+} from './worker-protocol-tools.js';

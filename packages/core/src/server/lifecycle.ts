@@ -20,6 +20,7 @@ import {
   VoiceFanoutBridge,
   buildClarificationTool,
   buildNeuraTools,
+  buildWorkerProtocolTools,
   defaultSessionDir,
   type NeuraAgentTool,
 } from '../workers/index.js';
@@ -446,17 +447,40 @@ export async function initServices(): Promise<CoreServices> {
       // tools.ts no longer registers any tool that reads it — but
       // we still satisfy the interface with a noop so the worker
       // context shape doesn't fork from the orchestrator context.
-      const buildTools = ({ workerId }: { workerId: string }): NeuraAgentTool[] => {
+      const buildTools = ({
+        workerId,
+        taskId,
+      }: {
+        workerId: string;
+        taskId?: string;
+      }): NeuraAgentTool[] => {
+        const workerTaskTools = buildWorkerTaskTools(workerId);
         const baseTools = buildNeuraTools({
           queryWatcher: () =>
             Promise.resolve('vision is not available to workers; orchestrator owns screen access'),
           memoryTools: workerMemoryTools,
-          taskTools: buildWorkerTaskTools(workerId),
+          taskTools: workerTaskTools,
         });
-        // Append the per-worker request_clarification tool. Bound to
-        // this workerId so each worker posts to its own clarification
-        // channel.
-        if (clarificationBridge) {
+
+        // Phase 6b — append the 6-verb worker protocol tools when this
+        // session has a linked task. Dispatch-for-task always passes
+        // taskId; resume after a core restart currently doesn't (Wave 5
+        // will thread it through). Without taskId the verb tools can't
+        // target anything so we skip them rather than building broken
+        // closures.
+        if (taskId && clarificationBridge) {
+          baseTools.push(
+            ...buildWorkerProtocolTools({
+              workerId,
+              taskId,
+              taskTools: workerTaskTools,
+              clarificationBridge,
+            })
+          );
+        } else if (clarificationBridge) {
+          // Legacy path — the standalone `request_clarification` tool
+          // (kept for resume-without-taskId and tests). Drops out once
+          // every dispatch flows through dispatchForTask.
           baseTools.push(buildClarificationTool(workerId, clarificationBridge));
         }
         return baseTools;
