@@ -1,6 +1,8 @@
 import type {
   FactEntry,
   SessionSummaryEntry,
+  TaskCommentEntry,
+  TaskContext,
   WorkItemEntry,
   TranscriptChunkEntry,
 } from '@neura/types';
@@ -80,7 +82,8 @@ export function mapSummary(r: {
   };
 }
 
-export function mapWorkItem(r: {
+/** Raw DB row shape for work_items table (snake_case column names). */
+export interface WorkItemRow {
   id: string;
   title: string;
   description: string | null;
@@ -92,7 +95,19 @@ export function mapWorkItem(r: {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
-}): WorkItemEntry {
+  // Phase 6b columns — optional on legacy rows that predate the migration.
+  goal?: string | null;
+  context?: TaskContext | null;
+  related_skills?: string[] | null;
+  repo_path?: string | null;
+  base_branch?: string | null;
+  worker_id?: string | null;
+  source?: string | null;
+  version?: number | null;
+  lease_expires_at?: string | null;
+}
+
+export function mapWorkItem(r: WorkItemRow): WorkItemEntry {
   return {
     id: r.id,
     title: r.title,
@@ -105,6 +120,43 @@ export function mapWorkItem(r: {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
+    // Phase 6b fields — defaulted when legacy rows lack them.
+    goal: r.goal ?? null,
+    context: r.context ?? null,
+    relatedSkills: r.related_skills ?? [],
+    repoPath: r.repo_path ?? null,
+    baseBranch: r.base_branch ?? null,
+    workerId: r.worker_id ?? null,
+    source: (r.source ?? 'user') as WorkItemEntry['source'],
+    version: r.version ?? 0,
+    leaseExpiresAt: r.lease_expires_at ?? null,
+  };
+}
+
+/** Raw DB row shape for task_comments table (snake_case column names). */
+export interface TaskCommentRow {
+  id: string;
+  task_id: string;
+  type: string;
+  author: string;
+  content: string;
+  attachment_path: string | null;
+  urgency: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export function mapTaskComment(r: TaskCommentRow): TaskCommentEntry {
+  return {
+    id: r.id,
+    taskId: r.task_id,
+    type: r.type as TaskCommentEntry['type'],
+    author: r.author,
+    content: r.content,
+    attachmentPath: r.attachment_path,
+    urgency: (r.urgency ?? null) as TaskCommentEntry['urgency'],
+    metadata: r.metadata,
+    createdAt: r.created_at,
   };
 }
 

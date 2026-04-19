@@ -650,6 +650,141 @@ describe('PgliteStore', () => {
     });
   });
 
+  // --- Phase 6b: task-driven execution tests ---
+
+  describe('Phase 6b: expanded WorkItem schema', () => {
+    it('createWorkItem defaults Phase 6b fields correctly', async () => {
+      const id = await store.createWorkItem('Fresh task', 'medium');
+      const item = await store.getWorkItem(id);
+
+      expect(item!.goal).toBeNull();
+      expect(item!.context).toBeNull();
+      expect(item!.relatedSkills).toEqual([]);
+      expect(item!.repoPath).toBeNull();
+      expect(item!.baseBranch).toBeNull();
+      expect(item!.workerId).toBeNull();
+      expect(item!.source).toBe('user');
+      expect(item!.version).toBe(0);
+      expect(item!.leaseExpiresAt).toBeNull();
+    });
+
+    it('createWorkItem accepts Phase 6b fields', async () => {
+      const id = await store.createWorkItem('Briefed task', 'high', {
+        goal: 'Upload the report to the CMS',
+        context: {
+          references: ['~/docs/report.pdf'],
+          constraints: ["don't overwrite existing drafts"],
+          acceptanceCriteria: ['published article appears in CMS index'],
+        },
+        relatedSkills: ['cms-upload-guide'],
+        repoPath: '/Users/me/projects/blog',
+        baseBranch: 'main',
+        source: 'user',
+      });
+
+      const item = await store.getWorkItem(id);
+      expect(item!.goal).toBe('Upload the report to the CMS');
+      expect(item!.context?.references).toEqual(['~/docs/report.pdf']);
+      expect(item!.context?.constraints).toEqual(["don't overwrite existing drafts"]);
+      expect(item!.relatedSkills).toEqual(['cms-upload-guide']);
+      expect(item!.repoPath).toBe('/Users/me/projects/blog');
+      expect(item!.baseBranch).toBe('main');
+      expect(item!.source).toBe('user');
+    });
+
+    it('accepts all new status values without CHECK-constraint violation', async () => {
+      for (const status of [
+        'awaiting_dispatch',
+        'awaiting_clarification',
+        'awaiting_approval',
+        'paused',
+      ] as const) {
+        const id = await store.createWorkItem(`Test ${status}`, 'medium');
+        await store.updateWorkItem(id, { status });
+        const item = await store.getWorkItem(id);
+        expect(item!.status).toBe(status);
+      }
+    });
+
+    it('getOpenWorkItems returns all non-terminal statuses including Phase 6b', async () => {
+      const idDispatch = await store.createWorkItem('awaiting dispatch', 'medium');
+      await store.updateWorkItem(idDispatch, { status: 'awaiting_dispatch' });
+
+      const idClarify = await store.createWorkItem('awaiting clarification', 'medium');
+      await store.updateWorkItem(idClarify, { status: 'awaiting_clarification' });
+
+      const idApprove = await store.createWorkItem('awaiting approval', 'medium');
+      await store.updateWorkItem(idApprove, { status: 'awaiting_approval' });
+
+      const idPaused = await store.createWorkItem('paused', 'medium');
+      await store.updateWorkItem(idPaused, { status: 'paused' });
+
+      const idDone = await store.createWorkItem('done', 'medium');
+      await store.updateWorkItem(idDone, { status: 'done' });
+
+      const openIds = (await store.getOpenWorkItems()).map((i) => i.id);
+      expect(openIds).toContain(idDispatch);
+      expect(openIds).toContain(idClarify);
+      expect(openIds).toContain(idApprove);
+      expect(openIds).toContain(idPaused);
+      expect(openIds).not.toContain(idDone);
+    });
+
+    it('updateWorkItem returns incrementing version', async () => {
+      const id = await store.createWorkItem('Versioned task', 'medium');
+      const v1 = await store.updateWorkItem(id, { title: 'First update' });
+      const v2 = await store.updateWorkItem(id, { title: 'Second update' });
+      const v3 = await store.updateWorkItem(id, { title: 'Third update' });
+
+      expect(v1).toBe(1);
+      expect(v2).toBe(2);
+      expect(v3).toBe(3);
+
+      const item = await store.getWorkItem(id);
+      expect(item!.version).toBe(3);
+    });
+
+    it('updateWorkItem with expectVersion succeeds when version matches', async () => {
+      const id = await store.createWorkItem('Locked task', 'medium');
+      const item = await store.getWorkItem(id);
+      const next = await store.updateWorkItem(
+        id,
+        { title: 'Updated' },
+        { expectVersion: item!.version }
+      );
+      expect(next).toBe(1);
+    });
+
+    it('updateWorkItem with expectVersion throws VersionConflictError when stale', async () => {
+      const id = await store.createWorkItem('Conflict task', 'medium');
+      const staleVersion = 0;
+      // Concurrent update bumps version
+      await store.updateWorkItem(id, { title: 'Concurrent update' });
+      // Now stale version should fail
+      await expect(
+        store.updateWorkItem(id, { title: 'Stale update' }, { expectVersion: staleVersion })
+      ).rejects.toThrow(/version conflict/);
+    });
+
+    it('updateWorkItem supports Phase 6b context mutation', async () => {
+      const id = await store.createWorkItem('Context-mutated task', 'medium');
+      await store.updateWorkItem(id, {
+        goal: 'a new goal',
+        context: { references: ['/tmp/a.txt'] },
+        relatedSkills: ['skill-a', 'skill-b'],
+        workerId: 'wkr-abc',
+        leaseExpiresAt: '2030-01-01T00:00:00Z',
+      });
+
+      const item = await store.getWorkItem(id);
+      expect(item!.goal).toBe('a new goal');
+      expect(item!.context?.references).toEqual(['/tmp/a.txt']);
+      expect(item!.relatedSkills).toEqual(['skill-a', 'skill-b']);
+      expect(item!.workerId).toBe('wkr-abc');
+      expect(item!.leaseExpiresAt).toBeTruthy();
+    });
+  });
+
   describe('file persistence', () => {
     it('persists data across close and reopen', async () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neura-pglite-test-'));

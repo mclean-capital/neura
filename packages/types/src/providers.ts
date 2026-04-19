@@ -9,6 +9,8 @@ import type {
   MemoryBackup,
   WorkItemEntry,
   WorkItemPriority,
+  TaskContext,
+  TaskSource,
   EntityEntry,
   EntityRelationship,
   TimelineEntry,
@@ -180,12 +182,42 @@ export interface DataStore {
       dueAt?: string;
       parentId?: string;
       sourceSessionId?: string;
+      // Phase 6b fields — optional on creation; filled in later by the
+      // task-driven dispatch flow.
+      goal?: string;
+      context?: TaskContext;
+      relatedSkills?: string[];
+      repoPath?: string;
+      baseBranch?: string;
+      source?: TaskSource;
     }
   ): Promise<string>;
+  /**
+   * Update a work item. Returns the new `version` number after the update
+   * succeeds. Pass `opts.expectVersion` to enforce optimistic locking —
+   * throws `VersionConflictError` if the row's version has moved.
+   */
   updateWorkItem(
     id: string,
-    updates: Partial<Pick<WorkItemEntry, 'status' | 'priority' | 'title' | 'description' | 'dueAt'>>
-  ): Promise<void>;
+    updates: Partial<
+      Pick<
+        WorkItemEntry,
+        | 'status'
+        | 'priority'
+        | 'title'
+        | 'description'
+        | 'dueAt'
+        | 'goal'
+        | 'context'
+        | 'relatedSkills'
+        | 'repoPath'
+        | 'baseBranch'
+        | 'workerId'
+        | 'leaseExpiresAt'
+      >
+    >,
+    opts?: { expectVersion?: number }
+  ): Promise<number>;
   deleteWorkItem(id: string): Promise<void>;
 
   // Backup & recovery

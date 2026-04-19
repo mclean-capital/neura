@@ -159,18 +159,36 @@ export async function runMigrations(db: PGlite, embeddingDimensions = 3072): Pro
 
   await db.exec('CREATE INDEX IF NOT EXISTS idx_extractions_status ON memory_extractions(status)');
 
+  // work_items — the primary unit of work. Phase 6b expands the status enum
+  // and adds columns for task-driven execution (see
+  // docs/phase6b-task-driven-execution.md §Schema Changes).
   await db.exec(`
     CREATE TABLE IF NOT EXISTS work_items (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
       status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'in_progress', 'done', 'cancelled', 'failed')),
+        CHECK (status IN (
+          'pending', 'awaiting_dispatch', 'in_progress',
+          'awaiting_clarification', 'awaiting_approval', 'paused',
+          'done', 'cancelled', 'failed'
+        )),
       priority TEXT NOT NULL DEFAULT 'medium'
         CHECK (priority IN ('low', 'medium', 'high')),
       due_at TIMESTAMP,
       parent_id TEXT REFERENCES work_items(id) ON DELETE SET NULL,
       source_session_id TEXT,
+      -- Phase 6b columns (also added via ALTER for upgrades below)
+      goal TEXT,
+      context JSONB,
+      related_skills JSONB NOT NULL DEFAULT '[]',
+      repo_path TEXT,
+      base_branch TEXT,
+      worker_id TEXT,
+      source TEXT NOT NULL DEFAULT 'user'
+        CHECK (source IN ('user', 'system_proactive', 'discovery_loop')),
+      version INTEGER NOT NULL DEFAULT 0,
+      lease_expires_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
       completed_at TIMESTAMP
@@ -178,6 +196,95 @@ export async function runMigrations(db: PGlite, embeddingDimensions = 3072): Pro
   `);
   await db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_due ON work_items(due_at)');
+
+  // Upgrade path: expand existing work_items.status CHECK constraint for
+  // installs that predate Phase 6b. Only drops + recreates when an old
+  // (pre-Phase-6b) constraint is detected.
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'work_items_status_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%awaiting_clarification%'
+      ) THEN
+        ALTER TABLE work_items DROP CONSTRAINT work_items_status_check;
+        ALTER TABLE work_items ADD CONSTRAINT work_items_status_check
+          CHECK (status IN (
+            'pending', 'awaiting_dispatch', 'in_progress',
+            'awaiting_clarification', 'awaiting_approval', 'paused',
+            'done', 'cancelled', 'failed'
+          ));
+      END IF;
+    END $$
+  `);
+
+  // Upgrade path: add Phase 6b columns idempotently for installs that
+  // predate the refactor.
+  await db.exec('ALTER TABLE work_items ADD COLUMN IF NOT EXISTS goal TEXT');
+  await db.exec('ALTER TABLE work_items ADD COLUMN IF NOT EXISTS context JSONB');
+  await db.exec(
+    `ALTER TABLE work_items ADD COLUMN IF NOT EXISTS related_skills JSONB NOT NULL DEFAULT '[]'`
+  );
+  await db.exec('ALTER TABLE work_items ADD COLUMN IF NOT EXISTS repo_path TEXT');
+  await db.exec('ALTER TABLE work_items ADD COLUMN IF NOT EXISTS base_branch TEXT');
+  await db.exec('ALTER TABLE work_items ADD COLUMN IF NOT EXISTS worker_id TEXT');
+  await db.exec(
+    `ALTER TABLE work_items ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user'`
+  );
+  await db.exec(
+    `ALTER TABLE work_items ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0`
+  );
+  await db.exec('ALTER TABLE work_items ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP');
+
+  // Upgrade path: ensure the `source` column CHECK constraint exists for
+  // installs where the column was added before the constraint.
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'work_items_source_check'
+      ) THEN
+        ALTER TABLE work_items ADD CONSTRAINT work_items_source_check
+          CHECK (source IN ('user', 'system_proactive', 'discovery_loop'));
+      END IF;
+    END $$
+  `);
+
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_worker ON work_items(worker_id)');
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_work_items_lease ON work_items(lease_expires_at) WHERE lease_expires_at IS NOT NULL'
+  );
+
+  // task_comments — Phase 6b. Every worker-to-orchestrator protocol event
+  // lands here (progress, clarification, approval, result, etc.), plus
+  // user/orchestrator/system-authored companion comments.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+      type TEXT NOT NULL
+        CHECK (type IN (
+          'progress', 'heartbeat',
+          'clarification_request', 'approval_request',
+          'clarification_response', 'approval_response',
+          'error', 'result', 'system', 'deferred'
+        )),
+      author TEXT NOT NULL,
+      content TEXT NOT NULL,
+      attachment_path TEXT,
+      urgency TEXT
+        CHECK (urgency IS NULL OR urgency IN ('low', 'normal', 'high', 'critical')),
+      metadata JSONB,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_task_comments_type ON task_comments(type)');
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_task_comments_created ON task_comments(created_at)'
+  );
 
   // --- Phase 5b: Advanced Memory ---
 

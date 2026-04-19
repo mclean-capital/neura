@@ -230,21 +230,17 @@ export class PgliteStore implements DataStore {
   createWorkItem(
     title: string,
     priority: WorkItemPriority,
-    options?: {
-      description?: string;
-      dueAt?: string;
-      parentId?: string;
-      sourceSessionId?: string;
-    }
+    options?: Parameters<typeof workItemQ.createWorkItem>[3]
   ): Promise<string> {
     return workItemQ.createWorkItem(this.db, title, priority, options);
   }
 
   updateWorkItem(
     id: string,
-    updates: Partial<Pick<WorkItemEntry, 'status' | 'priority' | 'title' | 'description' | 'dueAt'>>
-  ): Promise<void> {
-    return workItemQ.updateWorkItem(this.db, id, updates);
+    updates: workItemQ.UpdateWorkItemFields,
+    opts?: { expectVersion?: number }
+  ): Promise<number> {
+    return workItemQ.updateWorkItem(this.db, id, updates, opts);
   }
 
   deleteWorkItem(id: string): Promise<void> {
