@@ -302,5 +302,71 @@ describe('task-comment-queries', () => {
 
       expect(await countOpenRequests(db, taskId)).toBe(0);
     });
+
+    it('returns 0 on a task with no comments at all', async () => {
+      expect(await countOpenRequests(db, taskId)).toBe(0);
+    });
+
+    it('ignores orchestrator responses that point at a nonexistent request id', async () => {
+      await insertComment(db, {
+        taskId,
+        type: 'clarification_request',
+        author: 'worker:1',
+        content: 'real question',
+      });
+      // A malformed response that points at an id that doesn't exist on
+      // this task (e.g. from a prior session or a bug). Must not
+      // accidentally "resolve" the unrelated real request.
+      await insertComment(db, {
+        taskId,
+        type: 'clarification_response',
+        author: 'orchestrator',
+        content: 'dangling answer',
+        metadata: { resolves_comment_id: crypto.randomUUID() },
+      });
+
+      expect(await countOpenRequests(db, taskId)).toBe(1);
+    });
+
+    it('scopes resolution lookup to the current task — cross-task response ids do not resolve', async () => {
+      // Create a second task with its own request + response.
+      const otherTaskId = crypto.randomUUID();
+      await db.query(`INSERT INTO work_items (id, title, priority) VALUES ($1, $2, $3)`, [
+        otherTaskId,
+        'Other task',
+        'medium',
+      ]);
+      const otherReq = await insertComment(db, {
+        taskId: otherTaskId,
+        type: 'clarification_request',
+        author: 'worker:other',
+        content: 'other question',
+      });
+
+      // On our original task, have a request and then a malformed response
+      // that references the OTHER task's request id.
+      await insertComment(db, {
+        taskId,
+        type: 'clarification_request',
+        author: 'worker:1',
+        content: 'q1',
+      });
+      await insertComment(db, {
+        taskId,
+        type: 'clarification_response',
+        author: 'orchestrator',
+        content: 'cross-task leak attempt',
+        metadata: { resolves_comment_id: otherReq.id },
+      });
+
+      // The original task's request should still count as open.
+      // (countOpenRequests's subquery scopes to task_id = $1, so the
+      // cross-task response is invisible.)
+      expect(await countOpenRequests(db, taskId)).toBe(1);
+
+      // The other task's request should also still be open — the only
+      // response in the system references it from the wrong task.
+      expect(await countOpenRequests(db, otherTaskId)).toBe(1);
+    });
   });
 });

@@ -198,17 +198,24 @@ export async function runMigrations(db: PGlite, embeddingDimensions = 3072): Pro
   await db.exec('CREATE INDEX IF NOT EXISTS idx_work_items_due ON work_items(due_at)');
 
   // Upgrade path: expand existing work_items.status CHECK constraint for
-  // installs that predate Phase 6b. Only drops + recreates when an old
-  // (pre-Phase-6b) constraint is detected.
+  // installs that predate Phase 6b.
+  //
+  // Condition is inverted from the naive "drop+readd when old constraint
+  // detected" so that a crash between DROP and ADD self-heals on the next
+  // boot: we fire the branch whenever the up-to-date constraint is absent,
+  // which covers both (a) legacy installs with the old constraint AND (b)
+  // crashed-mid-upgrade installs where the constraint was dropped but the
+  // new one never landed. The `DROP CONSTRAINT IF EXISTS` makes the branch
+  // idempotent in either case.
   await db.exec(`
     DO $$
     BEGIN
-      IF EXISTS (
+      IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'work_items_status_check'
-          AND pg_get_constraintdef(oid) NOT LIKE '%awaiting_clarification%'
+          AND pg_get_constraintdef(oid) LIKE '%awaiting_clarification%'
       ) THEN
-        ALTER TABLE work_items DROP CONSTRAINT work_items_status_check;
+        ALTER TABLE work_items DROP CONSTRAINT IF EXISTS work_items_status_check;
         ALTER TABLE work_items ADD CONSTRAINT work_items_status_check
           CHECK (status IN (
             'pending', 'awaiting_dispatch', 'in_progress',
