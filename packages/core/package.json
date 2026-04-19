@@ -8,6 +8,7 @@
     "start": "tsx src/server/dev-server.ts",
     "build": "tsc -p tsconfig.json && tsx scripts/bundle.ts",
     "bundle": "tsx scripts/bundle.ts",
+    "sim:live": "tsx scripts/sim-live-dispatch.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
