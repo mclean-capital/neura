@@ -42,14 +42,15 @@ export type WorkerStatus =
   | 'cancelled';
 
 /**
- * What kind of task a worker is executing. Drives prompt templates, tool
- * surface, and permission policy (authoring tasks bypass `allowed-tools`
- * enforcement; execution tasks enforce strictly).
+ * What kind of task a worker is executing. Legacy enum from Phase 6.
+ * Phase 6b moves worker dispatch to a task-ID-based model — see
+ * docs/phase6b-task-driven-execution.md (Wave 3 will rewrite this type).
+ * Retained as-is until Wave 3 so existing callers compile.
  */
 export type WorkerTaskType =
-  | 'execute_skill' // run an existing skill
+  | 'execute_skill' // run an existing skill (legacy — unused post-Wave 1)
   | 'promote_clarification' // write a new skill from a clarification exchange
-  | 'write_skill' // author a skill from a free-form user request
+  | 'write_skill' // author a skill from a free-form user request (legacy)
   | 'ad_hoc'; // no skill, just a task description
 
 /**

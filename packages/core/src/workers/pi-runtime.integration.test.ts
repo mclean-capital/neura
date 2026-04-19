@@ -27,11 +27,10 @@
  *      against a real pi assistant message, not a hand-constructed
  *      `AgentEvent` shape.
  *
- * Tests are deliberately narrow — they don't re-exercise the beforeToolCall
- * allowed-tools enforcement (covered by pi-runtime unit tests + Spike #4c),
- * the clarification bridge (covered by its own unit tests), or the skill
- * registry MRU ranking (covered by its own tests). The integration test's
- * job is to prove the seams between those components hold when pi is real.
+ * Tests are deliberately narrow — they don't re-exercise the clarification
+ * bridge (covered by its own unit tests), or the skill registry MRU ranking
+ * (covered by its own tests). The integration test's job is to prove the
+ * seams between those components hold when pi is real.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -84,11 +83,9 @@ function makeCapturingInterjector(): {
 }
 
 /**
- * A single-skill registry whose sole skill allows every tool the
- * worker might call in these tests. That way the integration test
- * doesn't exercise the allowed-tools blocking path — that's covered
- * by unit tests. We just need a loaded skill so the beforeToolCall
- * hook finds an allowlist instead of refusing.
+ * A single-skill registry with one reference-doc skill loaded. Post-Wave 1
+ * the `allowed-tools` enforcement is gone, so the skill's job here is
+ * purely to populate the registry for prompt-construction assertions.
  */
 function makeRegistryForIntegration(): SkillRegistry {
   const registry = new SkillRegistry();

@@ -396,9 +396,9 @@ export async function initServices(): Promise<CoreServices> {
           memoryTools: workerMemoryTools,
           taskTools: workerTaskTools,
         });
-        // Append the per-worker request_clarification tool. PiRuntime's
-        // beforeToolCall hardcodes this name as always-allowed so
-        // skills don't need to declare it explicitly.
+        // Append the per-worker request_clarification tool. Bound to
+        // this workerId so each worker posts to its own clarification
+        // channel.
         if (clarificationBridge) {
           baseTools.push(buildClarificationTool(workerId, clarificationBridge));
         }

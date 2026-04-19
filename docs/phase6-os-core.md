@@ -1,5 +1,9 @@
 # Phase 6 — Neura OS Core
 
+> **⚠️ PARTIALLY SUPERSEDED by Phase 6b** (see [`phase6b-task-driven-execution.md`](phase6b-task-driven-execution.md)).
+>
+> Phase 6b reclassifies skills as reference documentation (agentskills.io spec) rather than capability gates, moves worker dispatch to a task-ID-based model, and removes `run_skill`, `create_skill`, `import_skill`, and `allowed-tools` runtime enforcement. The sections of this doc describing those mechanisms are historical context, not current design. Worker runtime fundamentals (pi-coding-agent session lifecycle, clarification bridge, pause/resume, crash recovery) remain valid and unaffected.
+
 Skill Framework + Agent Runtime + Clarification Loop + User-Initiated Pause/Resume.
 
 **Status:** APPROVED (v2.3 + in-flight scope refinements, ready for implementation)
