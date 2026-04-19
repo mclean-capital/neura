@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { NeuraSkill } from '@neura/types';
 import { SkillRegistry, estimateSkillPromptCost } from './skill-registry.js';
-import { MINIMAL_DEFAULT_ALLOWED_TOOLS } from './skill-loader.js';
 
 function makeSkill(overrides: Partial<NeuraSkill> = {}): NeuraSkill {
   return {
@@ -52,31 +51,6 @@ describe('SkillRegistry', () => {
         makeSkill({ name: 'draft', disableModelInvocation: true }),
       ]);
       expect(registry.list()).toHaveLength(2);
-    });
-  });
-
-  describe('getAllowedTools', () => {
-    it('returns the explicit list when the skill declared allowed-tools', () => {
-      registry.replaceAll([
-        makeSkill({
-          name: 'explicit',
-          allowedTools: ['describe_screen', 'create_task'],
-          hasExplicitAllowedTools: true,
-        }),
-      ]);
-      expect(registry.getAllowedTools('explicit')).toEqual(['describe_screen', 'create_task']);
-    });
-
-    it('returns the MINIMAL default when the skill omitted allowed-tools', () => {
-      registry.replaceAll([
-        makeSkill({ name: 'implicit', hasExplicitAllowedTools: false, allowedTools: [] }),
-      ]);
-      expect(registry.getAllowedTools('implicit')).toEqual(MINIMAL_DEFAULT_ALLOWED_TOOLS);
-    });
-
-    it('returns undefined for unknown skills (hard refusal signal)', () => {
-      registry.replaceAll([makeSkill({ name: 'alpha' })]);
-      expect(registry.getAllowedTools('unknown')).toBeUndefined();
     });
   });
 

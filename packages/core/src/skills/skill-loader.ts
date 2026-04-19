@@ -34,19 +34,6 @@ import type { NeuraSkill, LoadSkillsResult, SkillLocation, SkillDiagnostic } fro
 
 const log = new Logger('skill-loader');
 
-/**
- * Neura-specific default when a skill omits `allowed-tools` — see the
- * "`allowed-tools` absence policy" in docs/phase6-os-core.md. This is the
- * read-only introspection set that skill authors who failed to declare their
- * tool needs get access to. Skill authors who want more should declare
- * `allowed-tools` explicitly.
- */
-export const MINIMAL_DEFAULT_ALLOWED_TOOLS: readonly string[] = [
-  'list_skills',
-  'recall_memory',
-  'get_current_time',
-];
-
 export interface LoadNeuraSkillsOptions {
   /** Working directory for resolving `./.neura/skills/`. Default: process.cwd() */
   cwd?: string;
@@ -129,14 +116,12 @@ export function loadNeuraSkills(options: LoadNeuraSkillsOptions = {}): LoadSkill
       skills.push(neuraSkill);
       diagnostics.push(...skillDiagnostics);
 
-      // Neura-specific diagnostic: warn on missing allowed-tools.
-      if (!neuraSkill.hasExplicitAllowedTools) {
-        diagnostics.push({
-          type: 'warning',
-          message: `Skill '${neuraSkill.name}' has no 'allowed-tools' field; will run with Neura's read-only default tool set (${MINIMAL_DEFAULT_ALLOWED_TOOLS.join(', ')}). See 'allowed-tools absence policy' in the design doc.`,
-          path: neuraSkill.filePath,
-        });
-      }
+      // Phase 6b: the `allowed-tools` absence warning was removed.
+      // Runtime enforcement of `allowed-tools` was also removed — skills are
+      // now reference documentation, not a capability gate. The field is
+      // still parsed (still agentskills.io-compliant) and surfaced on the
+      // NeuraSkill object; it's informational only until a concrete use
+      // case reintroduces enforcement.
 
       // Spec compliance: `compatibility` must be ≤ 500 chars (agentskills.io).
       // Warning (not error): the skill still loads, author gets a nudge.

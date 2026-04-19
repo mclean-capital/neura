@@ -251,5 +251,5 @@ export function buildClarificationTool(
   return tool;
 }
 
-/** The tool name, for allow-list bypass in beforeToolCall. */
+/** Tool name constant. Historically used for beforeToolCall bypass (now removed). */
 export const REQUEST_CLARIFICATION_TOOL_NAME = 'request_clarification';

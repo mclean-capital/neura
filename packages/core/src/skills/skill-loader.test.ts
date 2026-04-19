@@ -12,7 +12,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Skill as PiSkill } from '@mariozechner/pi-coding-agent';
-import { loadNeuraSkills, toNeuraSkill, MINIMAL_DEFAULT_ALLOWED_TOOLS } from './skill-loader.js';
+import { loadNeuraSkills, toNeuraSkill } from './skill-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixtureCwd = resolve(__dirname, '__fixtures__');
@@ -79,18 +79,18 @@ describe('loadNeuraSkills', () => {
     expect(draftSkill?.disableModelInvocation).toBe(true);
   });
 
-  it('does NOT emit an allowed-tools absence warning for skills that declare the field', () => {
+  it('does not emit any allowed-tools diagnostic (Phase 6b: enforcement removed)', () => {
     const result = loadNeuraSkills({
       cwd: fixtureCwd,
       globalSkillsDir: hermeticGlobal,
     });
 
-    // Both fixture skills declare allowed-tools, so there should be no
-    // absence warnings for either.
-    const absenceWarnings = result.diagnostics.filter((d) =>
-      d.message.includes("no 'allowed-tools' field")
+    // Phase 6b removed runtime enforcement of allowed-tools + the absence
+    // warning. No skill should emit an allowed-tools diagnostic of any kind.
+    const allowedToolsDiagnostics = result.diagnostics.filter((d) =>
+      d.message.toLowerCase().includes('allowed-tools')
     );
-    expect(absenceWarnings).toHaveLength(0);
+    expect(allowedToolsDiagnostics).toHaveLength(0);
   });
 
   it('extracts license + compatibility from frontmatter (agentskills.io spec)', () => {
@@ -126,16 +126,6 @@ describe('loadNeuraSkills', () => {
     // Skill should still load — diagnostics are non-fatal.
     const overCompat = result.skills.find((s) => s.name === 'over-compat-skill');
     expect(overCompat).toBeDefined();
-  });
-
-  it('MINIMAL_DEFAULT_ALLOWED_TOOLS is the documented read-only set', () => {
-    // This is both documentation and a regression guard — if we ever change
-    // the default, a test failure forces us to update the design doc too.
-    expect(MINIMAL_DEFAULT_ALLOWED_TOOLS).toEqual([
-      'list_skills',
-      'recall_memory',
-      'get_current_time',
-    ]);
   });
 });
 

@@ -136,7 +136,7 @@ export class SkillWatcher {
   /**
    * Force an immediate reload, bypassing the debounce window. Useful for
    * tests and for tool handlers that know a change just landed (e.g. the
-   * `create_skill` tool calling this synchronously after writing the file).
+   * `promote_skill` tool calling this synchronously after rewriting the file).
    */
   reloadNow(): void {
     if (this.debounceTimer) {

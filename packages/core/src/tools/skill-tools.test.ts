@@ -1,6 +1,10 @@
 /**
- * Tests for skill-tools.ts — the Grok-facing tools that dispatch
- * skill-related workers and surface the skill registry.
+ * Tests for skill-tools.ts — the Grok-facing tools that surface the skill
+ * registry.
+ *
+ * Phase 6b: skills are reference documentation, not a capability gate.
+ * `run_skill`, `create_skill`, `import_skill` removed. The surface is now
+ * `list_skills`, `get_skill`, `promote_skill`.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -28,10 +32,7 @@ function makeCtx(overrides: Partial<SkillToolHandler> = {}): ToolCallContext {
   const skillTools: SkillToolHandler = {
     listSkills: () => [makeSkill()],
     getSkill: (name) => (name === 'red-test-triage' ? makeSkill() : undefined),
-    runSkill: vi.fn().mockResolvedValue({ workerId: 'wk-1' }),
-    createSkill: vi.fn().mockResolvedValue({ workerId: 'wk-2' }),
     promoteSkill: vi.fn().mockResolvedValue({ promoted: true }),
-    importSkill: vi.fn().mockResolvedValue({ imported: true, count: 3 }),
     ...overrides,
   };
   return {
@@ -41,16 +42,9 @@ function makeCtx(overrides: Partial<SkillToolHandler> = {}): ToolCallContext {
 }
 
 describe('skillToolDefs', () => {
-  it('exposes all six skill tool names', () => {
+  it('exposes exactly the three skill tool names', () => {
     const names = skillToolDefs.map((d) => d.name).sort();
-    expect(names).toEqual([
-      'create_skill',
-      'get_skill',
-      'import_skill',
-      'list_skills',
-      'promote_skill',
-      'run_skill',
-    ]);
+    expect(names).toEqual(['get_skill', 'list_skills', 'promote_skill']);
   });
 
   it('every tool has a description and parameter schema', () => {
@@ -71,6 +65,12 @@ describe('isSkillTool', () => {
   it('returns false for unknown tool names', () => {
     expect(isSkillTool('remember_fact')).toBe(false);
     expect(isSkillTool('totally_fake')).toBe(false);
+  });
+
+  it('returns false for Phase 6b-removed tools', () => {
+    expect(isSkillTool('run_skill')).toBe(false);
+    expect(isSkillTool('create_skill')).toBe(false);
+    expect(isSkillTool('import_skill')).toBe(false);
   });
 });
 
@@ -129,12 +129,11 @@ describe('handleSkillTool', () => {
       const result = await handleSkillTool('get_skill', { name: 'red-test-triage' }, makeCtx());
       const payload = (
         result as {
-          result: { found: boolean; name: string; allowedTools: string[] };
+          result: { found: boolean; name: string };
         }
       ).result;
       expect(payload.found).toBe(true);
       expect(payload.name).toBe('red-test-triage');
-      expect(payload.allowedTools).toEqual(['describe_screen', 'create_task']);
     });
 
     it('surfaces license + compatibility when present (agentskills.io spec)', async () => {
@@ -155,45 +154,6 @@ describe('handleSkillTool', () => {
     });
   });
 
-  describe('run_skill', () => {
-    it('dispatches a worker and returns the worker id', async () => {
-      const runMock = vi.fn().mockResolvedValue({ workerId: 'wk-42' });
-      const ctx = makeCtx({ runSkill: runMock });
-      const result = await handleSkillTool(
-        'run_skill',
-        { skill_name: 'red-test-triage', description: 'look at the failing test' },
-        ctx
-      );
-      expect(runMock).toHaveBeenCalledWith('red-test-triage', 'look at the failing test');
-      const payload = (
-        result as {
-          result: { dispatched: boolean; workerId: string };
-        }
-      ).result;
-      expect(payload.dispatched).toBe(true);
-      expect(payload.workerId).toBe('wk-42');
-    });
-  });
-
-  describe('create_skill', () => {
-    it('dispatches an authoring worker and returns the worker id', async () => {
-      const createMock = vi.fn().mockResolvedValue({ workerId: 'wk-99' });
-      const ctx = makeCtx({ createSkill: createMock });
-      const result = await handleSkillTool(
-        'create_skill',
-        { description: 'a skill that backs up my photos' },
-        ctx
-      );
-      expect(createMock).toHaveBeenCalledWith('a skill that backs up my photos');
-      const payload = (
-        result as {
-          result: { workerId: string };
-        }
-      ).result;
-      expect(payload.workerId).toBe('wk-99');
-    });
-  });
-
   describe('promote_skill', () => {
     it('calls promoteSkill with the target name', async () => {
       const promoteMock = vi.fn().mockResolvedValue({ promoted: true });
@@ -203,25 +163,11 @@ describe('handleSkillTool', () => {
     });
   });
 
-  describe('import_skill', () => {
-    it('calls importSkill with the path', async () => {
-      const importMock = vi.fn().mockResolvedValue({ imported: true, count: 5 });
-      const ctx = makeCtx({ importSkill: importMock });
-      const result = await handleSkillTool('import_skill', { path: '/Users/test/my-skills' }, ctx);
-      expect(importMock).toHaveBeenCalledWith('/Users/test/my-skills');
-      expect(result).toEqual({ result: { imported: true, count: 5 } });
-    });
-  });
-
   describe('error handling', () => {
     it('converts thrown handler errors into a tool error result', async () => {
-      const runMock = vi.fn().mockRejectedValue(new Error('skill not found'));
-      const ctx = makeCtx({ runSkill: runMock });
-      const result = await handleSkillTool(
-        'run_skill',
-        { skill_name: 'unknown', description: 'x' },
-        ctx
-      );
+      const promoteMock = vi.fn().mockRejectedValue(new Error('skill not found'));
+      const ctx = makeCtx({ promoteSkill: promoteMock });
+      const result = await handleSkillTool('promote_skill', { name: 'unknown' }, ctx);
       expect(result).toBeDefined();
       expect((result as { error: string }).error).toContain('skill not found');
     });

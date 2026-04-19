@@ -35,11 +35,11 @@
  *    no context argument. We close over the context in `buildNeuraTools()`
  *    and pass it to the Neura handlers internally.
  *
- * 4. Tool discovery: pi registers ALL tools up front on the session;
- *    per-skill filtering happens at invocation time via the
- *    `beforeToolCall` hook against the current skill's `allowed-tools`
- *    list. So `buildNeuraTools()` returns every tool, and pi-runtime
- *    is responsible for installing the permissions hook.
+ * 4. Tool discovery: pi registers ALL tools up front on the session.
+ *    Phase 6b removed per-skill filtering via `beforeToolCall` — workers
+ *    now have full tool access, scoped by filesystem isolation (git
+ *    worktrees) and prompt-level reversibility discipline. So
+ *    `buildNeuraTools()` simply returns every tool.
  */
 
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
@@ -223,9 +223,8 @@ function wrapHandler(
 /**
  * Build the full array of pi `AgentTool` objects wired to Neura handlers.
  * Pi-runtime registers these on every `createAgentSession` via the
- * `customTools` option. Per-skill permission enforcement happens at
- * invocation time via `beforeToolCall` — see `pi-runtime.ts` (not yet
- * built).
+ * `customTools` option. Phase 6b removed per-skill permission enforcement;
+ * workers get full access to this tool set.
  *
  * @param ctx Neura's tool call context (watcher, memory, task, presence
  *            handlers). Captured in each adapter's execute closure.
@@ -413,10 +412,9 @@ function makeTool<TSchemaT extends TSchema>(spec: {
 }
 
 /**
- * The set of tool names exposed to pi AgentSessions. Used by tests and by
- * `pi-runtime.ts` to validate a skill's `allowed-tools` list during load
- * (unknown names emit a warning but don't block load — pi-runtime's
- * `beforeToolCall` still enforces at runtime).
+ * The set of tool names exposed to pi AgentSessions. Used by tests for
+ * coverage + by the validator to surface unknown tool names in a skill's
+ * `allowed-tools` list.
  *
  * Note: vision tools (`describe_screen`, `describe_camera`) are NOT in
  * this list. Vision is owned by the orchestrator (grok), not workers.

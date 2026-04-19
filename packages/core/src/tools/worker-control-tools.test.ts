@@ -53,13 +53,13 @@ describe('isWorkerControlTool', () => {
 
   it('returns false for tools in other groups', () => {
     expect(isWorkerControlTool('remember_fact')).toBe(false);
-    expect(isWorkerControlTool('run_skill')).toBe(false);
+    expect(isWorkerControlTool('list_skills')).toBe(false);
   });
 });
 
 describe('handleWorkerControlTool', () => {
   it('returns null for tools outside the control set', async () => {
-    const result = await handleWorkerControlTool('run_skill', {}, makeCtx());
+    const result = await handleWorkerControlTool('list_skills', {}, makeCtx());
     expect(result).toBeNull();
   });
 

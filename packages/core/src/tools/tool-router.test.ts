@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toolDefs, handleToolCall, type ToolCallContext } from './index.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 25 tools', () => {
-    // 15 pre-phase-6 tools + 6 skill tools (list_skills, get_skill,
-    // run_skill, create_skill, promote_skill, import_skill) + 4
-    // worker control tools (pause_worker, resume_worker,
-    // cancel_worker, list_active_workers).
-    expect(toolDefs).toHaveLength(25);
+  it('defines exactly 22 tools', () => {
+    // 15 pre-phase-6 tools + 3 skill tools (list_skills, get_skill,
+    // promote_skill) + 4 worker control tools (pause_worker,
+    // resume_worker, cancel_worker, list_active_workers).
+    // Phase 6b removed run_skill, create_skill, import_skill; Wave 3
+    // will add dispatch_worker, update_task, get_system_state (back to 25).
+    expect(toolDefs).toHaveLength(22);
   });
 
   it('each tool has the required structure', () => {

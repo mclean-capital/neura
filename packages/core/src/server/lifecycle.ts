@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
-import type { DataStore, NeuraSkill, ServerMessage, VoiceProvider, WorkerTask } from '@neura/types';
+import type { DataStore, NeuraSkill, ServerMessage, VoiceProvider } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import { loadConfig } from '../config/index.js';
 import { ProviderRegistry } from '../registry/index.js';
@@ -447,14 +447,13 @@ export async function initServices(): Promise<CoreServices> {
       // workers as crashed and preserves resumable idle_partial rows.
       await agentWorker.recoverFromCrash();
 
-      // Build the user-facing SkillToolHandler that glues the registry
-      // and the worker orchestrator together. This is what the tool
-      // router reaches into when Grok calls run_skill / create_skill /
-      // list_skills / etc.
+      // Build the Grok-facing SkillToolHandler that surfaces the skill
+      // registry for list_skills / get_skill / promote_skill. Worker
+      // dispatch moved to the task-driven path in Phase 6b; skills are
+      // now reference docs, not a capability gate.
       skillToolHandler = buildSkillToolHandler({
         registry: skillRegistry,
         watcher: skillWatcher,
-        worker: agentWorker,
       });
 
       // Worker control handler — surfaces pause / resume / cancel /
@@ -504,44 +503,22 @@ export async function initServices(): Promise<CoreServices> {
 
 /**
  * Build the Grok-facing SkillToolHandler that backs `list_skills` /
- * `run_skill` / `create_skill` / `promote_skill` / `import_skill`.
- * Owns the glue between the skill registry, the skill watcher, and the
- * agent worker.
+ * `get_skill` / `promote_skill`. Owns the glue between the skill registry
+ * and the skill watcher.
+ *
+ * Phase 6b: `run_skill`, `create_skill`, `import_skill` were removed.
+ * Execution flows through task dispatch (`dispatch_worker`), not skills.
  */
 function buildSkillToolHandler(deps: {
   registry: SkillRegistry;
   watcher: SkillWatcher;
-  worker: AgentWorker;
 }): SkillToolHandler {
-  const { registry, watcher, worker } = deps;
+  const { registry, watcher } = deps;
 
   const handler: SkillToolHandler = {
     listSkills: (): NeuraSkill[] => registry.list(),
 
     getSkill: (name: string): NeuraSkill | undefined => registry.get(name),
-
-    runSkill: async (skillName: string, description: string): Promise<{ workerId: string }> => {
-      if (!registry.has(skillName)) {
-        throw new Error(`skill '${skillName}' not loaded`);
-      }
-      const task: WorkerTask = {
-        taskType: 'execute_skill',
-        skillName,
-        description,
-      };
-      registry.notifyUsed(skillName);
-      const handle = await worker.dispatch(task);
-      return { workerId: handle.workerId };
-    },
-
-    createSkill: async (description: string): Promise<{ workerId: string }> => {
-      const task: WorkerTask = {
-        taskType: 'write_skill',
-        description,
-      };
-      const handle = await worker.dispatch(task);
-      return { workerId: handle.workerId };
-    },
 
     promoteSkill: async (skillName: string): Promise<{ promoted: boolean }> => {
       const skill = registry.get(skillName);
@@ -568,15 +545,6 @@ function buildSkillToolHandler(deps: {
       writeFileSync(skill.filePath, updated, 'utf8');
       watcher.reloadNow();
       return { promoted: true };
-    },
-
-    importSkill: (path: string): Promise<{ imported: boolean; count: number }> => {
-      // Phase 6 keeps this as a stub: true file-system import needs the
-      // watcher to accept new explicit paths at runtime, which it
-      // doesn't yet. Return a clear "not supported" error so the user
-      // understands the limitation.
-      log.warn('import_skill not yet wired for dynamic path registration', { path });
-      return Promise.resolve({ imported: false, count: 0 });
     },
   };
 

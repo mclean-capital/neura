@@ -1,30 +1,20 @@
 /**
- * Phase 6 — Skill tools exposed to Grok via the tool router.
+ * Phase 6b — Skill tools exposed to Grok via the tool router.
  *
- * These are the user-facing entry points for interacting with the skill
- * framework during a voice session:
+ * After the Phase 6b refactor, skills are reference documentation (per the
+ * agentskills.io spec), not a capability gate. Execution flows through
+ * task dispatch (`dispatch_worker`), not through skills. What remains here:
  *
  *   - `list_skills`   — tell me what skills are installed
  *   - `get_skill`     — describe a specific skill
- *   - `run_skill`     — dispatch a worker to execute a skill (async)
- *   - `create_skill`  — dispatch a worker that AUTHORS a new skill from
- *                       a free-form description
  *   - `promote_skill` — clear the `disable-model-invocation` flag on a
- *                       draft skill so it becomes auto-invocable
- *   - `import_skill`  — register an explicit filesystem path
+ *                       draft skill so it's visible in the worker catalog
  *
  * Contract: every handler returns either `{ result: ... }` on success or
  * `{ error: 'msg' }` on failure. Grok's tool-call response path reads
  * those shapes and formats the tool result for the LLM.
  *
- * `run_skill` and `create_skill` are ASYNC — they dispatch a worker and
- * return `worker_id` immediately without awaiting completion. Progress
- * flows to the user via `grokSession.interject()` ambient voice updates
- * from the `VoiceFanoutBridge`. The final result arrives as one last
- * interject when the worker completes.
- *
- * This matches the design doc decision documented in "`run_skill` is
- * async" and avoids blocking Grok's turn for the full worker duration.
+ * See docs/phase6b-task-driven-execution.md for the design rationale.
  */
 
 import type { ToolDefinition } from '@neura/types';
@@ -38,7 +28,7 @@ export const skillToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'list_skills',
     description:
-      "List every skill Neura has installed. Use when the user asks what skills are available, what Neura can do, or wants to see their skill catalog. Includes draft skills marked 'disable-model-invocation: true' — those are loaded but not auto-invocable until promoted.",
+      "List every skill Neura has installed. Skills are reference documentation about how to perform domain-specific work (uploading to a specific CMS, interacting with a private API, etc.) — they're consulted by workers when a task references them. Use when the user asks what skills/docs are available. Includes drafts marked 'disable-model-invocation: true'.",
     parameters: {
       type: 'object',
       properties: {},
@@ -48,7 +38,7 @@ export const skillToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'get_skill',
     description:
-      'Get details about a specific skill by name. Use when the user asks what a particular skill does or wants to inspect its metadata.',
+      'Get details about a specific skill by name, including its license, compatibility requirements, and metadata. Use when the user asks what a particular skill documents or wants to inspect it.',
     parameters: {
       type: 'object',
       properties: {
@@ -59,63 +49,15 @@ export const skillToolDefs: ToolDefinition[] = [
   },
   {
     type: 'function',
-    name: 'run_skill',
-    description:
-      "Dispatch a worker to execute a skill with a task description. Use when the user asks to run a specific skill. Returns a worker_id immediately — the worker runs asynchronously and you'll hear progress updates via voice as it works. You do NOT need to wait for completion before replying — just acknowledge the dispatch.",
-    parameters: {
-      type: 'object',
-      properties: {
-        skill_name: { type: 'string', description: 'Name of the skill to run' },
-        description: {
-          type: 'string',
-          description:
-            "Plain-language description of what the user wants this run to accomplish (e.g. 'triage the failing test on screen')",
-        },
-      },
-      required: ['skill_name', 'description'],
-    },
-  },
-  {
-    type: 'function',
-    name: 'create_skill',
-    description:
-      "Dispatch a worker to AUTHOR a new skill from a free-form description. Use when the user asks you to create a skill for a specific task they want to repeat. The worker runs asynchronously and drops a draft SKILL.md into ~/.neura/skills/; tell the user the skill is being created and they'll hear when it's ready.",
-    parameters: {
-      type: 'object',
-      properties: {
-        description: {
-          type: 'string',
-          description:
-            'What the new skill should do, in the same tone the user described it — include context, tools needed, trigger phrases.',
-        },
-      },
-      required: ['description'],
-    },
-  },
-  {
-    type: 'function',
     name: 'promote_skill',
     description:
-      "Clear the 'disable-model-invocation' flag on a draft skill so it becomes auto-invocable. Use when the user says a skill looks good and should be activated, or when promoting a skill captured from a clarification exchange.",
+      "Clear the 'disable-model-invocation' flag on a draft skill so it becomes visible in worker skill catalogs. Use when the user says a skill looks good and should be activated.",
     parameters: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name to promote' },
       },
       required: ['name'],
-    },
-  },
-  {
-    type: 'function',
-    name: 'import_skill',
-    description:
-      'Register an explicit filesystem path as a skill source. Use when the user points at a local directory containing SKILL.md files they want to load. URLs and git paths are Phase 9 marketplace scope — this only takes local filesystem paths.',
-    parameters: {
-      type: 'object',
-      properties: {
-        path: { type: 'string', description: 'Absolute filesystem path to a skill directory' },
-      },
-      required: ['path'],
     },
   },
 ];
@@ -146,7 +88,6 @@ export async function handleSkillTool(
               description: s.description,
               location: s.location,
               draft: s.disableModelInvocation,
-              allowedTools: s.allowedTools,
               license: s.license,
               compatibility: s.compatibility,
             })),
@@ -165,36 +106,9 @@ export async function handleSkillTool(
             description: skill.description,
             location: skill.location,
             draft: skill.disableModelInvocation,
-            allowedTools: skill.allowedTools,
             metadata: skill.metadata,
             license: skill.license,
             compatibility: skill.compatibility,
-          },
-        };
-      }
-
-      case 'run_skill': {
-        const skillName = args.skill_name as string;
-        const description = args.description as string;
-        const dispatched = await ctx.skillTools.runSkill(skillName, description);
-        return {
-          result: {
-            dispatched: true,
-            workerId: dispatched.workerId,
-            skillName,
-            message: `Worker ${dispatched.workerId} dispatched. You'll hear progress updates as it runs.`,
-          },
-        };
-      }
-
-      case 'create_skill': {
-        const description = args.description as string;
-        const dispatched = await ctx.skillTools.createSkill(description);
-        return {
-          result: {
-            dispatched: true,
-            workerId: dispatched.workerId,
-            message: `Worker ${dispatched.workerId} is authoring a new skill. You'll hear when it's ready.`,
           },
         };
       }
@@ -203,12 +117,6 @@ export async function handleSkillTool(
         const skillName = args.name as string;
         const promoted = await ctx.skillTools.promoteSkill(skillName);
         return { result: promoted };
-      }
-
-      case 'import_skill': {
-        const path = args.path as string;
-        const imported = await ctx.skillTools.importSkill(path);
-        return { result: imported };
       }
 
       default:

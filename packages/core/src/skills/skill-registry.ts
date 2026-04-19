@@ -1,30 +1,26 @@
 /**
- * Phase 6 — Skill registry
+ * Phase 6b — Skill registry
  *
- * In-memory index of loaded NeuraSkills keyed by name. Serves four
- * consumers:
+ * In-memory index of loaded NeuraSkills keyed by name. After Phase 6b,
+ * skills are reference documentation (agentskills.io spec), not a
+ * capability gate. The registry serves three consumers:
  *
- * 1. `list_skills` / `get_skill` tools — surface what's installed, including
- *    draft skills (for introspection), via `list()` and `get()`.
+ * 1. `list_skills` / `get_skill` / `promote_skill` tools — surface what's
+ *    installed, including draft skills (for introspection), via `list()`
+ *    and `get()`.
  *
- * 2. Grok system prompt construction — `getPromptContext(budgetTokens)`
- *    delegates to pi's `formatSkillsForPrompt()` (which already filters
- *    draft skills per `disable-model-invocation`) and wraps a token-budget
- *    layer on top with MRU eviction when the catalog overflows.
+ * 2. Worker prompt construction — `getPromptContext(budgetTokens)` delegates
+ *    to pi's `formatSkillsForPrompt()` (which already filters draft skills
+ *    per `disable-model-invocation`) and wraps a token-budget layer on top
+ *    with MRU eviction when the catalog overflows. Used when Wave 3 loads
+ *    referenced skills into a worker's prompt.
  *
- * 3. `beforeToolCall` permission enforcement — `getAllowedTools(name)`
- *    returns the parsed `allowed-tools` list (or the Neura default if the
- *    skill didn't declare it), consumed by pi-runtime's per-skill hook.
- *
- * 4. Orchestrator skill injection — `buildOrchestratorPromptPrefix()`
+ * 3. Orchestrator skill injection — `buildOrchestratorPromptPrefix()`
  *    concatenates every non-draft orchestrator-level skill's markdown body
  *    into a system-prompt prefix that gets prepended to Grok's voice
  *    session prompt. Orchestrator skills are distinguished from worker
  *    skills via the `metadata.neura_level: 'orchestrator'` frontmatter
- *    field; anything else (or absent) is treated as a worker skill. Worker
- *    skills flow through `getPromptContext()` into pi's formatter;
- *    orchestrator skills flow through the system prompt as always-on
- *    orchestrator behavior the LLM reads at every turn.
+ *    field.
  *
  * MRU tracking: the registry maintains an in-memory `lastUsedAt` map. A
  * persistent skill_usage table lives separately in the store layer; the
@@ -35,7 +31,6 @@
 import { formatSkillsForPrompt, type Skill as PiSkill } from '@mariozechner/pi-coding-agent';
 import { Logger } from '@neura/utils/logger';
 import type { NeuraSkill } from '@neura/types';
-import { MINIMAL_DEFAULT_ALLOWED_TOOLS } from './skill-loader.js';
 
 const log = new Logger('skill-registry');
 
@@ -132,21 +127,6 @@ export class SkillRegistry {
   /** Check whether a skill is registered (and not filtered). */
   has(name: string): boolean {
     return this.skillsByName.has(name);
-  }
-
-  /**
-   * Return the `allowed-tools` list a worker may invoke when running this
-   * skill. If the skill declared `allowed-tools` explicitly, that list is
-   * returned. If not, the Neura minimal default tool set applies — see the
-   * "`allowed-tools` absence policy" in the design doc.
-   *
-   * Returns undefined if the skill itself is unknown — callers should treat
-   * that as a hard refusal (don't silently fall back to any tool set).
-   */
-  getAllowedTools(name: string): readonly string[] | undefined {
-    const skill = this.skillsByName.get(name);
-    if (!skill) return undefined;
-    return skill.hasExplicitAllowedTools ? skill.allowedTools : MINIMAL_DEFAULT_ALLOWED_TOOLS;
   }
 
   /**

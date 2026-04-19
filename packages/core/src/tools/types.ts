@@ -30,27 +30,21 @@ export interface TaskToolHandler {
 }
 
 /**
- * Phase 6 — skill tool handler. Thin interface over SkillRegistry +
- * AgentWorker so the tool-router stays decoupled from their
- * implementations. The concrete instance is wired in lifecycle.ts.
+ * Phase 6b — skill tool handler. Thin interface over SkillRegistry so the
+ * tool-router stays decoupled from its implementation. The concrete instance
+ * is wired in lifecycle.ts.
+ *
+ * Skills are now reference documentation (agentskills.io spec). Execution
+ * flows through task dispatch (`dispatch_worker`), not through skills.
+ * See docs/phase6b-task-driven-execution.md.
  */
 export interface SkillToolHandler {
   /** Return every loaded skill (including drafts) for `list_skills`. */
   listSkills(): NeuraSkill[];
   /** Return a single skill for `get_skill`. */
   getSkill(name: string): NeuraSkill | undefined;
-  /**
-   * Dispatch a worker to run an existing skill. Returns the worker id
-   * immediately; does NOT await completion. Progress flows via voice
-   * interject from the VoiceFanoutBridge.
-   */
-  runSkill(skillName: string, description: string): Promise<{ workerId: string }>;
-  /** Dispatch a worker that AUTHORS a new skill from a description. */
-  createSkill(description: string): Promise<{ workerId: string }>;
   /** Clear the `disable-model-invocation` flag on a draft skill. */
   promoteSkill(skillName: string): Promise<{ promoted: boolean }>;
-  /** Register an explicit filesystem path and reload the registry. */
-  importSkill(path: string): Promise<{ imported: boolean; count: number }>;
 }
 
 /**

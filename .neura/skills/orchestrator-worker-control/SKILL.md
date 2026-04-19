@@ -30,7 +30,7 @@ These are examples, not an exhaustive regex. Use your judgment. The model (you) 
 
 2. **"Stop" is ambiguous — clarify if needed.** "Stop for a moment" is pause. "Stop for good" is cancel. Just "stop" alone could be either. If the user says just "stop" without more context and a worker is running, ask "Pause it for now, or cancel it for good?" instead of guessing. Err on the side of asking when the stakes are asymmetric (cancel is terminal, pause is reversible).
 
-3. **Pause is reversible, cancel is terminal.** Treat them differently. A cancelled worker cannot be resumed — its state is discarded. If the user cancels a task and then says "actually continue that," tell them the task was cancelled and offer to re-dispatch it fresh via `run_skill`.
+3. **Pause is reversible, cancel is terminal.** Treat them differently. A cancelled worker cannot be resumed — its state is discarded. If the user cancels a task and then says "actually continue that," tell them the task was cancelled and offer to create a fresh task to do the same work.
 
 4. **Omit `worker_id` when you can.** The tools default to the most recent active worker if you don't provide a specific id. That's almost always what the user means when they say "pause that" or "cancel it". Only pass a specific `worker_id` if the user named a task by its skill or id, or if `list_active_workers` shows multiple workers and you need to disambiguate.
 

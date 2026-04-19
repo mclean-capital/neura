@@ -11,13 +11,16 @@
  *                                   Spike #4e)
  *   buildNeuraTools()            — pi AgentTool adapters over Neura's
  *                                   existing tool handlers
- *   session.agent.beforeToolCall — per-skill allowed-tools enforcement
- *                                   (verified by Spike #4c)
  *   session.subscribe()          — event stream piped to VoiceFanoutBridge
  *                                   (synchronous push, async drain)
  *
+ * Phase 6b removed the `beforeToolCall` permission hook (per-skill
+ * `allowed-tools` enforcement). Workers have full pi tool access; task
+ * dispatch + git-worktree isolation + prompt-level reversibility rule
+ * replace it.
+ *
  * The runtime is stateful: it tracks active workers in a map keyed by
- * `workerId`. Callers (agent-worker.ts, the run_skill tool) resolve
+ * `workerId`. Callers (agent-worker.ts, task dispatch) resolve
  * worker references by id rather than by handle, so persisting ids in
  * PGlite doesn't require holding a runtime reference.
  *
@@ -36,12 +39,11 @@ import {
   type AgentSessionEvent,
   type AuthStorage,
 } from '@mariozechner/pi-coding-agent';
-import type { Agent, AgentEvent, BeforeToolCallResult } from '@mariozechner/pi-agent-core';
+import type { Agent, AgentEvent } from '@mariozechner/pi-agent-core';
 import type { Model } from '@mariozechner/pi-ai';
 import type { WorkerCallbacks, WorkerResult, WorkerStatus } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import { toPiSkillShape, type SkillRegistry } from '../skills/skill-registry.js';
-import { REQUEST_CLARIFICATION_TOOL_NAME } from './clarification-bridge.js';
 import type { NeuraAgentTool } from './neura-tools.js';
 import type { VoiceFanoutBridge } from './voice-fanout-bridge.js';
 import type { ResumeParams, WorkerHandle, WorkerRuntime } from './worker-runtime.js';
@@ -104,9 +106,8 @@ export interface PiRuntimeOptions {
   voiceFanoutBridge: VoiceFanoutBridge;
 
   /**
-   * Skill registry for `getAllowedTools()` lookups in `beforeToolCall`.
-   * Per-worker active skill name is stored in the worker handle; the
-   * permission check resolves it via `registry.getAllowedTools(name)`.
+   * Skill registry. Used by `listWorkerSkills()` to populate pi's
+   * resource loader with Neura skills as reference documentation.
    */
   skillRegistry: SkillRegistry;
 
@@ -128,7 +129,11 @@ export interface PiRuntimeOptions {
 interface ActiveWorker {
   workerId: string;
   session: AgentSession;
-  /** Active skill for `beforeToolCall` resolution. */
+  /**
+   * Legacy field — will be replaced by `taskId` in Wave 3 when worker
+   * dispatch moves to task-ID-based lookup. Still populated so existing
+   * tests and log surfaces keep working until the rewrite lands.
+   */
   skillName: string | undefined;
   /** Resolver for the `done` promise on the returned handle. */
   resolveDone: (result: WorkerResult) => void;
@@ -198,46 +203,12 @@ export class PiRuntime implements WorkerRuntime {
       ...(this.opts.authStorage ? { authStorage: this.opts.authStorage } : {}),
     });
 
-    // Install the beforeToolCall permission hook. Resolves the currently
-    // active skill for this worker and checks against its allowed-tools
-    // list. Missing skill (e.g. ad_hoc tasks) means no restriction — the
-    // orchestrator decides whether those tasks should exist in the first
-    // place; once dispatched, Neura trusts them.
-    const agent = session.agent as Agent | undefined;
-    if (agent) {
-      agent.beforeToolCall = ({ toolCall }): Promise<BeforeToolCallResult | undefined> => {
-        const toolName = toolCall?.name ?? '';
-
-        // `request_clarification` is always available regardless of
-        // the active skill's `allowed-tools` list. Clarification is
-        // the escape hatch skills use when they hit a capability gap;
-        // requiring every skill to declare it explicitly would defeat
-        // the purpose.
-        if (toolName === REQUEST_CLARIFICATION_TOOL_NAME) {
-          return Promise.resolve(undefined);
-        }
-
-        const worker = this.active.get(workerId);
-        if (!worker?.skillName) return Promise.resolve(undefined);
-        const allowed = this.opts.skillRegistry.getAllowedTools(worker.skillName);
-        if (!allowed) {
-          return Promise.resolve({
-            block: true,
-            reason: `Skill '${worker.skillName}' is not loaded — cannot authorize tool call.`,
-          });
-        }
-        if (!allowed.includes(toolName)) {
-          log.info('beforeToolCall blocked', { workerId, skillName: worker.skillName, toolName });
-          return Promise.resolve({
-            block: true,
-            reason: `Tool '${toolName}' is not in skill '${worker.skillName}' allowed-tools list.`,
-          });
-        }
-        return Promise.resolve(undefined);
-      };
-    } else {
-      log.warn('session.agent undefined; beforeToolCall not installed', { workerId });
-    }
+    // Phase 6b: the beforeToolCall permission hook that enforced skill
+    // `allowed-tools` has been removed. Execution flows through
+    // task-driven dispatch and the orchestrator owns the gate (confirmation
+    // with the user before dispatching destructive work). Workers rely on
+    // filesystem isolation (git worktrees) and prompt-level discipline
+    // (the reversibility rule) rather than a per-skill capability filter.
 
     // Subscribe the voice fanout bridge + our own status tracker. Pi's
     // subscribe emits `AgentSessionEvent` which is a superset of

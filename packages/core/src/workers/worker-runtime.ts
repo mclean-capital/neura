@@ -26,7 +26,7 @@ import type { WorkerTask, WorkerCallbacks, WorkerResult } from '@neura/types';
  * identifiers the orchestrator needs to persist in the workers table and a
  * `done` promise the caller may optionally await for a terminal result.
  *
- * Fire-and-forget dispatches (via `run_skill`) ignore `done` — the
+ * Fire-and-forget dispatches ignore `done` — the
  * orchestrator surfaces completion through the callbacks instead. Tests and
  * integration flows await `done` directly.
  */
