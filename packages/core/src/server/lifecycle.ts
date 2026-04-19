@@ -26,9 +26,12 @@ import {
 import type {
   MemoryToolHandler,
   SkillToolHandler,
+  SystemStateHandler,
   TaskToolHandler,
   WorkerControlHandler,
+  WorkerDispatchHandler,
 } from '../tools/index.js';
+import { applyTaskUpdate, buildSystemStateHandler } from '../tools/index.js';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
 
@@ -60,6 +63,8 @@ export interface CoreServices {
   clarificationBridge: ClarificationBridge | null;
   skillToolHandler: SkillToolHandler | null;
   workerControlHandler: WorkerControlHandler | null;
+  systemStateHandler: SystemStateHandler | null;
+  workerDispatchHandler: WorkerDispatchHandler | null;
   version: string;
   pendingCleanups: Set<Promise<void>>;
 }
@@ -272,6 +277,8 @@ export async function initServices(): Promise<CoreServices> {
   let clarificationBridge: ClarificationBridge | null = null;
   let skillToolHandler: SkillToolHandler | null = null;
   let workerControlHandler: WorkerControlHandler | null = null;
+  let systemStateHandler: SystemStateHandler | null = null;
+  let workerDispatchHandler: WorkerDispatchHandler | null = null;
 
   const workerRoute = config.routing.worker;
   const workerProviderAvailable = workerRoute && !!config.providers[workerRoute.provider]?.apiKey;
@@ -318,103 +325,77 @@ export async function initServices(): Promise<CoreServices> {
           }
         : undefined;
 
-      // Worker-side task tools. Workers can create sub-tasks, read task
+      // Worker-side task tools factory. Every worker gets its own handler
+      // with `actor: worker:<workerId>` baked in — that's how the shared
+      // `applyTaskUpdate` enforces author scoping, cross-task writes, and
+      // the transition matrix. Workers can create sub-tasks, read task
       // state, and update their own task (post comments + status
       // transitions via the 6-verb protocol). Deletion is
       // orchestrator-only — stub-refused for workers.
-      const workerTaskTools: TaskToolHandler = {
-        createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
-        listTasks: async (filter) => {
-          const limit = filter?.limit ?? 100;
+      const buildWorkerTaskTools = (workerId: string): TaskToolHandler => {
+        const rawDb = (
+          store as unknown as { getRawDb?: () => import('@electric-sql/pglite').PGlite }
+        ).getRawDb?.();
+        if (!rawDb) {
+          throw new Error('store does not expose getRawDb (required for worker task tools)');
+        }
+        return {
+          createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
+          listTasks: async (filter) => {
+            const limit = filter?.limit ?? 100;
 
-          if (
-            !filter ||
-            (!filter.status && !filter.needsAttention && !filter.source && !filter.since)
-          ) {
-            return store.getOpenWorkItems(limit);
-          }
-
-          const hasAllInArrayOrScalar =
-            filter.status === 'all' ||
-            (Array.isArray(filter.status) && filter.status.includes('all' as never));
-
-          let candidates: Awaited<ReturnType<typeof store.getWorkItems>>;
-          if (hasAllInArrayOrScalar) {
-            candidates = await store.getWorkItems({ limit: 500 });
-          } else if (Array.isArray(filter.status)) {
-            const all = await store.getWorkItems({ limit: 500 });
-            const wanted = new Set(filter.status);
-            candidates = all.filter((t) => wanted.has(t.status));
-          } else if (typeof filter.status === 'string') {
-            candidates = await store.getWorkItems({ status: filter.status, limit: 500 });
-          } else {
-            candidates = await store.getOpenWorkItems(500);
-          }
-
-          if (filter.source) {
-            candidates = candidates.filter((t) => t.source === filter.source);
-          }
-          if (filter.since) {
-            const sinceMs = Date.parse(filter.since);
-            if (!Number.isNaN(sinceMs)) {
-              candidates = candidates.filter((t) => Date.parse(t.updatedAt) > sinceMs);
+            if (
+              !filter ||
+              (!filter.status && !filter.needsAttention && !filter.source && !filter.since)
+            ) {
+              return store.getOpenWorkItems(limit);
             }
-          }
 
-          return candidates.slice(0, limit);
-        },
-        getTask: (idOrTitle) => store.getWorkItem(idOrTitle),
-        updateTask: async (idOrTitle, payload) => {
-          // Worker can update its own task: post comments + status
-          // transitions. Wave 3 Pass 1 keeps this minimal — Pass 3 will
-          // add per-worker author tagging + transition-matrix enforcement.
-          const current = await store.getWorkItem(idOrTitle);
-          if (!current) return null;
+            const hasAllInArrayOrScalar =
+              filter.status === 'all' ||
+              (Array.isArray(filter.status) && filter.status.includes('all' as never));
 
-          const updates: Record<string, unknown> = {};
-          if (payload.status !== undefined) updates.status = payload.status;
-          if (payload.fields) {
-            for (const [k, v] of Object.entries(payload.fields)) {
-              if (v !== undefined) updates[k] = v;
+            let candidates: Awaited<ReturnType<typeof store.getWorkItems>>;
+            if (hasAllInArrayOrScalar) {
+              candidates = await store.getWorkItems({ limit: 500 });
+            } else if (Array.isArray(filter.status)) {
+              const all = await store.getWorkItems({ limit: 500 });
+              const wanted = new Set(filter.status);
+              candidates = all.filter((t) => wanted.has(t.status));
+            } else if (typeof filter.status === 'string') {
+              candidates = await store.getWorkItems({ status: filter.status, limit: 500 });
+            } else {
+              candidates = await store.getOpenWorkItems(500);
             }
-          }
-          let version = current.version;
-          if (Object.keys(updates).length > 0) {
-            version = await store.updateWorkItem(
-              current.id,
-              updates as Parameters<typeof store.updateWorkItem>[1],
-              payload.expectVersion !== undefined
-                ? { expectVersion: payload.expectVersion }
-                : undefined
-            );
-          }
 
-          let comment:
-            | Awaited<ReturnType<typeof import('../stores/task-comment-queries.js').insertComment>>
-            | undefined;
-          if (payload.comment) {
-            const { insertComment } = await import('../stores/task-comment-queries.js');
-            comment = await insertComment(
-              (store as unknown as { db: import('@electric-sql/pglite').PGlite }).db,
-              {
-                taskId: current.id,
-                type: payload.comment.type,
-                author: 'worker',
-                content: payload.comment.content,
-                attachmentPath: payload.comment.attachmentPath ?? null,
-                urgency: payload.comment.urgency ?? null,
-                metadata: payload.comment.metadata ?? null,
+            if (filter.source) {
+              candidates = candidates.filter((t) => t.source === filter.source);
+            }
+            if (filter.since) {
+              const sinceMs = Date.parse(filter.since);
+              if (!Number.isNaN(sinceMs)) {
+                candidates = candidates.filter((t) => Date.parse(t.updatedAt) > sinceMs);
               }
-            );
-          }
+            }
 
-          const task = (await store.getWorkItem(current.id))!;
-          return { task, version, ...(comment ? { comment } : {}) };
-        },
-        deleteTask: (idOrTitle) => {
-          log.warn('worker tried deleteTask (not supported for workers)', { idOrTitle });
-          return Promise.resolve(false);
-        },
+            return candidates.slice(0, limit);
+          },
+          getTask: (idOrTitle) => store.getWorkItem(idOrTitle),
+          updateTask: async (idOrTitle, payload) => {
+            const current = await store.getWorkItem(idOrTitle);
+            if (!current) return null;
+            return applyTaskUpdate({
+              db: rawDb,
+              task: current,
+              payload,
+              actor: `worker:${workerId}`,
+            });
+          },
+          deleteTask: (idOrTitle) => {
+            log.warn('worker tried deleteTask (not supported for workers)', { idOrTitle });
+            return Promise.resolve(false);
+          },
+        };
       };
 
       // Clarification bridge — sits between running workers (via the
@@ -470,7 +451,7 @@ export async function initServices(): Promise<CoreServices> {
           queryWatcher: () =>
             Promise.resolve('vision is not available to workers; orchestrator owns screen access'),
           memoryTools: workerMemoryTools,
-          taskTools: workerTaskTools,
+          taskTools: buildWorkerTaskTools(workerId),
         });
         // Append the per-worker request_clarification tool. Bound to
         // this workerId so each worker posts to its own clarification
@@ -538,6 +519,27 @@ export async function initServices(): Promise<CoreServices> {
       // directives (no keyword classifier).
       workerControlHandler = buildWorkerControlHandler({ worker: agentWorker });
 
+      // System-state handler backs the orchestrator's `get_system_state`
+      // tool. Reads from existing tables (workers, work_items,
+      // task_comments) — no new schema.
+      systemStateHandler = buildSystemStateHandler({ store, db: rawDb });
+
+      // Worker dispatch handler backs the orchestrator's `dispatch_worker`
+      // tool. Loads the task row, creates a worktree dir, builds the
+      // canonical prompt, and hands off to `AgentWorker.dispatchForTask`.
+      workerDispatchHandler = {
+        dispatchWorker: async (taskId: string) => {
+          if (!agentWorker) return { error: 'worker runtime not available' };
+          try {
+            const handle = await agentWorker.dispatchForTask(taskId);
+            return { workerId: handle.workerId };
+          } catch (err) {
+            log.warn('dispatchForTask failed', { taskId, err: String(err) });
+            return { error: String(err) };
+          }
+        },
+      };
+
       log.info('phase 6 worker runtime ready');
     } catch (err) {
       log.error('phase 6 initialization failed — skills and workers disabled', {
@@ -552,6 +554,8 @@ export async function initServices(): Promise<CoreServices> {
       clarificationBridge = null;
       skillToolHandler = null;
       workerControlHandler = null;
+      systemStateHandler = null;
+      workerDispatchHandler = null;
     }
   } else {
     log.info('phase 6 disabled — missing store or worker route/API key');
@@ -572,6 +576,8 @@ export async function initServices(): Promise<CoreServices> {
     clarificationBridge,
     skillToolHandler,
     workerControlHandler,
+    systemStateHandler,
+    workerDispatchHandler,
     version,
     pendingCleanups,
   };

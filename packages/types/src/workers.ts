@@ -80,6 +80,21 @@ export interface WorkerTask {
    * authoring prompt.
    */
   context?: Record<string, unknown>;
+
+  /**
+   * Absolute path for the pi AgentSession `cwd`. Task-driven dispatch
+   * (Phase 6b) creates a per-worker worktree and passes its path here so
+   * filesystem writes from one worker don't stomp another. Left unset for
+   * legacy dispatch — the runtime's default cwd is used.
+   */
+  cwd?: string;
+
+  /**
+   * The work_item id this worker is executing against. Set by the Phase 6b
+   * dispatch flow so the runtime knows which `ctx.actor` the worker's
+   * `update_task` tool calls should reference.
+   */
+  taskId?: string;
 }
 
 /**

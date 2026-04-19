@@ -160,9 +160,11 @@ export class PiRuntime implements WorkerRuntime {
    */
   private async buildSession(
     sessionManager: SessionManager,
-    workerId: string
+    workerId: string,
+    cwd?: string
   ): Promise<AgentSession> {
     const tools = this.opts.buildTools({ workerId });
+    const sessionCwd = cwd ?? this.opts.cwd;
 
     // B2 fix: feed Neura's SkillRegistry into pi's resource loader so
     // the agent session sees Neura's loaded skills via `getSkills()`
@@ -179,7 +181,7 @@ export class PiRuntime implements WorkerRuntime {
     // the reload (existing sessions keep the snapshot they were built
     // with, which is fine — pi reads skills at construction time).
     const resourceLoader = new DefaultResourceLoader({
-      cwd: this.opts.cwd,
+      cwd: sessionCwd,
       agentDir: this.opts.agentDir,
       noSkills: true,
       skillsOverride: () => ({
@@ -193,7 +195,7 @@ export class PiRuntime implements WorkerRuntime {
     await resourceLoader.reload();
 
     const { session } = await createAgentSession({
-      cwd: this.opts.cwd,
+      cwd: sessionCwd,
       agentDir: this.opts.agentDir,
       model: this.opts.model,
       thinkingLevel: this.opts.thinkingLevel ?? 'low',
@@ -362,8 +364,9 @@ export class PiRuntime implements WorkerRuntime {
     // Use a fresh file-backed SessionManager per dispatch. Writes to
     // `${sessionDir}/<timestamp>_<uuid>.jsonl` which becomes the
     // load-bearing restart-safe identifier for this worker.
-    const sessionManager = SessionManager.create(this.opts.cwd, this.opts.sessionDir);
-    const session = await this.buildSession(sessionManager, workerId);
+    const sessionCwd = task.cwd ?? this.opts.cwd;
+    const sessionManager = SessionManager.create(sessionCwd, this.opts.sessionDir);
+    const session = await this.buildSession(sessionManager, workerId, sessionCwd);
 
     let resolveDone!: (result: WorkerResult) => void;
     const done = new Promise<WorkerResult>((resolve) => {

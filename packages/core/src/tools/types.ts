@@ -184,12 +184,6 @@ export interface ToolCallContext {
   workerControl?: WorkerControlHandler;
   workerDispatch?: WorkerDispatchHandler;
   systemState?: SystemStateHandler;
-  /**
-   * Actor identity for `update_task`. Workers pass `worker:<workerId>`;
-   * orchestrator leaves it unset (defaults to `orchestrator`). The handler
-   * uses this to enforce transition-matrix + author-scoping invariants.
-   */
-  actor?: string;
 }
 
 /** Re-export for convenience — callers depend on these along with the context. */

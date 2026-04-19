@@ -7,6 +7,7 @@ import { createVoiceSession } from '../providers/voice-session.js';
 import { createVisionWatcher } from '../providers/vision-watcher.js';
 import { CostTracker } from '../cost/index.js';
 import type { MemoryToolHandler, TaskToolHandler } from '../tools/index.js';
+import { applyTaskUpdate, resolveTask } from '../tools/task-update-handler.js';
 import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { OnnxWakeDetector } from '../presence/onnx-wake-detector.js';
@@ -45,6 +46,8 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
     clarificationBridge,
     skillToolHandler,
     workerControlHandler,
+    systemStateHandler,
+    workerDispatchHandler,
     skillRegistry,
   } = services;
   const { authToken } = config;
@@ -279,73 +282,15 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
 
             return candidates.slice(0, limit);
           },
-          getTask: async (idOrTitle) => {
-            const byId = await store.getWorkItem(idOrTitle);
-            if (byId) return byId;
-            const all = await store.getWorkItems({ limit: 200 });
-            const lower = idOrTitle.toLowerCase();
-            return all.find((t) => t.title.toLowerCase().includes(lower)) ?? null;
-          },
+          getTask: (idOrTitle) => resolveTask(store, idOrTitle),
           updateTask: async (idOrTitle, payload) => {
-            let id = idOrTitle;
-            let current = await store.getWorkItem(idOrTitle);
-            if (!current) {
-              const all = await store.getWorkItems({ limit: 200 });
-              const lower = idOrTitle.toLowerCase();
-              const match = all.find((t) => t.title.toLowerCase().includes(lower));
-              if (!match) return null;
-              id = match.id;
-              current = match;
-            }
-
-            // Field updates + status change go through updateWorkItem with
-            // optimistic-lock version check. Translate payload.fields to
-            // the UpdateWorkItemFields shape.
-            const updates: Record<string, unknown> = {};
-            if (payload.status !== undefined) updates.status = payload.status;
-            if (payload.fields) {
-              for (const [k, v] of Object.entries(payload.fields)) {
-                if (v !== undefined) updates[k] = v;
-              }
-            }
-
-            let version = current.version;
-            if (Object.keys(updates).length > 0) {
-              version = await store.updateWorkItem(
-                id,
-                updates as Parameters<typeof store.updateWorkItem>[1],
-                payload.expectVersion !== undefined
-                  ? { expectVersion: payload.expectVersion }
-                  : undefined
-              );
-            }
-
-            // Comment append (optional). Uses the insertComment query
-            // directly since it's not part of DataStore yet — Phase 6b
-            // Wave 3 keeps this lean; Wave 5 will wire DataStore.addComment.
-            let comment:
-              | Awaited<
-                  ReturnType<typeof import('../stores/task-comment-queries.js').insertComment>
-                >
-              | undefined;
-            if (payload.comment) {
-              const { insertComment } = await import('../stores/task-comment-queries.js');
-              comment = await insertComment(
-                (store as unknown as { db: import('@electric-sql/pglite').PGlite }).db,
-                {
-                  taskId: id,
-                  type: payload.comment.type,
-                  author: 'orchestrator',
-                  content: payload.comment.content,
-                  attachmentPath: payload.comment.attachmentPath ?? null,
-                  urgency: payload.comment.urgency ?? null,
-                  metadata: payload.comment.metadata ?? null,
-                }
-              );
-            }
-
-            const task = (await store.getWorkItem(id))!;
-            return { task, version, ...(comment ? { comment } : {}) };
+            const current = await resolveTask(store, idOrTitle);
+            if (!current) return null;
+            const db = (
+              store as unknown as { getRawDb?: () => import('@electric-sql/pglite').PGlite }
+            ).getRawDb?.();
+            if (!db) throw new Error('store does not expose getRawDb');
+            return applyTaskUpdate({ db, task: current, payload, actor: 'orchestrator' });
           },
           deleteTask: async (idOrTitle) => {
             const byId = await store.getWorkItem(idOrTitle);
@@ -593,6 +538,8 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
           taskTools,
           skillTools: skillToolHandler ?? undefined,
           workerControl: workerControlHandler ?? undefined,
+          systemState: systemStateHandler ?? undefined,
+          workerDispatch: workerDispatchHandler ?? undefined,
         },
         services.registry
       );

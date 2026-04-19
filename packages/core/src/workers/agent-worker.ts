@@ -26,10 +26,18 @@
  *      no SIGCHLD handlers — just observing the event stream.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { PGlite } from '@electric-sql/pglite';
 import { Logger } from '@neura/utils/logger';
-import type { WorkerCallbacks, WorkerResult, WorkerStatus, WorkerTask } from '@neura/types';
+import type {
+  WorkItemEntry,
+  WorkerCallbacks,
+  WorkerResult,
+  WorkerStatus,
+  WorkerTask,
+} from '@neura/types';
 import {
   createWorker,
   getWorker,
@@ -38,6 +46,7 @@ import {
   updateWorker,
   type WorkerEntry,
 } from '../stores/worker-queries.js';
+import { getWorkItem, updateWorkItem } from '../stores/work-item-queries.js';
 import type { WorkerHandle, WorkerRuntime } from './worker-runtime.js';
 import { WorkerCancellation } from './worker-cancellation.js';
 
@@ -46,16 +55,56 @@ const log = new Logger('agent-worker');
 export interface AgentWorkerOptions {
   db: PGlite;
   runtime: WorkerRuntime;
+  /**
+   * Base directory for per-worker worktrees. Defaults to `~/.neura/worktrees`.
+   * Each worker gets an isolated subdirectory `<base>/<workerId>/` that
+   * becomes the pi session `cwd`. See plan §Git Worktree Isolation.
+   */
+  worktreeBasePath?: string;
+}
+
+/** Build the canonical task-driven prompt from a work_items row. */
+export function buildCanonicalWorkerPrompt(task: WorkItemEntry): string {
+  const lines: string[] = [];
+  lines.push(`Your task: ${task.title}`);
+  if (task.goal) lines.push(`\nGoal (what success looks like): ${task.goal}`);
+  if (task.description) lines.push(`\nDescription:\n${task.description}`);
+  const ctx = task.context;
+  if (ctx) {
+    if (Array.isArray(ctx.acceptanceCriteria) && ctx.acceptanceCriteria.length > 0) {
+      lines.push('\nAcceptance criteria:');
+      for (const c of ctx.acceptanceCriteria) lines.push(`- ${c}`);
+    }
+    if (Array.isArray(ctx.constraints) && ctx.constraints.length > 0) {
+      lines.push('\nConstraints:');
+      for (const c of ctx.constraints) lines.push(`- ${c}`);
+    }
+    if (Array.isArray(ctx.references) && ctx.references.length > 0) {
+      lines.push('\nReferences:');
+      for (const c of ctx.references) lines.push(`- ${c}`);
+    }
+  }
+  if (task.relatedSkills.length > 0) {
+    lines.push(
+      `\nReference skills available: ${task.relatedSkills.join(', ')}. Consult them for domain specifics if relevant.`
+    );
+  }
+  lines.push(
+    `\nReport progress, ask for clarification, or request approval via update_task on task id ${task.id}. Complete with status: done when finished.`
+  );
+  return lines.join('\n');
 }
 
 export class AgentWorker {
   private readonly db: PGlite;
   private readonly runtime: WorkerRuntime;
   private readonly cancellation: WorkerCancellation;
+  private readonly worktreeBasePath: string;
 
   constructor(options: AgentWorkerOptions) {
     this.db = options.db;
     this.runtime = options.runtime;
+    this.worktreeBasePath = options.worktreeBasePath ?? join(homedir(), '.neura', 'worktrees');
     this.cancellation = new WorkerCancellation({
       runtime: options.runtime,
       onWorkerAborted: async (workerId) => {
@@ -153,6 +202,131 @@ export class AgentWorker {
 
     // Schedule cleanup when the handle settles. NOT awaited — callers
     // that want to await the result do so via handle.done directly.
+    void handle.done.then(() => {
+      this.cancellation.unregister(workerId);
+    });
+
+    return handle;
+  }
+
+  /**
+   * Phase 6b — task-driven dispatch.
+   *
+   * Loads the work_items row, creates an isolated worktree directory at
+   * `<worktreeBasePath>/<workerId>/`, builds the canonical worker prompt
+   * from task goal/context/related_skills, writes `worker_id` + `status =
+   * in_progress` back onto the task, and kicks off a pi AgentSession with
+   * `cwd` set to the worktree.
+   *
+   * Worktree is scratch-only in Pass 2. Wave 4 adds `git worktree add` for
+   * repo-scoped tasks, LFS hydration, disk-cap enforcement, and the
+   * terminal-status cleanup sweep.
+   */
+  async dispatchForTask(taskId: string, callbacks: WorkerCallbacks = {}): Promise<WorkerHandle> {
+    const task = await getWorkItem(this.db, taskId);
+    if (!task) throw new Error(`dispatchForTask: unknown task ${taskId}`);
+
+    // Build a minimal WorkerTask. `taskType` stays `ad_hoc` now that
+    // `execute_skill` is retired from the dispatch flow — tracking taskId
+    // on the shape is the actual linkage back to the work_items row.
+    const prompt = buildCanonicalWorkerPrompt(task);
+    const workerTask: WorkerTask = {
+      taskType: 'ad_hoc',
+      description: prompt,
+      taskId: task.id,
+    };
+
+    // Create the worker row FIRST so we know the workerId — then carve a
+    // worktree under `<base>/<workerId>/`. Passing the pre-minted
+    // workerId to `runtime.dispatch` keeps the active-map key and the
+    // db-row id in lockstep (B1 fix from Phase 6).
+    const workerId = await createWorker(this.db, workerTask);
+    const worktreePath = join(this.worktreeBasePath, workerId);
+    try {
+      mkdirSync(worktreePath, { recursive: true });
+    } catch (err) {
+      log.warn('failed to create worktree dir; continuing with runtime default cwd', {
+        workerId,
+        worktreePath,
+        err: String(err),
+      });
+    }
+    if (task.repoPath) {
+      // Wave 4: `git worktree add <worktreePath> <base-branch>` goes here.
+      // For now, we log that git isolation isn't active yet — the worker
+      // gets a plain scratch dir, not a working-tree view of the repo.
+      log.info('repo_path set but git worktree not yet integrated (Wave 4)', {
+        workerId,
+        repoPath: task.repoPath,
+        baseBranch: task.baseBranch,
+      });
+    }
+
+    // Wrap callbacks so status + results mirror into the workers table.
+    const wrapped: WorkerCallbacks = {
+      onStatusChange: (status) => {
+        void updateWorker(this.db, workerId, { status }).catch((err: unknown) => {
+          log.warn('failed to persist status', { workerId, status, err: String(err) });
+        });
+        callbacks.onStatusChange?.(status);
+      },
+      onProgress: callbacks.onProgress,
+      onComplete: (result) => {
+        void this.persistTerminalResult(workerId, result).catch((err: unknown) => {
+          log.warn('failed to persist terminal result', {
+            workerId,
+            err: String(err),
+          });
+        });
+        callbacks.onComplete?.(result);
+      },
+    };
+
+    // Runtime dispatch — per-task cwd so pi's filesystem view is scoped
+    // to the worktree. Passing the pre-minted workerId keeps the active
+    // map keyed by the db id (B1).
+    const handle = await this.runtime.dispatch(
+      { ...workerTask, cwd: worktreePath },
+      wrapped,
+      workerId
+    );
+
+    // Persist session metadata so crash-recovery can reopen.
+    try {
+      await updateWorker(this.db, workerId, {
+        status: 'running',
+        sessionId: handle.sessionId,
+        sessionFile: handle.sessionFile ?? undefined,
+      });
+    } catch (err) {
+      log.warn('failed to persist session metadata', { workerId, err: String(err) });
+    }
+
+    // Write the worker_id + status back onto the task row — the invariant
+    // layer uses this to authorize the worker's future update_task calls.
+    // This runs as `system` conceptually; we go through the raw query layer
+    // to bypass the transition matrix (orchestrator → in_progress is
+    // already allowed, but writing `worker_id` is not expressible via the
+    // normal `update_task` payload cleanly).
+    try {
+      await updateWorkItem(this.db, task.id, {
+        status: 'in_progress',
+        workerId,
+      });
+    } catch (err) {
+      // Best-effort: if the task row can't accept the update (e.g. already
+      // terminal), the worker is still running but unable to post updates.
+      // The next status change will be visible via worker-queries so this
+      // doesn't block dispatch — but surface the warning so operators
+      // notice the race.
+      log.warn('failed to link worker to task', {
+        workerId,
+        taskId: task.id,
+        err: String(err),
+      });
+    }
+
+    this.cancellation.register(workerId);
     void handle.done.then(() => {
       this.cancellation.unregister(workerId);
     });

@@ -423,19 +423,21 @@ Split into three passes for reviewability:
 - Types: `TaskSummary`, `SystemStateSnapshot`, handler interfaces
 - `WorkerDispatchHandler` and `SystemStateHandler` stubbed (undefined on ctx)
 
-**Pass 2** (upcoming): dispatch wiring
+**Pass 2** (shipped): dispatch wiring
 
-- Rewrite `AgentWorker.dispatch(taskId)` — fetch task row, build canonical prompt from task.goal + context + related_skills
-- Implement `WorkerDispatchHandler` in lifecycle.ts
-- Implement `SystemStateHandler` (queries existing tables; no new schema)
-- Drop `WorkerTask.taskType` / `skillName` coupling
-- Git worktree base-dir management + dispatch integration
-- **Hard prerequisites before Pass 2 merges (do not ship without):**
-  - `ctx.actor` wired through PiRuntime tool context so the handler knows who is calling `update_task`
-  - Handler enforces `task.worker_id === worker.id` for worker-originated updates (blocks cross-task writes; see §Concurrency → Handler-level backstops)
-  - Transition-matrix enforcement: worker may NOT transition to `cancelled`; orchestrator may NOT transition to `done`; `done`/`failed`/`cancelled` are terminal
-  - `countOpenRequests` called before accepting `complete_task` — reject if an unresolved `approval_request` comment exists
-  - Worker may NOT author comments with `author: 'user'` or `author: 'orchestrator'`
+- `applyTaskUpdate` shared invariant layer (`packages/core/src/tools/task-update-handler.ts`) enforces the four handler-level backstops from §Concurrency — actor parsed from an injected `TaskUpdateActor` value closed over per-caller, not ambient on the tool context:
+  - Cross-task write guard (`task.worker_id === worker.id`, strict — undispatched rows are off-limits to workers; system actor is the only path to assign `worker_id`)
+  - Transition matrix (worker !→ `cancelled`; orchestrator !→ `done`; terminals frozen)
+  - Author-spoofing guard (worker may not author `clarification_response`, `approval_response`, `system`, `deferred`)
+  - Completion gate via `countOpenRequests` (reject `status: done` while an unresolved `*_request` sits on the task)
+- `buildWorkerTaskTools(workerId)` factory in `lifecycle.ts` — each worker session gets a per-worker `TaskToolHandler` with its `worker:<id>` actor baked in
+- `SystemStateHandler` implemented in `packages/core/src/tools/system-state-handler.ts`; queries workers + work_items + task_comments with no new schema. Pinned the PGlite session timezone to UTC at migration time (was matching host locale, drifted `NOW()` vs TIMESTAMP comparisons)
+- `AgentWorker.dispatchForTask(taskId)` — fetches the work_items row, mkdirs `~/.neura/worktrees/<workerId>/`, builds the canonical prompt via `buildCanonicalWorkerPrompt`, dispatches the runtime with `cwd` set to the worktree, and mirrors `worker_id` + `status: in_progress` back onto the task. Legacy `dispatch(task)` kept for existing tests.
+- `WorkerDispatchHandler` wired in `lifecycle.ts` and surfaced to Grok via the voice config on both Grok realtime and pipeline providers.
+- `WorkerTask` gained optional `cwd` and `taskId` fields; `PiRuntime.buildSession` honors per-task `cwd` so concurrent workers get their own pi session working directories.
+- `ctx.actor` field removed from `ToolCallContext` — actor is now first-class on the handler factory, which is clearer than plumbing a string through every tool call.
+
+Worktree is scratch-only in Pass 2 — `git worktree add`, LFS hydration, submodule init, disk-cap enforcement, and terminal-status cleanup all roll into Wave 4.
 
 **Pass 3** (upcoming): worker protocol tools
 

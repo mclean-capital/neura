@@ -44,6 +44,8 @@ export function createVoiceSession(
       taskTools: config.taskTools,
       skillTools: config.skillTools,
       workerControl: config.workerControl,
+      workerDispatch: config.workerDispatch,
+      systemState: config.systemState,
     };
 
     return new PipelineVoiceProvider(cb, pipelineConfig, llmAdapter, sttAdapter, ttsAdapter);

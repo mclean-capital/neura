@@ -15,7 +15,11 @@ import { vector } from '@electric-sql/pglite/vector';
 import type { WorkerCallbacks, WorkerResult, WorkerStatus, WorkerTask } from '@neura/types';
 import { runMigrations } from '../stores/migrations.js';
 import { createWorker, getWorker, updateWorker } from '../stores/worker-queries.js';
-import { AgentWorker } from './agent-worker.js';
+import { createWorkItem, getWorkItem } from '../stores/work-item-queries.js';
+import { AgentWorker, buildCanonicalWorkerPrompt } from './agent-worker.js';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ResumeParams, WorkerHandle, WorkerRuntime } from './worker-runtime.js';
 
 let db: PGlite;
@@ -388,6 +392,104 @@ describe('AgentWorker — getMostRecentPausedWorker (C1)', () => {
 
     const paused = await worker.getMostRecentPausedWorker();
     expect(paused?.workerId).toBe(secondId);
+  });
+});
+
+describe('AgentWorker — dispatchForTask (Phase 6b)', () => {
+  let worktreeBase: string;
+
+  beforeEach(() => {
+    worktreeBase = mkdtempSync(join(tmpdir(), 'neura-wt-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(worktreeBase)) {
+      rmSync(worktreeBase, { recursive: true, force: true });
+    }
+  });
+
+  it('creates a worktree dir, links worker to task, and sets status=in_progress', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+
+    const taskId = await createWorkItem(db, 'Ship phase 6b', 'high', {
+      goal: 'Land Wave 3 Pass 2',
+      context: {
+        acceptanceCriteria: ['tests green', 'no regressions'],
+        constraints: ['no schema changes'],
+      },
+    });
+
+    const handle = await worker.dispatchForTask(taskId);
+
+    // Worker row was created and linked.
+    const row = await getWorker(db, handle.workerId);
+    expect(row?.status).toBe('running');
+
+    // Worktree dir exists under the configured base.
+    const worktreePath = join(worktreeBase, handle.workerId);
+    expect(existsSync(worktreePath)).toBe(true);
+
+    // Task row has worker_id + status=in_progress mirrored.
+    const taskRow = await getWorkItem(db, taskId);
+    expect(taskRow?.workerId).toBe(handle.workerId);
+    expect(taskRow?.status).toBe('in_progress');
+
+    // Runtime was called with a cwd that points at the worktree.
+    expect(bundle.dispatched).toHaveLength(1);
+    expect(bundle.dispatched[0].task.cwd).toBe(worktreePath);
+    expect(bundle.dispatched[0].task.taskId).toBe(taskId);
+  });
+
+  it('throws when the task id does not exist', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    await expect(worker.dispatchForTask('missing-task')).rejects.toThrow(/unknown task/);
+  });
+});
+
+describe('buildCanonicalWorkerPrompt', () => {
+  it('includes goal, acceptance criteria, and task id', () => {
+    const prompt = buildCanonicalWorkerPrompt({
+      id: 'task-xyz',
+      title: 'Do the thing',
+      description: null,
+      status: 'pending',
+      priority: 'medium',
+      dueAt: null,
+      parentId: null,
+      sourceSessionId: null,
+      createdAt: '',
+      updatedAt: '',
+      completedAt: null,
+      goal: 'thing is done',
+      context: {
+        acceptanceCriteria: ['test A', 'test B'],
+        constraints: ['no side effects'],
+        references: ['https://example.com'],
+      },
+      relatedSkills: ['how-to-thing'],
+      repoPath: null,
+      baseBranch: null,
+      workerId: null,
+      source: 'user',
+      version: 0,
+      leaseExpiresAt: null,
+    });
+    expect(prompt).toContain('Do the thing');
+    expect(prompt).toContain('thing is done');
+    expect(prompt).toContain('test A');
+    expect(prompt).toContain('no side effects');
+    expect(prompt).toContain('how-to-thing');
+    expect(prompt).toContain('task-xyz');
   });
 });
 

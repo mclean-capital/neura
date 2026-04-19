@@ -5,6 +5,12 @@ import { Logger } from '@neura/utils/logger';
 const log = new Logger('store');
 
 export async function runMigrations(db: PGlite, embeddingDimensions = 3072): Promise<void> {
+  // Pin the session timezone to UTC. Our schema mixes TIMESTAMP (without tz)
+  // and TIMESTAMPTZ — the moment those get compared (e.g. `due_at <= NOW()`),
+  // PG coerces using the session tz. Leaving the host tz applied drifts any
+  // time-window query by the local offset, and the bug only shows up when
+  // the machine isn't in UTC. Pinning the session kills the class of bug.
+  await db.exec(`SET TIME ZONE 'UTC'`);
   await db.exec('CREATE EXTENSION IF NOT EXISTS vector;');
 
   // --- _meta table for embedding dimension tracking ---

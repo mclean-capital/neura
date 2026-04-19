@@ -20,5 +20,11 @@ export type {
   EnterModeHandler,
   SkillToolHandler,
   WorkerControlHandler,
+  WorkerDispatchHandler,
+  SystemStateHandler,
   ToolCallContext,
+  UpdateTaskPayload,
 } from './types.js';
+export { buildSystemStateHandler } from './system-state-handler.js';
+export { applyTaskUpdate, resolveTask, InvalidUpdateError } from './task-update-handler.js';
+export type { TaskUpdateActor } from './task-update-handler.js';
