@@ -415,11 +415,32 @@ Each wave is independently reviewable and committable.
 
 ### Wave 3 — Worker runtime rewrite
 
-- Drop `WorkerTask.taskType` / `skillName` coupling; accept `taskId: string` instead
-- Worker fetches task row on dispatch, builds prompt from task context
-- Implement `update_task` tool (workers + orchestrator, handler validates author scope)
-- Implement `dispatch_worker(taskId)` tool + remove `run_skill`
-- ClarificationBridge demotes to transport optimization; task comments are SoT
+Split into three passes for reviewability:
+
+**Pass 1** (shipped, `5f02e51`):
+
+- Orchestrator tool surface: `dispatch_worker`, `get_system_state`, unified `update_task`
+- Types: `TaskSummary`, `SystemStateSnapshot`, handler interfaces
+- `WorkerDispatchHandler` and `SystemStateHandler` stubbed (undefined on ctx)
+
+**Pass 2** (upcoming): dispatch wiring
+
+- Rewrite `AgentWorker.dispatch(taskId)` — fetch task row, build canonical prompt from task.goal + context + related_skills
+- Implement `WorkerDispatchHandler` in lifecycle.ts
+- Implement `SystemStateHandler` (queries existing tables; no new schema)
+- Drop `WorkerTask.taskType` / `skillName` coupling
+- Git worktree base-dir management + dispatch integration
+- **Hard prerequisites before Pass 2 merges (do not ship without):**
+  - `ctx.actor` wired through PiRuntime tool context so the handler knows who is calling `update_task`
+  - Handler enforces `task.worker_id === worker.id` for worker-originated updates (blocks cross-task writes; see §Concurrency → Handler-level backstops)
+  - Transition-matrix enforcement: worker may NOT transition to `cancelled`; orchestrator may NOT transition to `done`; `done`/`failed`/`cancelled` are terminal
+  - `countOpenRequests` called before accepting `complete_task` — reject if an unresolved `approval_request` comment exists
+  - Worker may NOT author comments with `author: 'user'` or `author: 'orchestrator'`
+
+**Pass 3** (upcoming): worker protocol tools
+
+- Add pi AgentTool adapters for the 6 worker verbs (`report_progress`, `heartbeat`, `request_clarification`, `request_approval`, `complete_task`, `fail_task`) that wrap `update_task`
+- Demote `ClarificationBridge` to transport optimization; task comments are SoT
 - `VoiceFanoutBridge` updated: progress comments → ambient voice
 
 **Risk:** high. Load-bearing change; lots of tests to rewire.

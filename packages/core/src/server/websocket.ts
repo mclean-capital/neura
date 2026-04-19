@@ -221,9 +221,17 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
           createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
           listTasks: async (filter) => {
             const limit = filter?.limit ?? 100;
-            if (!filter || (!filter.status && !filter.needsAttention && !filter.source)) {
+
+            // Default: no filters → non-terminal tasks only.
+            if (
+              !filter ||
+              (!filter.status && !filter.needsAttention && !filter.source && !filter.since)
+            ) {
               return store.getOpenWorkItems(limit);
             }
+
+            // needs_attention shortcut wins over other filters — it's the
+            // orchestrator's "what's blocked on me" query.
             if (filter.needsAttention) {
               const items = await store.getWorkItems({ limit: 500 });
               return items.filter(
@@ -233,18 +241,43 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
                   (t.source !== 'user' && t.status === 'pending')
               );
             }
-            if (filter.status === 'all') {
-              return store.getWorkItems({ limit });
+
+            // Fetch a candidate set based on the status filter, then apply
+            // source/since filters client-side. Tiny scale at current
+            // volume — swap to index-backed SQL before enabling
+            // system_proactive at scale (tracked in plan §Worktree risks).
+            let candidates: Awaited<ReturnType<typeof store.getWorkItems>>;
+
+            const hasAllInArrayOrScalar =
+              filter.status === 'all' ||
+              (Array.isArray(filter.status) && filter.status.includes('all' as never));
+
+            if (hasAllInArrayOrScalar) {
+              candidates = await store.getWorkItems({ limit: 500 });
+            } else if (Array.isArray(filter.status)) {
+              const all = await store.getWorkItems({ limit: 500 });
+              const wanted = new Set(filter.status);
+              candidates = all.filter((t) => wanted.has(t.status));
+            } else if (typeof filter.status === 'string') {
+              candidates = await store.getWorkItems({ status: filter.status, limit: 500 });
+            } else {
+              candidates = await store.getOpenWorkItems(500);
             }
-            if (Array.isArray(filter.status)) {
-              const items = await store.getWorkItems({ limit: 500 });
-              const statuses = new Set(filter.status);
-              return items.filter((t) => statuses.has(t.status));
+
+            // Apply source filter.
+            if (filter.source) {
+              candidates = candidates.filter((t) => t.source === filter.source);
             }
-            if (typeof filter.status === 'string') {
-              return store.getWorkItems({ status: filter.status, limit });
+
+            // Apply since filter — updated_at greater than the given ISO.
+            if (filter.since) {
+              const sinceMs = Date.parse(filter.since);
+              if (!Number.isNaN(sinceMs)) {
+                candidates = candidates.filter((t) => Date.parse(t.updatedAt) > sinceMs);
+              }
             }
-            return store.getOpenWorkItems(limit);
+
+            return candidates.slice(0, limit);
           },
           getTask: async (idOrTitle) => {
             const byId = await store.getWorkItem(idOrTitle);

@@ -326,13 +326,42 @@ export async function initServices(): Promise<CoreServices> {
         createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
         listTasks: async (filter) => {
           const limit = filter?.limit ?? 100;
-          if (!filter || (!filter.status && !filter.needsAttention && !filter.source)) {
+
+          if (
+            !filter ||
+            (!filter.status && !filter.needsAttention && !filter.source && !filter.since)
+          ) {
             return store.getOpenWorkItems(limit);
           }
-          if (filter.status === 'all') return store.getWorkItems({ limit });
-          if (typeof filter.status === 'string')
-            return store.getWorkItems({ status: filter.status, limit });
-          return store.getOpenWorkItems(limit);
+
+          const hasAllInArrayOrScalar =
+            filter.status === 'all' ||
+            (Array.isArray(filter.status) && filter.status.includes('all' as never));
+
+          let candidates: Awaited<ReturnType<typeof store.getWorkItems>>;
+          if (hasAllInArrayOrScalar) {
+            candidates = await store.getWorkItems({ limit: 500 });
+          } else if (Array.isArray(filter.status)) {
+            const all = await store.getWorkItems({ limit: 500 });
+            const wanted = new Set(filter.status);
+            candidates = all.filter((t) => wanted.has(t.status));
+          } else if (typeof filter.status === 'string') {
+            candidates = await store.getWorkItems({ status: filter.status, limit: 500 });
+          } else {
+            candidates = await store.getOpenWorkItems(500);
+          }
+
+          if (filter.source) {
+            candidates = candidates.filter((t) => t.source === filter.source);
+          }
+          if (filter.since) {
+            const sinceMs = Date.parse(filter.since);
+            if (!Number.isNaN(sinceMs)) {
+              candidates = candidates.filter((t) => Date.parse(t.updatedAt) > sinceMs);
+            }
+          }
+
+          return candidates.slice(0, limit);
         },
         getTask: (idOrTitle) => store.getWorkItem(idOrTitle),
         updateTask: async (idOrTitle, payload) => {
