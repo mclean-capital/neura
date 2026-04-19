@@ -454,6 +454,108 @@ describe('AgentWorker — dispatchForTask (Phase 6b)', () => {
     });
     await expect(worker.dispatchForTask('missing-task')).rejects.toThrow(/unknown task/);
   });
+
+  it('writes worker_id to the task BEFORE runtime.dispatch is called (race fix)', async () => {
+    // Regression guard for review finding #2: ordering of updateWorkItem
+    // and runtime.dispatch. The worker's first tool call can arrive the
+    // instant session.prompt() kicks off; if work_items.worker_id was
+    // still null at that moment, the invariant layer's cross-task-write
+    // guard would reject the update. Task row must carry worker_id at
+    // the moment `runtime.dispatch` is called.
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const taskId = await createWorkItem(db, 'Race check', 'medium', {});
+    // Spy into the dispatch mock: the default implementation records the
+    // call and pushes onto `bundle.dispatched`. We capture the task row
+    // at the exact moment the mock was invoked, inside a wrapper.
+    const origDispatch = bundle.runtime.dispatch.bind(bundle.runtime);
+    let taskWorkerIdAtDispatch: string | null | undefined;
+    bundle.runtime.dispatch = async (t, cb, workerId) => {
+      const row = await getWorkItem(db, taskId);
+      taskWorkerIdAtDispatch = row?.workerId ?? null;
+      return origDispatch(t, cb, workerId);
+    };
+    await worker.dispatchForTask(taskId);
+    expect(taskWorkerIdAtDispatch).toBeTruthy();
+    // And it should match the workerId the dispatch was called with.
+    expect(taskWorkerIdAtDispatch).toBe(bundle.dispatched[0].handle.workerId);
+  });
+
+  it('refuses to redispatch a terminal task', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const { updateWorkItem: uwi } = await import('../stores/work-item-queries.js');
+    const taskId = await createWorkItem(db, 'done task', 'medium', {});
+    await uwi(db, taskId, { status: 'done' });
+    await expect(worker.dispatchForTask(taskId)).rejects.toThrow(/terminal/);
+  });
+
+  it('refuses to redispatch a task with a live worker', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const { updateWorkItem: uwi } = await import('../stores/work-item-queries.js');
+    const taskId = await createWorkItem(db, 'live task', 'medium', {});
+    // Seed a live worker row and link it to the task.
+    const prior = await createWorker(db, task());
+    await updateWorker(db, prior, { status: 'running' });
+    await uwi(db, taskId, { status: 'in_progress', workerId: prior });
+    await expect(worker.dispatchForTask(taskId)).rejects.toThrow(/already has live worker/);
+  });
+
+  it('mirrors failed worker status back onto the task', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const taskId = await createWorkItem(db, 'work it', 'medium', {});
+    await worker.dispatchForTask(taskId);
+    // Fire the runtime's onComplete with a failed result.
+    bundle.dispatched[0].callbacks.onComplete!({
+      status: 'failed',
+      error: { reason: 'boom' },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const row = await getWorkItem(db, taskId);
+    expect(row?.status).toBe('failed');
+  });
+
+  it('does NOT overwrite a worker-set `done` status on completion', async () => {
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const taskId = await createWorkItem(db, 'finish me', 'medium', {});
+    await worker.dispatchForTask(taskId);
+
+    // Simulate the worker's `complete_task` having already transitioned
+    // the row to `done` via applyTaskUpdate.
+    const { updateWorkItem: uwi } = await import('../stores/work-item-queries.js');
+    await uwi(db, taskId, { status: 'done' });
+
+    // Runtime now emits completion. Mirror path should be a no-op.
+    bundle.dispatched[0].callbacks.onComplete!({ status: 'completed' });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const row = await getWorkItem(db, taskId);
+    expect(row?.status).toBe('done'); // still `done`, not overwritten
+  });
 });
 
 describe('buildCanonicalWorkerPrompt', () => {

@@ -43,6 +43,15 @@ interface PendingClarification {
   question: string;
   resolve: (answer: string) => void;
   reject: (err: Error) => void;
+  /**
+   * Optional hook the caller supplies to persist the user's answer as a
+   * `clarification_response` / `approval_response` comment on the task
+   * ticket (and flip the task status back to `in_progress`). Without
+   * this the bridge would resolve the worker's Promise but the ticket
+   * would stay in `awaiting_*` forever — `complete_task` would then be
+   * blocked by the invariant layer's completion gate.
+   */
+  onAnswer?: (answer: string) => Promise<void> | void;
 }
 
 /** Context the clarification bridge needs beyond the interjector. */
@@ -83,6 +92,13 @@ export class ClarificationBridge {
    * spoken response. Throws `Error("clarification aborted")` if the
    * abort signal fires before the user answers (worker cancellation
    * path).
+   *
+   * `onAnswer` is invoked before the Promise resolves, giving callers a
+   * place to persist a matching `clarification_response` /
+   * `approval_response` comment on the ticket (the source of truth).
+   * Resolution errors on `onAnswer` are logged but do not block the
+   * worker — the bridge prioritizes unblocking the pi session over
+   * durable state on this path.
    */
   async askUser(params: {
     workerId: string;
@@ -90,8 +106,9 @@ export class ClarificationBridge {
     context: string;
     urgency: 'blocking' | 'background';
     signal?: AbortSignal;
+    onAnswer?: (answer: string) => Promise<void> | void;
   }): Promise<string> {
-    const { workerId, question, context, urgency, signal } = params;
+    const { workerId, question, context, urgency, signal, onAnswer } = params;
 
     try {
       await this.opts.onBlock?.(workerId);
@@ -115,6 +132,7 @@ export class ClarificationBridge {
           question,
           resolve,
           reject,
+          ...(onAnswer ? { onAnswer } : {}),
         };
         this.pending.push(pending);
 
@@ -172,6 +190,19 @@ export class ClarificationBridge {
       workerId: next.workerId,
       textPreview: text.slice(0, 80),
     });
+    // Run the caller's persistence hook first so the ticket reflects
+    // the user's answer BEFORE the worker's Promise resolves. If the
+    // hook throws (e.g. invariant rejection, db hiccup), we still want
+    // to unblock the worker — fire-and-log, but don't hold up the
+    // Promise chain.
+    if (next.onAnswer) {
+      void Promise.resolve(next.onAnswer(text)).catch((err: unknown) => {
+        log.warn('onAnswer persistence hook threw', {
+          workerId: next.workerId,
+          err: String(err),
+        });
+      });
+    }
     next.resolve(text);
     return true;
   }

@@ -83,6 +83,16 @@ const WORKER_ALLOWED_COMMENT_TYPES = new Set<TaskCommentType>([
   'result',
 ]);
 
+/**
+ * Fields workers are allowed to mutate via `payload.fields`. Intentionally
+ * tight — workers should only refresh their lease; everything else
+ * (goals, priority, workerId, repo pointers) is orchestrator / system
+ * territory. Without this allow-list a misbehaving worker could
+ * rewrite `workerId` to reassign its own task to another worker,
+ * bypassing the cross-task guard.
+ */
+const WORKER_ALLOWED_FIELD_KEYS = new Set<string>(['leaseExpiresAt']);
+
 export class InvalidUpdateError extends Error {
   constructor(
     message: string,
@@ -194,6 +204,21 @@ export async function applyTaskUpdate(args: ApplyTaskUpdateArgs): Promise<ApplyT
         `worker cannot author ${payload.comment.type} comments`,
         'worker_author_spoofing'
       );
+    }
+  }
+
+  // 3b. Worker field-mutation scoping. Workers may only touch a narrow
+  //     allow-list (today: leaseExpiresAt via heartbeat). Any other
+  //     field is an orchestrator / system operation.
+  if (payload.fields && who.kind === 'worker') {
+    for (const key of Object.keys(payload.fields)) {
+      if (payload.fields[key as keyof typeof payload.fields] === undefined) continue;
+      if (!WORKER_ALLOWED_FIELD_KEYS.has(key)) {
+        throw new InvalidUpdateError(
+          `worker cannot mutate field '${key}'`,
+          'worker_author_spoofing'
+        );
+      }
     }
   }
 

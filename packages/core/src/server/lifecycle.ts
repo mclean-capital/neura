@@ -326,6 +326,17 @@ export async function initServices(): Promise<CoreServices> {
           }
         : undefined;
 
+      // Hoist the raw PGlite handle once so buildWorkerTaskTools AND
+      // buildTools (below) can share it — buildTools needs it to pass
+      // into buildWorkerProtocolTools for the orchestrator-side
+      // response-comment persistence hook.
+      const rawDb = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
+      if (!rawDb) {
+        throw new Error(
+          'store does not expose a raw PGlite handle (required for Phase 6 worker runtime)'
+        );
+      }
+
       // Worker-side task tools factory. Every worker gets its own handler
       // with `actor: worker:<workerId>` baked in — that's how the shared
       // `applyTaskUpdate` enforces author scoping, cross-task writes, and
@@ -334,12 +345,6 @@ export async function initServices(): Promise<CoreServices> {
       // transitions via the 6-verb protocol). Deletion is
       // orchestrator-only — stub-refused for workers.
       const buildWorkerTaskTools = (workerId: string): TaskToolHandler => {
-        const rawDb = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
-        if (!rawDb) {
-          throw new Error(
-            'store does not expose a raw PGlite handle (required for worker task tools)'
-          );
-        }
         return {
           createTask: (title, priority, opts) => store.createWorkItem(title, priority, opts),
           listTasks: async (filter) => {
@@ -475,6 +480,7 @@ export async function initServices(): Promise<CoreServices> {
               taskId,
               taskTools: workerTaskTools,
               clarificationBridge,
+              db: rawDb,
             })
           );
         } else if (clarificationBridge) {
@@ -511,14 +517,7 @@ export async function initServices(): Promise<CoreServices> {
         skillRegistry,
       });
 
-      // The agent worker needs direct PGlite access for its worker
-      // queries. `DataStore.getRawDb()` is the documented escape hatch;
-      // PgliteStore exposes the handle, future remote / SQLite stores
-      // return null and Phase 6 disables gracefully.
-      const rawDb = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
-      if (!rawDb) {
-        throw new Error('store does not expose a raw PGlite handle (required for worker-queries)');
-      }
+      // AgentWorker uses the same hoisted PGlite handle.
       agentWorker = new AgentWorker({ db: rawDb, runtime: piRuntime });
 
       // Run the startup recovery sweep. Marks any stranded mid-run

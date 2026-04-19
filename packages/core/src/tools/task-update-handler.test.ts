@@ -156,6 +156,56 @@ describe('applyTaskUpdate — cross-task write guard', () => {
   });
 });
 
+describe('applyTaskUpdate — worker field allow-list', () => {
+  it('rejects worker attempts to rewrite workerId (no self-reassignment)', async () => {
+    const task = await makeTask({ status: 'in_progress', workerId: 'w-1' });
+    await expect(
+      applyTaskUpdate({
+        db,
+        task,
+        payload: { fields: { workerId: 'attacker' } },
+        actor: 'worker:w-1',
+      })
+    ).rejects.toThrow(/cannot mutate field 'workerId'/);
+  });
+
+  it('rejects worker attempts to rewrite goal / title / priority', async () => {
+    const task = await makeTask({ status: 'in_progress', workerId: 'w-1' });
+    await expect(
+      applyTaskUpdate({
+        db,
+        task,
+        payload: { fields: { goal: 'rewritten' } },
+        actor: 'worker:w-1',
+      })
+    ).rejects.toThrow(/cannot mutate field 'goal'/);
+  });
+
+  it('allows worker to refresh leaseExpiresAt', async () => {
+    const task = await makeTask({ status: 'in_progress', workerId: 'w-1' });
+    const newLease = new Date(Date.now() + 5 * 60_000).toISOString();
+    const result = await applyTaskUpdate({
+      db,
+      task,
+      payload: { fields: { leaseExpiresAt: newLease } },
+      actor: 'worker:w-1',
+    });
+    expect(result.task.leaseExpiresAt).toBeTruthy();
+  });
+
+  it('orchestrator can mutate any field', async () => {
+    const task = await makeTask({ workerId: 'w-1' });
+    const result = await applyTaskUpdate({
+      db,
+      task,
+      payload: { fields: { goal: 'orch rewrite', priority: 'high' } },
+      actor: 'orchestrator',
+    });
+    expect(result.task.goal).toBe('orch rewrite');
+    expect(result.task.priority).toBe('high');
+  });
+});
+
 describe('applyTaskUpdate — author-spoofing guard', () => {
   it('worker cannot author a clarification_response comment', async () => {
     const task = await makeTask({ status: 'in_progress', workerId: 'w-1' });

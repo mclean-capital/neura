@@ -37,7 +37,15 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Logger } from '@neura/utils/logger';
@@ -117,15 +125,39 @@ export class WorktreeManager {
 
     if (args.repoPath) {
       try {
-        const gitArgs = ['worktree', 'add', dest];
+        // `git worktree add <dest> <branch>` fails with
+        //   fatal: '<branch>' is already used by worktree at …
+        // whenever the source repo has that branch checked out in its
+        // main worktree — the overwhelmingly common case for values
+        // like `main` / `master`. Creating a per-worker branch via
+        // `-b neura/worker/<id>` sidesteps the collision and gives the
+        // worker an isolated ref it can commit against without
+        // polluting the source repo's branches.
+        const workerBranch = `neura/worker/${args.workerId}`;
+        const gitArgs = ['worktree', 'add', '-b', workerBranch, dest];
         if (args.baseBranch) gitArgs.push(args.baseBranch);
         execFileSync('git', gitArgs, { cwd: args.repoPath, stdio: 'pipe' });
         this.gitBacked.set(args.workerId, args.repoPath);
+        // Drop a marker inside the worktree so the startup sweep can
+        // find the source repo to run `git worktree prune` on even
+        // when the in-memory `gitBacked` map was lost to a crash.
+        try {
+          writeFileSync(
+            join(dest, '.neura-source-repo'),
+            JSON.stringify({ repoPath: args.repoPath, branch: workerBranch }) + '\n'
+          );
+        } catch (markerErr) {
+          log.warn('failed to write worktree source-repo marker', {
+            workerId: args.workerId,
+            err: String(markerErr),
+          });
+        }
         log.info('git worktree added', {
           workerId: args.workerId,
           dest,
           repoPath: args.repoPath,
           baseBranch: args.baseBranch ?? 'HEAD',
+          workerBranch,
         });
         return { path: dest, gitBacked: true, sourceRepoPath: args.repoPath };
       } catch (err) {
@@ -198,6 +230,13 @@ export class WorktreeManager {
    * the retention window are kept (they may be in-flight from a
    * concurrent core or the operator hand-created something — safer to
    * leave and log).
+   *
+   * Git-backed worktrees are detected via the `.neura-source-repo`
+   * marker dropped on create. When present, we run
+   * `git worktree prune` in the source repo before `rmSync` so the
+   * repo's `.git/worktrees/<id>/` metadata is cleaned up too. Without
+   * this the source repo accumulates stale pointers and eventually
+   * refuses new `git worktree add` calls.
    */
   sweepOrphans(liveWorkerIds: ReadonlySet<string>): { removed: number; kept: number } {
     if (!existsSync(this.basePath)) return { removed: 0, kept: 0 };
@@ -224,9 +263,61 @@ export class WorktreeManager {
         kept++;
         continue;
       }
+      // Look for the git-backed marker we wrote on create.
+      const markerPath = join(full, '.neura-source-repo');
+      if (existsSync(markerPath)) {
+        try {
+          const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as {
+            repoPath: string;
+            branch?: string;
+          };
+          if (marker.repoPath) {
+            try {
+              execFileSync('git', ['worktree', 'remove', '--force', full], {
+                cwd: marker.repoPath,
+                stdio: 'pipe',
+              });
+              log.info('orphan git worktree removed via git', {
+                path: full,
+                repoPath: marker.repoPath,
+              });
+              removed++;
+              continue;
+            } catch (gitErr) {
+              log.warn('git worktree remove failed for orphan; falling through to rm', {
+                path: full,
+                repoPath: marker.repoPath,
+                err: String(gitErr),
+              });
+              // Fall through — we still want to rm the dir. Then try
+              // `git worktree prune` so the stale admin entry drops.
+              try {
+                rmSync(full, { recursive: true, force: true });
+              } catch {
+                // continue to prune below regardless
+              }
+              try {
+                execFileSync('git', ['worktree', 'prune'], {
+                  cwd: marker.repoPath,
+                  stdio: 'pipe',
+                });
+              } catch {
+                // best-effort; nothing to do if prune fails
+              }
+              removed++;
+              continue;
+            }
+          }
+        } catch (err) {
+          log.warn('worktree marker parse failed; falling back to rm -rf', {
+            path: full,
+            err: String(err),
+          });
+        }
+      }
       try {
         rmSync(full, { recursive: true, force: true });
-        log.info('orphan worktree removed', { path: full });
+        log.info('orphan scratch worktree removed', { path: full });
         removed++;
       } catch (err) {
         log.warn('orphan worktree remove failed', { path: full, err: String(err) });

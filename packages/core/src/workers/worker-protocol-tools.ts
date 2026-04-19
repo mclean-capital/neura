@@ -30,10 +30,12 @@
 
 import { Type, type Static } from '@sinclair/typebox';
 import { Logger } from '@neura/utils/logger';
+import type { PGlite } from '@electric-sql/pglite';
 import type { TaskCommentUrgency } from '@neura/types';
 import type { NeuraAgentTool } from './neura-tools.js';
 import type { ClarificationBridge } from './clarification-bridge.js';
 import type { TaskToolHandler } from '../tools/index.js';
+import { applyTaskUpdate } from '../tools/task-update-handler.js';
 
 const log = new Logger('worker-protocol-tools');
 
@@ -127,6 +129,15 @@ export interface WorkerProtocolToolsOptions {
    * production wiring.
    */
   clarificationBridge?: ClarificationBridge;
+  /**
+   * Raw PGlite handle used to persist the orchestrator-authored
+   * `clarification_response` / `approval_response` comment when the
+   * user answers. Must be supplied alongside `clarificationBridge` —
+   * without it the bridge still unblocks the worker but the
+   * completion gate will later reject `complete_task` because the
+   * request comment has no matching response.
+   */
+  db?: PGlite;
 }
 
 /**
@@ -135,7 +146,47 @@ export interface WorkerProtocolToolsOptions {
  * post to the wrong task.
  */
 export function buildWorkerProtocolTools(options: WorkerProtocolToolsOptions): NeuraAgentTool[] {
-  const { workerId, taskId, taskTools, clarificationBridge } = options;
+  const { workerId, taskId, taskTools, clarificationBridge, db } = options;
+
+  /**
+   * Build the onAnswer hook handed to the bridge. Persists the
+   * matching response comment + flips the task back to `in_progress`
+   * as the orchestrator actor. `requestCommentId` lets the gate's
+   * `resolves_comment_id` lookup find this response pair and stop
+   * counting the original request as unresolved.
+   */
+  function makeAnswerPersistHook(
+    responseType: 'clarification_response' | 'approval_response',
+    requestCommentId: string | undefined
+  ): ((answer: string) => Promise<void>) | undefined {
+    if (!db || !requestCommentId) return undefined;
+    return async (answer: string) => {
+      // Re-read the task inside the hook so we see its latest version
+      // and can refresh back to in_progress cleanly.
+      const { getWorkItem } = await import('../stores/work-item-queries.js');
+      const current = await getWorkItem(db, taskId);
+      if (!current) return;
+      // If the task is already terminal or was taken back to
+      // in_progress by something else, skip the transition but still
+      // try to persist the response comment so the audit trail is
+      // complete.
+      const needsTransition =
+        current.status === 'awaiting_clarification' || current.status === 'awaiting_approval';
+      await applyTaskUpdate({
+        db,
+        task: current,
+        payload: {
+          ...(needsTransition ? { status: 'in_progress' } : {}),
+          comment: {
+            type: responseType,
+            content: answer,
+            metadata: { resolves_comment_id: requestCommentId },
+          },
+        },
+        actor: 'orchestrator',
+      });
+    };
+  }
 
   function textResult<T>(
     text: string,
@@ -236,6 +287,10 @@ export function buildWorkerProtocolTools(options: WorkerProtocolToolsOptions): N
         context: params.context ?? '',
         urgency: urgency === 'critical' ? 'blocking' : 'background',
         signal,
+        ...(() => {
+          const hook = makeAnswerPersistHook('clarification_response', result.comment?.id);
+          return hook ? { onAnswer: hook } : {};
+        })(),
       });
       return textResult(answer, {
         taskId,
@@ -285,6 +340,10 @@ export function buildWorkerProtocolTools(options: WorkerProtocolToolsOptions): N
         context: params.rationale ?? '',
         urgency: urgency === 'critical' ? 'blocking' : 'background',
         signal,
+        ...(() => {
+          const hook = makeAnswerPersistHook('approval_response', result.comment?.id);
+          return hook ? { onAnswer: hook } : {};
+        })(),
       });
       return textResult(answer, {
         taskId,

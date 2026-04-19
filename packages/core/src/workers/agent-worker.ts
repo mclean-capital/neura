@@ -306,6 +306,39 @@ export class AgentWorker {
     const task = await getWorkItem(this.db, taskId);
     if (!task) throw new Error(`dispatchForTask: unknown task ${taskId}`);
 
+    // Guard against redispatch. Without these checks, tool retries or a
+    // double-confirm in the voice loop would spin up a second worker and
+    // silently overwrite the task's worker_id back to the new worker,
+    // losing the link to the first one. `done` / `cancelled` / `failed`
+    // are terminal; a task with a live `workerId` already has an active
+    // worker that should finish or be cancelled first.
+    if (task.status === 'done' || task.status === 'cancelled' || task.status === 'failed') {
+      throw new Error(
+        `dispatchForTask: task ${taskId} is terminal (${task.status}); cannot redispatch`
+      );
+    }
+    if (task.workerId) {
+      const existing = await getWorker(this.db, task.workerId);
+      const terminalWorker =
+        existing == null ||
+        existing.status === 'completed' ||
+        existing.status === 'failed' ||
+        existing.status === 'crashed' ||
+        existing.status === 'cancelled';
+      if (!terminalWorker) {
+        throw new Error(
+          `dispatchForTask: task ${taskId} already has live worker ${task.workerId} (${existing.status})`
+        );
+      }
+      // Prior worker is terminal — the task row still points at it but
+      // the orchestrator likely decided to redispatch. Fall through so a
+      // fresh worker can pick up.
+      log.info('redispatching task that previously had a terminal worker', {
+        taskId,
+        priorWorkerId: task.workerId,
+      });
+    }
+
     // Build a minimal WorkerTask. `taskType` stays `ad_hoc` now that
     // `execute_skill` is retired from the dispatch flow — tracking taskId
     // on the shape is the actual linkage back to the work_items row.
@@ -336,6 +369,41 @@ export class AgentWorker {
         workerId,
         taskId: task.id,
       });
+    }
+
+    // Link the task row BEFORE starting the runtime session. The worker
+    // can begin calling tools the instant `runtime.dispatch` kicks off
+    // its async `session.prompt()`; if the invariant layer reads
+    // `work_items.worker_id` and sees `null`, the cross-task-write guard
+    // rejects any update_task call the worker makes on its own ticket.
+    // Writing the linkage first closes that race — the row is ready for
+    // the worker's first tool call.
+    try {
+      await updateWorkItem(this.db, task.id, {
+        status: 'in_progress',
+        workerId,
+      });
+    } catch (err) {
+      // If we can't link the task (e.g. it's already terminal), bail out
+      // before dispatching the runtime — a worker with no writable ticket
+      // is worse than no worker.
+      log.error('failed to link worker to task; aborting dispatch', {
+        workerId,
+        taskId: task.id,
+        err: String(err),
+      });
+      this.worktrees.cleanup(workerId);
+      this.workerTaskIds.delete(workerId);
+      await updateWorker(this.db, workerId, {
+        status: 'failed',
+        error: { reason: 'task_link_failed', detail: String(err) },
+      }).catch((persistErr: unknown) => {
+        log.warn('failed to mark worker as failed after task-link error', {
+          workerId,
+          err: String(persistErr),
+        });
+      });
+      throw err;
     }
 
     // Wrap callbacks so status + results mirror into the workers table.
@@ -376,30 +444,6 @@ export class AgentWorker {
       });
     } catch (err) {
       log.warn('failed to persist session metadata', { workerId, err: String(err) });
-    }
-
-    // Write the worker_id + status back onto the task row — the invariant
-    // layer uses this to authorize the worker's future update_task calls.
-    // This runs as `system` conceptually; we go through the raw query layer
-    // to bypass the transition matrix (orchestrator → in_progress is
-    // already allowed, but writing `worker_id` is not expressible via the
-    // normal `update_task` payload cleanly).
-    try {
-      await updateWorkItem(this.db, task.id, {
-        status: 'in_progress',
-        workerId,
-      });
-    } catch (err) {
-      // Best-effort: if the task row can't accept the update (e.g. already
-      // terminal), the worker is still running but unable to post updates.
-      // The next status change will be visible via worker-queries so this
-      // doesn't block dispatch — but surface the warning so operators
-      // notice the race.
-      log.warn('failed to link worker to task', {
-        workerId,
-        taskId: task.id,
-        err: String(err),
-      });
     }
 
     this.cancellation.register(workerId);
@@ -576,6 +620,47 @@ export class AgentWorker {
       }
     } catch (err) {
       log.error('failed to persist terminal result', { workerId, err: String(err) });
+    }
+
+    // Mirror worker-terminal status back onto the linked task. Without
+    // this, `cancelled` / `failed` / `crashed` worker outcomes leave the
+    // task row stuck in `in_progress` — `get_system_state` keeps
+    // surfacing it as active and a redispatch is blocked. The happy
+    // path (`completed`) is NOT mirrored: the worker's own
+    // `complete_task` call is the authoritative transition to `done`
+    // and it happens before this callback fires. Mapping `completed`
+    // here would overwrite the worker's richer result comment.
+    const taskId = this.workerTaskIds.get(workerId);
+    if (taskId) {
+      const taskStatus =
+        status === 'cancelled'
+          ? 'cancelled'
+          : status === 'failed' || status === 'crashed'
+            ? 'failed'
+            : null;
+      if (taskStatus) {
+        try {
+          const task = await getWorkItem(this.db, taskId);
+          // Only mirror if the task is still non-terminal — the worker
+          // may have already called fail_task / complete_task and
+          // transitioned the task itself.
+          if (
+            task &&
+            task.status !== 'done' &&
+            task.status !== 'cancelled' &&
+            task.status !== 'failed'
+          ) {
+            await updateWorkItem(this.db, taskId, { status: taskStatus });
+          }
+        } catch (err) {
+          log.warn('failed to mirror terminal status to task', {
+            workerId,
+            taskId,
+            taskStatus,
+            err: String(err),
+          });
+        }
+      }
     }
 
     // Worktree cleanup policy:

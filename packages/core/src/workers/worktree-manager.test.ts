@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorktreeManager } from './worktree-manager.js';
@@ -137,6 +137,57 @@ describe('WorktreeManager — git-backed', () => {
     expect(existsSync(res.path)).toBe(true);
     // The README from the base commit should be materialized in the worktree.
     expect(existsSync(join(res.path, 'README.md'))).toBe(true);
+  });
+
+  it('succeeds when baseBranch is main even though main is checked out in the source repo', () => {
+    // Regression for review finding #4: without the `-b neura/worker/<id>`
+    // flag, `git worktree add <dest> main` fails with
+    //   fatal: 'main' is already used by worktree at …
+    // because the source repo already has main in its own main worktree.
+    // This is the default-branch case for basically every repo.
+    const m = new WorktreeManager({ basePath });
+    const res = m.create({ workerId: 'w-main', repoPath, baseBranch: 'main' });
+    expect(res.gitBacked).toBe(true);
+    expect(existsSync(join(res.path, 'README.md'))).toBe(true);
+    // Source repo should now see a neura/worker/<id> branch in its refs.
+    const branches = execFileSync('git', ['branch', '--list', 'neura/worker/*'], {
+      cwd: repoPath,
+      encoding: 'utf-8',
+    });
+    expect(branches).toContain('w-main');
+  });
+
+  it('drops a .neura-source-repo marker inside git-backed worktrees', () => {
+    const m = new WorktreeManager({ basePath });
+    const res = m.create({ workerId: 'w-marker', repoPath });
+    expect(res.gitBacked).toBe(true);
+    const markerPath = join(res.path, '.neura-source-repo');
+    expect(existsSync(markerPath)).toBe(true);
+    const marker = JSON.parse(readFileSync(markerPath, 'utf-8')) as {
+      repoPath: string;
+      branch?: string;
+    };
+    expect(marker.repoPath).toBe(repoPath);
+    expect(marker.branch).toMatch(/^neura\/worker\//);
+  });
+
+  it('sweepOrphans prunes stale git worktree metadata from the source repo', async () => {
+    const m = new WorktreeManager({ basePath, retentionHours: 0 });
+    m.create({ workerId: 'w-orphan-git', repoPath });
+
+    // Simulate the in-memory map being lost (process restart) by
+    // constructing a fresh manager at the same basePath.
+    const m2 = new WorktreeManager({ basePath, retentionHours: 0 });
+    await new Promise((r) => setTimeout(r, 10));
+    const result = m2.sweepOrphans(new Set());
+    expect(result.removed).toBe(1);
+
+    // Source repo's `git worktree list` must no longer include the orphan.
+    const list = execFileSync('git', ['worktree', 'list'], {
+      cwd: repoPath,
+      encoding: 'utf-8',
+    });
+    expect(list).not.toContain('w-orphan-git');
   });
 
   it('uses git worktree remove on cleanup of a git-backed worktree', () => {

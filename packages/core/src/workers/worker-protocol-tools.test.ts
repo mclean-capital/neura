@@ -316,6 +316,89 @@ describe('error propagation', () => {
   });
 });
 
+describe('request_clarification — persists response comment via onAnswer hook', () => {
+  it('writes clarification_response with resolves_comment_id when bridge + db are present', async () => {
+    const taskId = await seedLinkedTask();
+    const bridge = new ClarificationBridge({
+      voiceInterjector: { interject: () => Promise.resolve() },
+    });
+
+    const tool = findTool(
+      buildWorkerProtocolTools({
+        workerId: WORKER_ID,
+        taskId,
+        taskTools: buildTaskTools(),
+        clarificationBridge: bridge,
+        db,
+      }),
+      'request_clarification'
+    );
+
+    const p = tool.execute('c-1', { question: 'which branch?' });
+    await new Promise((r) => setTimeout(r, 5));
+    bridge.notifyUserTurn('main');
+    await p;
+    // Give the fire-and-forget persistence hook a tick.
+    await new Promise((r) => setTimeout(r, 20));
+
+    const comments = await listComments(db, { taskId });
+    const req = comments.find((c) => c.type === 'clarification_request');
+    const resp = comments.find((c) => c.type === 'clarification_response');
+    expect(req).toBeDefined();
+    expect(resp).toBeDefined();
+    expect(resp?.author).toBe('orchestrator');
+    expect(resp?.content).toBe('main');
+    expect(resp?.metadata).toMatchObject({ resolves_comment_id: req!.id });
+
+    // Task should be back in_progress (not awaiting_clarification).
+    const row = await getWorkItem(db, taskId);
+    expect(row?.status).toBe('in_progress');
+
+    // And a follow-on complete_task should now be allowed by the gate.
+    const completeTool = findTool(
+      buildWorkerProtocolTools({
+        workerId: WORKER_ID,
+        taskId,
+        taskTools: buildTaskTools(),
+        clarificationBridge: bridge,
+        db,
+      }),
+      'complete_task'
+    );
+    await completeTool.execute('c-2', { summary: 'done' });
+    const done = await getWorkItem(db, taskId);
+    expect(done?.status).toBe('done');
+  });
+
+  it('same flow for request_approval', async () => {
+    const taskId = await seedLinkedTask();
+    const bridge = new ClarificationBridge({
+      voiceInterjector: { interject: () => Promise.resolve() },
+    });
+    const tool = findTool(
+      buildWorkerProtocolTools({
+        workerId: WORKER_ID,
+        taskId,
+        taskTools: buildTaskTools(),
+        clarificationBridge: bridge,
+        db,
+      }),
+      'request_approval'
+    );
+
+    const p = tool.execute('c-1', { action: 'rm -rf /' });
+    await new Promise((r) => setTimeout(r, 5));
+    bridge.notifyUserTurn('no, do not');
+    await p;
+    await new Promise((r) => setTimeout(r, 20));
+
+    const comments = await listComments(db, { taskId });
+    const resp = comments.find((c) => c.type === 'approval_response');
+    expect(resp?.content).toBe('no, do not');
+    expect(resp?.author).toBe('orchestrator');
+  });
+});
+
 describe('observability: mock bridge', () => {
   it('passes urgency=critical through as blocking to the bridge', async () => {
     const taskId = await seedLinkedTask();
