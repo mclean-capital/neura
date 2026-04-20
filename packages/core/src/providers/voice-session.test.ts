@@ -241,17 +241,31 @@ describe('createVoiceSession', () => {
       onOpenCb?.();
       mockSend.mockClear();
 
-      // Simulate Grok sending a function call completion
+      // Function calls are now dispatched on `response.done` (batch
+      // dispatch) rather than on per-call `response.function_call_arguments.done`.
+      // `response.done` is the authoritative source — it carries the
+      // finalized `output` array with a single `status === 'completed'`
+      // gate, so the provider runs all calls as one batch and fires
+      // exactly one follow-up `response.create`.
       onMessageCb?.(
         JSON.stringify({
-          type: 'response.function_call_arguments.done',
-          name: 'describe_camera',
-          arguments: '{"focus":"the cat","detail":"brief"}',
-          call_id: 'call_123',
+          type: 'response.done',
+          response: {
+            id: 'resp_1',
+            status: 'completed',
+            output: [
+              {
+                type: 'function_call',
+                name: 'describe_camera',
+                arguments: '{"focus":"the cat","detail":"brief"}',
+                call_id: 'call_123',
+              },
+            ],
+          },
         })
       );
 
-      // handleFunctionCallDone is async — flush microtasks
+      // dispatchFunctionCalls is async — flush microtasks
       await vi.advanceTimersToNextTimerAsync();
 
       expect(cb.onToolCall).toHaveBeenCalledWith('describe_camera', {
@@ -263,7 +277,7 @@ describe('createVoiceSession', () => {
         expect.objectContaining({ result: expect.any(String) })
       );
 
-      // Should send function_call_output + response.create back to ws
+      // Should send function_call_output + exactly one response.create back to ws.
       expect(mockSend).toHaveBeenCalledTimes(2);
       const output = JSON.parse(mockSend.mock.calls[0][0] as string);
       expect(output.type).toBe('conversation.item.create');

@@ -1,13 +1,16 @@
 /**
- * Tests for GrokVoiceProvider — specifically the `interject()` method added
- * in Phase 6 for VoiceFanoutBridge. Other GrokVoiceProvider behavior is
- * exercised end-to-end by `voice-session.test.ts`.
+ * Tests for GrokVoiceProvider — `interject()` from Phase 6 plus the
+ * `response.done` batch-dispatch path (exactly one `response.create`
+ * per model turn, regardless of how many parallel tool calls the model
+ * emitted). Other GrokVoiceProvider behavior is exercised end-to-end
+ * by `voice-session.test.ts`.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockSend = vi.fn();
 const mockClose = vi.fn();
+let currentMockWs: MockWebSocket | null = null;
 
 class MockWebSocket {
   static OPEN = 1;
@@ -15,8 +18,19 @@ class MockWebSocket {
   readyState = 1;
   send = mockSend;
   close = mockClose;
-  on(_event: string, _cb: (...args: unknown[]) => void): void {
-    // no-op for interject tests
+  private handlers: Record<string, ((arg: unknown) => void)[]> = {};
+
+  constructor() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    currentMockWs = this;
+  }
+
+  on(event: string, cb: (arg: unknown) => void): void {
+    (this.handlers[event] ??= []).push(cb);
+  }
+
+  emit(event: string, arg: unknown): void {
+    (this.handlers[event] ?? []).forEach((cb) => cb(arg));
   }
 }
 
@@ -24,7 +38,17 @@ vi.mock('ws', () => {
   return { default: MockWebSocket, WebSocket: MockWebSocket };
 });
 
-// Import after mock setup so the module sees the mocked WebSocket.
+const mockHandleToolCall = vi.fn();
+vi.mock('../tools/index.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../tools/index.js')>();
+  return {
+    ...orig,
+    handleToolCall: (name: string, args: Record<string, unknown>, ctx: unknown): Promise<unknown> =>
+      mockHandleToolCall(name, args, ctx) as Promise<unknown>,
+  };
+});
+
+// Import after mock setup so the module sees the mocked WebSocket + tools.
 const { GrokVoiceProvider } = await import('./grok-voice.js');
 
 function makeCallbacks(): import('@neura/types').VoiceProviderCallbacks {
@@ -45,6 +69,26 @@ function makeCallbacks(): import('@neura/types').VoiceProviderCallbacks {
   };
 }
 
+function sentMessages(): { type: string; item?: { type?: string; call_id?: string } }[] {
+  return mockSend.mock.calls.map(
+    (c) =>
+      JSON.parse(c[0] as string) as { type: string; item?: { type?: string; call_id?: string } }
+  );
+}
+
+function emitResponseDone(
+  output: unknown[],
+  status: 'completed' | 'cancelled' | 'incomplete' | 'failed' = 'completed'
+): void {
+  currentMockWs!.emit(
+    'message',
+    JSON.stringify({
+      type: 'response.done',
+      response: { id: 'resp_1', status, output },
+    })
+  );
+}
+
 describe('GrokVoiceProvider — interject', () => {
   const originalKey = process.env.XAI_API_KEY;
 
@@ -52,6 +96,8 @@ describe('GrokVoiceProvider — interject', () => {
     process.env.XAI_API_KEY = 'test-key';
     mockSend.mockClear();
     mockClose.mockClear();
+    mockHandleToolCall.mockReset();
+    currentMockWs = null;
   });
 
   afterEach(() => {
@@ -117,5 +163,143 @@ describe('GrokVoiceProvider — interject', () => {
       item: { content: { text: string }[] };
     };
     expect(payload.item.content[0]?.text).toBe('[Neura: describe_screen running]');
+  });
+});
+
+describe('GrokVoiceProvider — response.done batch dispatch', () => {
+  const originalKey = process.env.XAI_API_KEY;
+
+  beforeEach(() => {
+    process.env.XAI_API_KEY = 'test-key';
+    mockSend.mockClear();
+    mockClose.mockClear();
+    mockHandleToolCall.mockReset();
+    currentMockWs = null;
+  });
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = originalKey;
+  });
+
+  it('fires exactly one response.create for two parallel tool calls', async () => {
+    mockHandleToolCall.mockResolvedValue({ ok: true });
+    const provider = new GrokVoiceProvider(makeCallbacks());
+    provider.connect();
+
+    emitResponseDone([
+      { type: 'function_call', name: 'get_task', call_id: 'call_a', arguments: '{"id":"1"}' },
+      { type: 'function_call', name: 'list_tasks', call_id: 'call_b', arguments: '{}' },
+    ]);
+
+    // Let the async dispatch settle.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const sent = sentMessages();
+    const outputs = sent.filter((m) => m.item?.type === 'function_call_output');
+    const creates = sent.filter((m) => m.type === 'response.create');
+
+    expect(outputs).toHaveLength(2);
+    expect(creates).toHaveLength(1);
+    expect(outputs.map((o) => o.item?.call_id)).toEqual(['call_a', 'call_b']);
+    expect(mockHandleToolCall).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips dispatch when the response is cancelled', async () => {
+    mockHandleToolCall.mockResolvedValue({ ok: true });
+    const provider = new GrokVoiceProvider(makeCallbacks());
+    provider.connect();
+
+    emitResponseDone(
+      [{ type: 'function_call', name: 'get_task', call_id: 'call_a', arguments: '{}' }],
+      'cancelled'
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const sent = sentMessages();
+    expect(sent.some((m) => m.item?.type === 'function_call_output')).toBe(false);
+    expect(sent.some((m) => m.type === 'response.create')).toBe(false);
+    expect(mockHandleToolCall).not.toHaveBeenCalled();
+  });
+
+  it('emits transcript callback AND dispatches tools for mixed message + function_call response', async () => {
+    mockHandleToolCall.mockResolvedValue({ ok: true });
+    const cb = makeCallbacks();
+    const provider = new GrokVoiceProvider(cb);
+    provider.connect();
+
+    currentMockWs!.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.done',
+        response: {
+          id: 'resp_1',
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [{ transcript: 'Got it, checking now.' }],
+            },
+            { type: 'function_call', name: 'get_task', call_id: 'call_a', arguments: '{}' },
+          ],
+        },
+      })
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(cb.onOutputTranscriptComplete).toHaveBeenCalledWith('Got it, checking now.');
+    const sent = sentMessages();
+    expect(sent.filter((m) => m.item?.type === 'function_call_output')).toHaveLength(1);
+    expect(sent.filter((m) => m.type === 'response.create')).toHaveLength(1);
+  });
+
+  it('still posts all outputs + one response.create when one handler throws', async () => {
+    mockHandleToolCall
+      .mockResolvedValueOnce({ ok: 'first' })
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ ok: 'third' });
+
+    const cb = makeCallbacks();
+    const provider = new GrokVoiceProvider(cb);
+    provider.connect();
+
+    emitResponseDone([
+      { type: 'function_call', name: 'tool_a', call_id: 'call_a', arguments: '{}' },
+      { type: 'function_call', name: 'tool_b', call_id: 'call_b', arguments: '{}' },
+      { type: 'function_call', name: 'tool_c', call_id: 'call_c', arguments: '{}' },
+    ]);
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const sent = sentMessages();
+    const outputs = sent.filter((m) => m.item?.type === 'function_call_output');
+    const creates = sent.filter((m) => m.type === 'response.create');
+
+    expect(outputs).toHaveLength(3);
+    expect(creates).toHaveLength(1);
+    expect(outputs.map((o) => o.item?.call_id)).toEqual(['call_a', 'call_b', 'call_c']);
+
+    // onToolResult fired for all three (including the thrown one's error payload).
+    expect(cb.onToolResult).toHaveBeenCalledTimes(3);
+  });
+
+  it('dedupes tool calls by call_id within a single response', async () => {
+    mockHandleToolCall.mockResolvedValue({ ok: true });
+    const provider = new GrokVoiceProvider(makeCallbacks());
+    provider.connect();
+
+    emitResponseDone([
+      { type: 'function_call', name: 'get_task', call_id: 'call_a', arguments: '{}' },
+      { type: 'function_call', name: 'get_task', call_id: 'call_a', arguments: '{}' },
+    ]);
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockHandleToolCall).toHaveBeenCalledTimes(1);
+    const sent = sentMessages();
+    expect(sent.filter((m) => m.item?.type === 'function_call_output')).toHaveLength(1);
+    expect(sent.filter((m) => m.type === 'response.create')).toHaveLength(1);
   });
 });

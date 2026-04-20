@@ -297,16 +297,18 @@ export class GrokVoiceProvider implements VoiceProvider {
         this.turnAudioBytes = 0;
 
         this.cb.onTurnComplete();
-        const outputItems = msg.response?.output;
+
+        const res = msg.response;
+        const outputItems: unknown[] = Array.isArray(res?.output) ? res.output : [];
+
         const fullParts: string[] = [];
-        if (Array.isArray(outputItems)) {
-          for (const item of outputItems) {
-            if (item.type === 'message' && Array.isArray(item.content)) {
-              for (const part of item.content) {
-                if (part.transcript) {
-                  this.pushTranscript('assistant', part.transcript);
-                  fullParts.push(part.transcript);
-                }
+        for (const item of outputItems) {
+          const it = item as { type?: string; content?: unknown };
+          if (it.type === 'message' && Array.isArray(it.content)) {
+            for (const part of it.content as { transcript?: string }[]) {
+              if (part.transcript) {
+                this.pushTranscript('assistant', part.transcript);
+                fullParts.push(part.transcript);
               }
             }
           }
@@ -314,11 +316,24 @@ export class GrokVoiceProvider implements VoiceProvider {
         if (fullParts.length > 0) {
           this.cb.onOutputTranscriptComplete(fullParts.join(''));
         }
+
+        // Phase-6b batch dispatch. All function calls emitted in this model
+        // response are dispatched together, and exactly one `response.create`
+        // is fired afterwards — regardless of how many calls the model made.
+        // Previously each `response.function_call_arguments.done` independently
+        // posted its output + fired response.create, which generated N
+        // consecutive assistant turns (monologue) for N parallel tool calls
+        // and made the model re-request tools because each follow-up turn
+        // started before it had seen the prior batch's outputs.
+        //
+        // Skip dispatch when the response didn't complete cleanly
+        // (cancelled/incomplete/failed): executing tools from an interrupted
+        // turn is the "barge-in double-action" bug.
+        if (res?.status === 'completed') {
+          void this.dispatchFunctionCalls(outputItems);
+        }
         break;
       }
-      case 'response.function_call_arguments.done':
-        void this.handleFunctionCallDone(msg);
-        break;
       case 'error':
         log.error('api error', { error: msg.error });
         this.cb.onError(msg.error?.message || 'Unknown error');
@@ -326,46 +341,113 @@ export class GrokVoiceProvider implements VoiceProvider {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async handleFunctionCallDone(msg: any): Promise<void> {
-    const name: string = msg.name ?? '';
-    let args: Record<string, unknown> = {};
-    try {
-      args = JSON.parse(msg.arguments ?? '{}');
-    } catch {
-      /* malformed args */
+  /**
+   * Execute every `function_call` item from a completed `response.done`
+   * payload in parallel, post their outputs in original `output_index`
+   * order, then fire exactly one `response.create` so the model sees the
+   * full batch as a single follow-up turn.
+   *
+   * Authoritative source: `response.output`. We intentionally do NOT
+   * buffer `response.function_call_arguments.done` deltas; `response.done`
+   * carries the finalized list and is the only shape we trust — see the
+   * Codex review cited in the corresponding commit.
+   */
+  private async dispatchFunctionCalls(outputItems: unknown[]): Promise<void> {
+    interface PendingCall {
+      callId: string;
+      name: string;
+      args: Record<string, unknown>;
+      outputIndex: number;
     }
+
+    const calls: PendingCall[] = [];
+    outputItems.forEach((item, idx) => {
+      const it = item as {
+        type?: string;
+        name?: string;
+        call_id?: string;
+        arguments?: string;
+      };
+      if (it.type !== 'function_call' || !it.call_id || typeof it.name !== 'string') return;
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = JSON.parse(it.arguments ?? '{}');
+      } catch {
+        /* malformed args — dispatch with {} so the handler can error-report */
+      }
+      calls.push({ callId: it.call_id, name: it.name, args: parsed, outputIndex: idx });
+    });
+
+    // Dedupe by call_id — defends against replayed events on reconnect or
+    // mixed handling paths. Preserve first-occurrence order.
+    const seen = new Set<string>();
+    const unique = calls.filter((c) => {
+      if (seen.has(c.callId)) return false;
+      seen.add(c.callId);
+      return true;
+    });
+
+    if (unique.length === 0) return;
 
     const currentWs = this.ws;
-    const callId = msg.call_id;
 
-    this.cb.onToolCall(name, args);
-    const result = await handleToolCall(name, args, {
-      queryWatcher: this.cb.queryWatcher,
-      memoryTools: this.config.memoryTools,
-      enterMode: this.config.enterMode,
-      taskTools: this.config.taskTools,
-      skillTools: this.config.skillTools,
-      workerControl: this.config.workerControl,
-      workerDispatch: this.config.workerDispatch,
-      systemState: this.config.systemState,
-      workerLogs: this.config.workerLogs,
-    });
-    this.cb.onToolResult(name, result);
-
-    if (currentWs && currentWs === this.ws && currentWs.readyState === WebSocket.OPEN) {
-      currentWs.send(
-        JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: callId,
-            output: JSON.stringify(result),
-          },
-        })
-      );
-      currentWs.send(JSON.stringify({ type: 'response.create' }));
+    // Sequential dispatch. Individual `handleToolCall` invocations are
+    // stateless at their boundary, but several tools in this codebase
+    // read-then-mutate shared state (e.g. `pause_worker` + `list_active_workers`
+    // in the same turn, or `update_task` racing a concurrent `get_task`).
+    // PGlite serializes each SQL statement but not the handler-level
+    // read-modify-write sequence — running the batch in parallel would
+    // let `list_active_workers` fire its SELECT before `pause_worker`'s
+    // UPDATE lands and return a stale list. Serial execution preserves
+    // the pre-refactor single-call-at-a-time semantics and matches what
+    // a voice-agent user expects ("pause X and tell me what's left" sees
+    // X already paused). Per-call try/catch so one handler throwing
+    // doesn't drop the other outputs.
+    const outcomes: { callId: string; result: unknown; outputIndex: number }[] = [];
+    for (const c of unique) {
+      this.cb.onToolCall(c.name, c.args);
+      try {
+        const result = await handleToolCall(c.name, c.args, {
+          queryWatcher: this.cb.queryWatcher,
+          memoryTools: this.config.memoryTools,
+          enterMode: this.config.enterMode,
+          taskTools: this.config.taskTools,
+          skillTools: this.config.skillTools,
+          workerControl: this.config.workerControl,
+          workerDispatch: this.config.workerDispatch,
+          systemState: this.config.systemState,
+          workerLogs: this.config.workerLogs,
+        });
+        this.cb.onToolResult(c.name, result);
+        outcomes.push({ callId: c.callId, result, outputIndex: c.outputIndex });
+      } catch (err) {
+        const errorResult = { error: `Tool ${c.name} failed: ${String(err)}` };
+        this.cb.onToolResult(c.name, errorResult);
+        outcomes.push({ callId: c.callId, result: errorResult, outputIndex: c.outputIndex });
+      }
     }
+
+    if (!currentWs || currentWs !== this.ws || currentWs.readyState !== WebSocket.OPEN) return;
+
+    // Post outputs in original output_index order for deterministic replay
+    // (not required for correctness — call_id is the join key — but keeps
+    // conversation history readable).
+    outcomes
+      .sort((a, b) => a.outputIndex - b.outputIndex)
+      .forEach((o) => {
+        currentWs.send(
+          JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: o.callId,
+              output: JSON.stringify(o.result),
+            },
+          })
+        );
+      });
+
+    currentWs.send(JSON.stringify({ type: 'response.create' }));
   }
 
   sendAudio(base64: string): void {
