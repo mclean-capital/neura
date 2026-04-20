@@ -74,6 +74,88 @@ describe('ClarificationBridge — askUser + notifyUserTurn round-trip', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(bridge.notifyUserTurn('yes')).toBe(true);
   });
+
+  it('awaits the onAnswer hook before resolving the worker Promise', async () => {
+    // Regression: the completion gate's countOpenRequests query runs
+    // immediately after the worker unblocks. If onAnswer is
+    // fire-and-forget, the approval_response comment may not have
+    // committed when the worker calls complete_task, and the gate
+    // rejects with "unresolved request" even though the user clearly
+    // approved.
+    const bridge = new ClarificationBridge({ voiceInterjector: makeInterjector() });
+    const order: string[] = [];
+    const hookPromise = bridge.askUser({
+      workerId: 'w-1',
+      question: 'ok?',
+      context: '',
+      urgency: 'blocking',
+      onAnswer: async () => {
+        await new Promise((r) => setTimeout(r, 25));
+        order.push('hook_done');
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bridge.notifyUserTurn('yes')).toBe(true);
+    await hookPromise;
+    order.push('promise_resolved');
+    expect(order).toEqual(['hook_done', 'promise_resolved']);
+  });
+
+  it('still resolves the worker even when onAnswer throws', async () => {
+    const bridge = new ClarificationBridge({ voiceInterjector: makeInterjector() });
+    const p = bridge.askUser({
+      workerId: 'w-1',
+      question: 'ok?',
+      context: '',
+      urgency: 'blocking',
+      onAnswer: () => {
+        throw new Error('db offline');
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    bridge.notifyUserTurn('yes');
+    await expect(p).resolves.toBe('yes');
+  });
+
+  it('ignores abort signal fired after the answer was consumed', async () => {
+    // Regression: awaiting onAnswer widens the window where the
+    // clarification Promise is still pending. If an AbortSignal fires
+    // during that window, naive abort handling would reject an
+    // already-answered clarification. The bridge must treat "already
+    // consumed from pending" as "too late to abort."
+    const bridge = new ClarificationBridge({ voiceInterjector: makeInterjector() });
+    const controller = new AbortController();
+    const p = bridge.askUser({
+      workerId: 'w-1',
+      question: 'ok?',
+      context: '',
+      urgency: 'blocking',
+      signal: controller.signal,
+      onAnswer: async () => {
+        await new Promise((r) => setTimeout(r, 25));
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    // Consume the answer, then abort mid-persistence.
+    bridge.notifyUserTurn('yes');
+    controller.abort();
+    await expect(p).resolves.toBe('yes');
+  });
+
+  it('still rejects an abort that fires before any answer was consumed', async () => {
+    const bridge = new ClarificationBridge({ voiceInterjector: makeInterjector() });
+    const controller = new AbortController();
+    const p = bridge.askUser({
+      workerId: 'w-1',
+      question: 'ok?',
+      context: '',
+      urgency: 'blocking',
+      signal: controller.signal,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    controller.abort();
+    await expect(p).rejects.toThrow(/aborted/);
+  });
 });
 
 describe('ClarificationBridge — voice interjection', () => {

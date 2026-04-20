@@ -256,10 +256,13 @@ describe('Phase 6b — clarification round trip unblocks complete_task', () => {
       await p;
       answerResolved = true;
 
-      // Wait for the orchestrator-side response-comment hook to land
-      // so the completion gate sees a resolved request.
-      await new Promise((r) => setTimeout(r, 20));
-
+      // No sleep needed between `await p` and `complete_task`:
+      // the bridge now awaits the onAnswer persistence hook before
+      // resolving, so when `p` settles the clarification_response
+      // comment is already committed and the completion gate sees
+      // zero open requests. Previously this required a 20ms sleep
+      // to paper over the race where the worker could call
+      // complete_task before the response comment landed.
       await tool(w.tools, 'complete_task').execute('c-2', {
         summary: 'deployed main to prod',
       });

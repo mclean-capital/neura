@@ -139,8 +139,17 @@ export class ClarificationBridge {
         if (signal) {
           const onAbort = (): void => {
             const idx = this.pending.indexOf(pending);
-            if (idx >= 0) this.pending.splice(idx, 1);
-            reject(new Error('clarification aborted'));
+            // If the pending is still in the queue, abort it cleanly.
+            // If it's already been consumed by `notifyUserTurn`, do
+            // nothing — the onAnswer persistence hook is in flight and
+            // the resolve() call is already queued. Rejecting here
+            // would race-override an answered clarification, which
+            // surfaces as "clarification aborted" errors on successful
+            // answers whenever an abort fires during persistence.
+            if (idx >= 0) {
+              this.pending.splice(idx, 1);
+              reject(new Error('clarification aborted'));
+            }
           };
           if (signal.aborted) {
             onAbort();
@@ -179,9 +188,13 @@ export class ClarificationBridge {
    * clarifications are waiting, the turn is ignored (the user is just
    * talking to Grok normally).
    *
-   * Returns true if the turn was consumed by a pending clarification,
-   * false otherwise — callers can use this to decide whether to also
-   * forward the turn to the normal voice session flow.
+   * Returns `true` synchronously when a pending clarification was
+   * found; `false` when nothing was pending. When `true`, the
+   * response persistence (via `onAnswer`) is in flight and the
+   * worker's `askUser` Promise resolves only after the persistence
+   * completes — so `complete_task`'s open-request gate sees the
+   * committed response comment. Callers use the boolean to decide
+   * whether to forward the turn to the normal voice session flow.
    */
   notifyUserTurn(text: string): boolean {
     const next = this.pending.shift();
@@ -190,20 +203,32 @@ export class ClarificationBridge {
       workerId: next.workerId,
       textPreview: text.slice(0, 80),
     });
-    // Run the caller's persistence hook first so the ticket reflects
-    // the user's answer BEFORE the worker's Promise resolves. If the
-    // hook throws (e.g. invariant rejection, db hiccup), we still want
-    // to unblock the worker — fire-and-log, but don't hold up the
-    // Promise chain.
     if (next.onAnswer) {
-      void Promise.resolve(next.onAnswer(text)).catch((err: unknown) => {
-        log.warn('onAnswer persistence hook threw', {
-          workerId: next.workerId,
-          err: String(err),
-        });
-      });
+      // Persist the response comment BEFORE unblocking the worker.
+      // The original implementation fired the hook fire-and-forget
+      // and resolved the Promise synchronously, which created a race:
+      // the worker would unblock, call complete_task, and the
+      // completion gate's `countOpenRequests` query would run before
+      // the approval_response comment had committed — rejecting the
+      // transition with "unresolved request" despite the user having
+      // clearly approved. Awaiting the hook serializes the DB write
+      // ahead of the worker's next tool call. If the hook throws,
+      // log and still unblock so the worker doesn't hang forever.
+      void (async () => {
+        try {
+          await Promise.resolve(next.onAnswer!(text));
+        } catch (err) {
+          log.warn('onAnswer persistence hook threw', {
+            workerId: next.workerId,
+            err: String(err),
+          });
+        } finally {
+          next.resolve(text);
+        }
+      })();
+    } else {
+      next.resolve(text);
     }
-    next.resolve(text);
     return true;
   }
 
