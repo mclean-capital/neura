@@ -1,3 +1,9 @@
+# [3.6.0](https://github.com/mclean-capital/neura/compare/v3.5.4...v3.6.0) (2026-04-20)
+
+### Features
+
+- **core:** read_log tool — scoped log inspection for the orchestrator ([ee8db29](https://github.com/mclean-capital/neura/commit/ee8db29ba05b3497beea8be17e6067a60defec1e))
+
 ## [3.5.4](https://github.com/mclean-capital/neura/compare/v3.5.3...v3.5.4) (2026-04-20)
 
 ### Bug Fixes
