@@ -1,3 +1,9 @@
+## [3.5.3](https://github.com/mclean-capital/neura/compare/v3.5.2...v3.5.3) (2026-04-20)
+
+### Bug Fixes
+
+- **core:** apply review round — comment sort, heartbeat prune, UUID redaction, skill ship ([3e8a49e](https://github.com/mclean-capital/neura/commit/3e8a49e1f61704ab67f603ac859f4ed60a9aeace))
+
 ## [3.5.2](https://github.com/mclean-capital/neura/compare/v3.5.1...v3.5.2) (2026-04-20)
 
 ### Bug Fixes
