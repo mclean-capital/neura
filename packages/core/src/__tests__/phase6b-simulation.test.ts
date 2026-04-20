@@ -137,6 +137,7 @@ function buildOrchestratorTaskTools(): TaskToolHandler {
     listTasks: () => Promise.resolve([]),
     getTask: (id) => getWorkItem(db, id),
     listTaskComments: (taskId, options) => listComments(db, { taskId, limit: options?.limit }),
+    getWorkerSessionFile: () => Promise.resolve(null),
     updateTask: async (idOrTitle, payload) => {
       const current = await getWorkItem(db, idOrTitle);
       if (!current) return null;
@@ -153,6 +154,7 @@ function buildWorkerTaskTools(workerId: string): TaskToolHandler {
     listTasks: () => Promise.resolve([]),
     getTask: (id) => getWorkItem(db, id),
     listTaskComments: (taskId, options) => listComments(db, { taskId, limit: options?.limit }),
+    getWorkerSessionFile: () => Promise.resolve(null),
     updateTask: async (idOrTitle, payload) => {
       const current = await getWorkItem(db, idOrTitle);
       if (!current) return null;

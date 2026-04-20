@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toolDefs, handleToolCall, type ToolCallContext } from './index.js';
 
 describe('toolDefs', () => {
-  it('defines exactly 24 tools', () => {
+  it('defines exactly 25 tools', () => {
     // 15 pre-phase-6 tools
     //   (describe_camera, describe_screen, get_current_time,
     //    remember_fact, recall_memory, update_preference, enter_mode,
@@ -12,7 +12,8 @@ describe('toolDefs', () => {
     // + 4 worker control tools (pause_worker, resume_worker,
     //   cancel_worker, list_active_workers)
     // + 2 Phase 6b additions (dispatch_worker, get_system_state)
-    expect(toolDefs).toHaveLength(24);
+    // + 1 log tool (read_log)
+    expect(toolDefs).toHaveLength(25);
   });
 
   it('each tool has the required structure', () => {

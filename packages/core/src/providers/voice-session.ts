@@ -46,6 +46,7 @@ export function createVoiceSession(
       workerControl: config.workerControl,
       workerDispatch: config.workerDispatch,
       systemState: config.systemState,
+      workerLogs: config.workerLogs,
     };
 
     return new PipelineVoiceProvider(cb, pipelineConfig, llmAdapter, sttAdapter, ttsAdapter);

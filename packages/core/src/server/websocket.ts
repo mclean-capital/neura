@@ -9,6 +9,7 @@ import { CostTracker } from '../cost/index.js';
 import type { MemoryToolHandler, TaskToolHandler } from '../tools/index.js';
 import { applyTaskUpdate, resolveTask } from '../tools/task-update-handler.js';
 import { listComments } from '../stores/task-comment-queries.js';
+import type { LogSource } from '../tools/log-reader.js';
 import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { OnnxWakeDetector } from '../presence/onnx-wake-detector.js';
@@ -25,6 +26,19 @@ const COST_UPDATE_INTERVAL_MS = 30_000;
 const INFRA_MODELS = new Set(['melspectrogram', 'embedding_model']);
 
 /** Scan models directory for available wake word classifiers */
+function buildSource(options: { source?: 'core' | 'session'; sessionFile?: string }): LogSource {
+  if (options.source === 'session') {
+    // Tool handler already validates this combination; assert so a
+    // future refactor can't silently pass an empty path through to
+    // the reader (which would read the sessions dir itself).
+    if (!options.sessionFile) {
+      throw new Error("read_log with source='session' requires session_file");
+    }
+    return { kind: 'session', sessionFile: options.sessionFile };
+  }
+  return { kind: 'core' };
+}
+
 function getAvailableWakeWords(modelsDir: string): string[] {
   try {
     return readdirSync(modelsDir)
@@ -294,6 +308,13 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
               excludeTypes: options?.excludeTypes,
             });
           },
+          getWorkerSessionFile: async (workerId) => {
+            const db = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
+            if (!db) return null;
+            const { getWorker } = await import('../stores/worker-queries.js');
+            const worker = await getWorker(db, workerId);
+            return worker?.sessionFile ?? null;
+          },
           updateTask: async (idOrTitle, payload) => {
             const current = await resolveTask(store, idOrTitle);
             if (!current) return null;
@@ -549,6 +570,23 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
           workerControl: workerControlHandler ?? undefined,
           systemState: systemStateHandler ?? undefined,
           workerDispatch: workerDispatchHandler ?? undefined,
+          workerLogs: {
+            // readLog is sync. The async wrapper satisfies the
+            // interface contract and leaves room for future I/O
+            // (e.g. a streamed read), but there's no await here.
+            read: async (options) => {
+              const { readLog } = await import('../tools/log-reader.js');
+              return readLog({
+                neuraHome: services.config.neuraHome,
+                ...(options.source ? { source: buildSource(options) } : {}),
+                ...(options.path ? { path: options.path } : {}),
+                ...(options.workerId ? { workerId: options.workerId } : {}),
+                ...(options.taskId ? { taskId: options.taskId } : {}),
+                minLevel: options.includeInfo ? 'info' : 'warn',
+                ...(options.lines !== undefined ? { limit: options.lines } : {}),
+              });
+            },
+          },
         },
         services.registry
       );

@@ -68,6 +68,13 @@ export interface TaskToolHandler {
     }
   ): Promise<TaskCommentEntry[]>;
   /**
+   * Look up the on-disk pi session file path for a worker, or null if
+   * the worker has no session file (pre-session error or record gone).
+   * Used by `get_task` to surface a handle the orchestrator can pass
+   * to `read_log(source='session', session_file=...)`.
+   */
+  getWorkerSessionFile(workerId: string): Promise<string | null>;
+  /**
    * Update a task. Payload can include field changes, a comment, and/or
    * explicit status transitions. Returns the updated task + the new version
    * number (from the optimistic lock). `null` when the task can't be found.
@@ -190,6 +197,37 @@ export interface WorkerControlHandler {
 /** Callback for presence mode changes triggered by AI tool calls */
 export type EnterModeHandler = (mode: 'passive' | 'active') => void;
 
+/**
+ * Handler for `read_log` — the orchestrator's scoped window into
+ * Neura's log files (core.log, pi session JSONL). Sandbox + UUID
+ * redaction happen at the implementation layer. Absent for worker-
+ * side tool contexts (workers don't inspect their own logs).
+ */
+export interface WorkerLogsHandler {
+  read(options: {
+    source?: 'core' | 'session';
+    sessionFile?: string;
+    path?: string;
+    workerId?: string;
+    taskId?: string;
+    lines?: number;
+    includeInfo?: boolean;
+  }): Promise<{
+    available: boolean;
+    logPath?: string;
+    entries: {
+      time?: string;
+      level?: string;
+      ns?: string;
+      msg: string;
+      kind: 'json' | 'text';
+      fields?: Record<string, string | number | boolean>;
+    }[];
+    truncated: boolean;
+    error?: string;
+  }>;
+}
+
 /** Context object passed to handleToolCall */
 export interface ToolCallContext {
   queryWatcher: (prompt: string, source: 'camera' | 'screen') => Promise<string>;
@@ -200,6 +238,7 @@ export interface ToolCallContext {
   workerControl?: WorkerControlHandler;
   workerDispatch?: WorkerDispatchHandler;
   systemState?: SystemStateHandler;
+  workerLogs?: WorkerLogsHandler;
 }
 
 /** Re-export for convenience — callers depend on these along with the context. */

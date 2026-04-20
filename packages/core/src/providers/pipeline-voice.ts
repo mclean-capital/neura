@@ -36,6 +36,7 @@ import {
   type WorkerControlHandler,
   type WorkerDispatchHandler,
   type SystemStateHandler,
+  type WorkerLogsHandler,
   type ToolCallContext,
 } from '../tools/index.js';
 
@@ -55,6 +56,7 @@ export interface PipelineVoiceConfig {
   workerControl?: WorkerControlHandler;
   workerDispatch?: WorkerDispatchHandler;
   systemState?: SystemStateHandler;
+  workerLogs?: WorkerLogsHandler;
 }
 
 export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
@@ -95,6 +97,7 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
       includeTasks: !!config.taskTools,
       includeSkills: !!config.skillTools,
       includeWorkerControl: !!config.workerControl,
+      includeLogs: !!config.workerLogs,
     });
 
     this.toolCtx = {
@@ -106,6 +109,7 @@ export class PipelineVoiceProvider implements VoiceProvider, VoiceInterjector {
       workerControl: config.workerControl,
       workerDispatch: config.workerDispatch,
       systemState: config.systemState,
+      workerLogs: config.workerLogs,
     };
   }
 

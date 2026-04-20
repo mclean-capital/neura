@@ -88,6 +88,8 @@ export function install(): void {
   <dict>
     <key>NEURA_HOME</key>
     <string>${home}</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
   </dict>
 </dict>
 </plist>`;

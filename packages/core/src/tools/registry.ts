@@ -6,12 +6,14 @@ import { presenceToolDefs } from './presence-tools.js';
 import { taskToolDefs } from './task-tools.js';
 import { skillToolDefs } from './skill-tools.js';
 import { workerControlToolDefs } from './worker-control-tools.js';
+import { logToolDefs } from './log-tools.js';
 
 export const MEMORY_TOOL_NAMES = new Set(memoryToolDefs.map((t) => t.name));
 export const PRESENCE_TOOL_NAMES = new Set(presenceToolDefs.map((t) => t.name));
 export const TASK_TOOL_NAMES = new Set(taskToolDefs.map((t) => t.name));
 export const SKILL_TOOL_NAMES = new Set(skillToolDefs.map((t) => t.name));
 export const WORKER_CONTROL_TOOL_NAMES = new Set(workerControlToolDefs.map((t) => t.name));
+export const LOG_TOOL_NAMES = new Set(logToolDefs.map((t) => t.name));
 
 export const toolDefs: ToolDefinition[] = [
   ...visionToolDefs,
@@ -21,6 +23,7 @@ export const toolDefs: ToolDefinition[] = [
   ...taskToolDefs,
   ...skillToolDefs,
   ...workerControlToolDefs,
+  ...logToolDefs,
 ];
 
 /** Return tool definitions, excluding unavailable tool groups. */
@@ -30,6 +33,7 @@ export function getToolDefs(options: {
   includeTasks: boolean;
   includeSkills: boolean;
   includeWorkerControl: boolean;
+  includeLogs: boolean;
 }) {
   return toolDefs.filter((t) => {
     if (MEMORY_TOOL_NAMES.has(t.name) && !options.includeMemory) return false;
@@ -37,6 +41,7 @@ export function getToolDefs(options: {
     if (TASK_TOOL_NAMES.has(t.name) && !options.includeTasks) return false;
     if (SKILL_TOOL_NAMES.has(t.name) && !options.includeSkills) return false;
     if (WORKER_CONTROL_TOOL_NAMES.has(t.name) && !options.includeWorkerControl) return false;
+    if (LOG_TOOL_NAMES.has(t.name) && !options.includeLogs) return false;
     return true;
   });
 }

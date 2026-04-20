@@ -14,6 +14,9 @@ export {
   handleWorkerControlTool,
   isWorkerControlTool,
 } from './worker-control-tools.js';
+export { logToolDefs, handleLogTool, isLogTool } from './log-tools.js';
+export { readLog } from './log-reader.js';
+export type { LogSource } from './log-reader.js';
 export type {
   MemoryToolHandler,
   TaskToolHandler,
@@ -22,6 +25,7 @@ export type {
   WorkerControlHandler,
   WorkerDispatchHandler,
   SystemStateHandler,
+  WorkerLogsHandler,
   ToolCallContext,
   UpdateTaskPayload,
 } from './types.js';

@@ -51,6 +51,7 @@ WorkingDirectory=${home}
 Restart=on-failure
 RestartSec=5
 Environment=NEURA_HOME=${home}
+Environment=NODE_ENV=production
 StandardOutput=append:${home}/logs/core.log
 StandardError=append:${home}/logs/core.error.log
 

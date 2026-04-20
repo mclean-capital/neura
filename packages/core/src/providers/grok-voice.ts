@@ -18,6 +18,7 @@ import {
   type WorkerControlHandler,
   type WorkerDispatchHandler,
   type SystemStateHandler,
+  type WorkerLogsHandler,
 } from '../tools/index.js';
 
 const log = new Logger('voice');
@@ -44,6 +45,7 @@ export interface GrokVoiceConfig {
   workerControl?: WorkerControlHandler;
   workerDispatch?: WorkerDispatchHandler;
   systemState?: SystemStateHandler;
+  workerLogs?: WorkerLogsHandler;
 }
 
 export class GrokVoiceProvider implements VoiceProvider {
@@ -165,6 +167,7 @@ export class GrokVoiceProvider implements VoiceProvider {
               includeTasks: !!this.config.taskTools,
               includeSkills: !!this.config.skillTools,
               includeWorkerControl: !!this.config.workerControl,
+              includeLogs: !!this.config.workerLogs,
             }),
           },
         })
@@ -346,6 +349,7 @@ export class GrokVoiceProvider implements VoiceProvider {
       workerControl: this.config.workerControl,
       workerDispatch: this.config.workerDispatch,
       systemState: this.config.systemState,
+      workerLogs: this.config.workerLogs,
     });
     this.cb.onToolResult(name, result);
 

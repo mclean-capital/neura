@@ -24,8 +24,25 @@ import type {
   WorkItemStatus,
 } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
+import { basename } from 'node:path';
 import type { ToolCallContext, UpdateTaskPayload } from './types.js';
 import { redactCommentForVoice, redactTaskForVoice } from './voice-redact.js';
+
+/**
+ * Convert a (possibly absolute) pi session file path into a relative
+ * `agent/sessions/<file>` path that `read_log` can resolve under
+ * neuraHome. Strips everything except the basename to prevent a
+ * leaked absolute path from escaping the tool sandbox.
+ *
+ * Assumption: pi writes session files flat under the sessions dir
+ * (see `defaultSessionDir` in pi-runtime.ts). If pi ever nests them
+ * (e.g. per-date subfolders), the basename-only transform would
+ * strip the subdir and the tool sandbox would fail to resolve the
+ * file. Revisit when that lands.
+ */
+function toRelativeSessionPath(raw: string): string {
+  return `agent/sessions/${basename(raw)}`;
+}
 
 const log = new Logger('tool:task');
 
@@ -336,11 +353,30 @@ export async function handleTaskTool(
             err: String(err),
           });
         }
+        // Surface a sandbox-safe relative sessionFile path so the
+        // orchestrator can call `read_log(source='session',
+        // session_file=...)` without having to know how sessions are
+        // stored on disk. We keep it relative to neuraHome and strip
+        // any absolute-path portion — the read_log allow-list will
+        // also reject anything outside `agent/sessions/`.
+        let sessionFile: string | null = null;
+        if (task.workerId) {
+          try {
+            const raw = await ctx.taskTools.getWorkerSessionFile(task.workerId);
+            sessionFile = raw ? toRelativeSessionPath(raw) : null;
+          } catch (err) {
+            log.error('failed to resolve worker session file for get_task', {
+              taskId: task.id,
+              err: String(err),
+            });
+          }
+        }
         return {
           result: {
             found: true,
             task: redactTaskForVoice(task),
             comments: comments.map(redactCommentForVoice),
+            ...(sessionFile ? { sessionFile } : {}),
           },
         };
       }

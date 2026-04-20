@@ -412,6 +412,11 @@ export async function initServices(): Promise<CoreServices> {
               excludeTypes: options?.excludeTypes,
             });
           },
+          getWorkerSessionFile: async (workerId) => {
+            const { getWorker } = await import('../stores/worker-queries.js');
+            const worker = await getWorker(rawDb, workerId);
+            return worker?.sessionFile ?? null;
+          },
           updateTask: async (idOrTitle, payload) => {
             const current = await store.getWorkItem(idOrTitle);
             if (!current) return null;

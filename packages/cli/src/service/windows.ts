@@ -142,6 +142,7 @@ function renderCmdShim(ctx: ShimContext): string {
   return `@echo off\r
 chcp 65001 >nul\r
 set "NEURA_HOME=${escapeCmd(ctx.home)}"\r
+set "NODE_ENV=production"\r
 if not exist "${escapeCmd(ctx.logDir)}" mkdir "${escapeCmd(ctx.logDir)}"\r
 echo %~nx0 started at %date% %time% >> "${escapeCmd(ctx.logFile)}"\r
 "${escapeCmd(ctx.nodePath)}" "${escapeCmd(ctx.corePath)}" >> "${escapeCmd(ctx.logFile)}" 2>> "${escapeCmd(ctx.errLogFile)}"\r
