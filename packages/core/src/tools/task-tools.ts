@@ -371,11 +371,15 @@ export async function handleTaskTool(
         const taskId = args.task_id as string;
         const outcome = await ctx.workerDispatch.dispatchWorker(taskId);
         if ('error' in outcome) return { error: outcome.error };
+        // workerId is kept in the structured result for subsequent tool
+        // calls (pause/resume/cancel) but deliberately omitted from
+        // `message` — the voice model reads messages aloud verbatim and
+        // a UUID becomes "e three zero three f f b two…" letter by letter.
         return {
           result: {
             dispatched: true,
             workerId: outcome.workerId,
-            message: `Worker ${outcome.workerId} dispatched. You'll hear progress updates as it works.`,
+            message: `Worker dispatched. You'll hear progress updates as it works.`,
           },
         };
       }

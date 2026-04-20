@@ -45,6 +45,7 @@ import {
   type WorkerEntry,
 } from '../stores/worker-queries.js';
 import { getWorkItem, updateWorkItem } from '../stores/work-item-queries.js';
+import { insertComment } from '../stores/task-comment-queries.js';
 import type { WorkerHandle, WorkerRuntime } from './worker-runtime.js';
 import { WorkerCancellation } from './worker-cancellation.js';
 import { WorktreeManager } from './worktree-manager.js';
@@ -85,7 +86,15 @@ export const CANONICAL_WORKER_SYSTEM_PROMPT = `You are a Neura worker — a capa
 
 Your posture: be decisive. You have full tool access — Read, Write, Edit, Bash — scoped to an isolated worktree directory (your cwd). Make progress. Don't ask the user to double-check obvious things. Don't propose a plan and wait for approval when the path is clear.
 
+Your cwd is an isolated sandbox under \`~/.neura/worktrees/<workerId>/\`. It is NOT the user's home directory, desktop, or documents folder. Files you create land in the sandbox, not in user-visible locations. A task whose goal requires writing to the user's Desktop, Documents, or any absolute path outside your cwd cannot be satisfied by writing inside cwd — that would silently put the file in the wrong place. In that case:
+
+1. If the outside path is essential to the task, call \`request_approval\` with a rationale ("task goal requires writing to ~/Desktop, which is outside my sandbox — authorize access?") and wait. If denied, call \`fail_task\` with \`reason_code: 'impossible'\`.
+2. If you can satisfy the goal inside cwd without writing to the user-visible path, do that and make it clear in your \`complete_task\` summary where the file actually lives.
+
+Do NOT pretend success when you wrote to the wrong place. Silent "it completed" with no file where the user expects it is the worst outcome.
+
 Reversibility rule: before any destructive or hard-to-reverse action **outside** your worktree, call \`request_approval\` and wait for the user's answer. Examples that require approval:
+- Writing to the user's home directory, Desktop, Documents, or any absolute path outside cwd
 - Deleting files the user owns
 - Force-pushing branches, rewriting git history
 - Sending email, SMS, or other external messages
@@ -657,6 +666,48 @@ export class AgentWorker {
             workerId,
             taskId,
             taskStatus,
+            err: String(err),
+          });
+        }
+      }
+
+      // Surface error detail as a task comment. Without this, a worker
+      // that crashes or errors out without ever calling `fail_task`
+      // leaves the task in `failed` with zero explanation — `get_task`
+      // returns an empty comment list and the orchestrator tells the
+      // user "no detailed error logged." The error is on the workers
+      // row but task-level consumers don't read it. We post a
+      // `system`-authored error comment with the reason + detail so
+      // `get_task` surfaces the cause. If the worker called
+      // `fail_task` itself, there's already a worker-authored error
+      // comment; this is an additional system-level diagnostic so
+      // distinguishable by author, not redundant.
+      if ((status === 'failed' || status === 'crashed') && result.error) {
+        try {
+          const { reason, detail } = result.error;
+          // Defensive truncation: insertComment hard-rejects content
+          // over 32 KB, and raw pi error stacks can easily exceed that.
+          // Without this guard, the insert throws and the catch below
+          // swallows it silently, putting us right back in the "task
+          // failed with no explanation" hole this fix was meant to fix.
+          const MAX_DETAIL_BYTES = 30_000;
+          const safeDetail = detail ? detail.slice(0, MAX_DETAIL_BYTES) : '';
+          const content = safeDetail ? `${reason}: ${safeDetail}` : reason;
+          await insertComment(this.db, {
+            taskId,
+            type: 'error',
+            author: 'system',
+            content,
+            metadata: {
+              workerId,
+              workerStatus: status,
+              reason,
+            },
+          });
+        } catch (err) {
+          log.warn('failed to persist error comment on task', {
+            workerId,
+            taskId,
             err: String(err),
           });
         }

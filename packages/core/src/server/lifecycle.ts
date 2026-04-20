@@ -24,6 +24,8 @@ import {
   defaultSessionDir,
   type NeuraAgentTool,
 } from '../workers/index.js';
+import { AuthStorage } from '@mariozechner/pi-coding-agent';
+import { seedAuthStorageFromConfig } from '../workers/auth-bridge.js';
 import type {
   MemoryToolHandler,
   SkillToolHandler,
@@ -506,6 +508,17 @@ export async function initServices(): Promise<CoreServices> {
         );
       }
 
+      // Bridge Neura's config.providers[*].apiKey into pi's AuthStorage.
+      // Without this, workers die on first prompt with "No API key found
+      // for <provider>" because pi resolves keys from its own auth.json
+      // (which we never populate). Runtime overrides stay in memory —
+      // priority 1 in pi's resolution — so config.json remains the
+      // single source of truth. Pi will still create an empty auth.json
+      // at the configured path; we don't write credentials into it.
+      const authStorage = AuthStorage.create(join(agentDir, 'auth.json'));
+      const seededProviders = seedAuthStorageFromConfig(authStorage, config.providers);
+      log.info('seeded pi auth storage from config', { count: seededProviders });
+
       const piRuntime = new PiRuntime({
         model,
         thinkingLevel: 'low',
@@ -515,6 +528,7 @@ export async function initServices(): Promise<CoreServices> {
         buildTools,
         voiceFanoutBridge,
         skillRegistry,
+        authStorage,
       });
 
       // AgentWorker uses the same hoisted PGlite handle.

@@ -470,6 +470,62 @@ describe('Phase 6b — worker crash mirrors terminal status onto the task', () =
     expect(task?.status).toBe('failed');
     const worker = await getWorker(db, handle.workerId);
     expect(worker?.status).toBe('crashed');
+
+    // A system-authored error comment should have been posted so
+    // `get_task` surfaces the reason. Without this the user sees
+    // "failed" with no explanation and asks "why?" with nothing to
+    // show them.
+    const comments = await listComments(db, { taskId, type: 'error' });
+    const systemErr = comments.find((c) => c.author === 'system');
+    expect(systemErr).toBeTruthy();
+    expect(systemErr?.content).toContain('simulated');
+    expect(systemErr?.metadata).toMatchObject({
+      workerId: handle.workerId,
+      workerStatus: 'crashed',
+    });
+  });
+
+  it('truncates huge error detail so the insert stays under the 32KB cap', async () => {
+    const orchTools = buildOrchestratorTaskTools();
+    const taskId = await orchTools.createTask('Big error', 'medium', {});
+
+    // 40 KB stack trace — over insertComment's 32 KB content cap.
+    // Without truncation, insertComment throws and the error comment
+    // is lost, dropping us back to the silent-failure bug.
+    const hugeDetail = 'x'.repeat(40_000);
+
+    const { runtime, buildToolsFactory } = makeScriptedRuntime(async (w) => {
+      await new Promise((r) => setTimeout(r, 10));
+      w.finish({
+        status: 'failed',
+        error: { reason: 'hard_error', detail: hugeDetail },
+      });
+    });
+    const bridge = new ClarificationBridge({
+      voiceInterjector: { interject: () => Promise.resolve() },
+    });
+    const agent = new AgentWorker({ db, runtime, worktreeBasePath: worktreeBase });
+    buildToolsFactory(({ workerId, taskId: tid }) => {
+      return buildWorkerProtocolTools({
+        workerId,
+        taskId: tid!,
+        taskTools: buildWorkerTaskTools(workerId),
+        clarificationBridge: bridge,
+        db,
+      });
+    });
+
+    const handle = await agent.dispatchForTask(taskId);
+    await handle.done;
+    await new Promise((r) => setTimeout(r, 30));
+
+    const comments = await listComments(db, { taskId, type: 'error' });
+    const systemErr = comments.find((c) => c.author === 'system');
+    expect(systemErr).toBeTruthy();
+    // Reason is preserved; detail is truncated but still present.
+    expect(systemErr?.content).toMatch(/^hard_error: x+$/);
+    // Content size must be under the DB cap.
+    expect(Buffer.byteLength(systemErr?.content ?? '', 'utf8')).toBeLessThan(32 * 1024);
   });
 });
 
