@@ -1,3 +1,9 @@
+## [3.6.1](https://github.com/mclean-capital/neura/compare/v3.6.0...v3.6.1) (2026-04-20)
+
+### Bug Fixes
+
+- **voice:** batch tool dispatch on response.done to stop monologue ([e944ae9](https://github.com/mclean-capital/neura/commit/e944ae901e68bfe108ad558f7ce1801cb77c2bfd))
+
 # [3.6.0](https://github.com/mclean-capital/neura/compare/v3.5.4...v3.6.0) (2026-04-20)
 
 ### Features
