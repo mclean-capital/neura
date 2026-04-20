@@ -29,11 +29,7 @@ import type {
   WorkItemEntry,
   WorkItemStatus,
 } from '@neura/types';
-import {
-  insertComment,
-  countOpenRequests,
-  pruneHeartbeats,
-} from '../stores/task-comment-queries.js';
+import { insertComment, countOpenRequests } from '../stores/task-comment-queries.js';
 import {
   getWorkItem,
   updateWorkItem,
@@ -77,10 +73,19 @@ const ORCHESTRATOR_ALLOWED_FROM: Record<WorkItemStatus, Set<WorkItemStatus>> = {
   failed: new Set(),
 };
 
-/** Comment types workers are allowed to author. */
+/**
+ * Comment types workers are allowed to author.
+ *
+ * `heartbeat` is deliberately excluded. Workers used to emit them via a
+ * dedicated tool; that's been replaced by pi-driven lease refresh in
+ * pi-runtime. Leaving `heartbeat` in the allow-list would let a
+ * misbehaving or legacy model spoof them through the generic
+ * `update_task` tool, reintroducing comment-stream noise this cleanup
+ * removed. Legacy `heartbeat` rows from older installs still read back
+ * fine — only writes are blocked.
+ */
 const WORKER_ALLOWED_COMMENT_TYPES = new Set<TaskCommentType>([
   'progress',
-  'heartbeat',
   'clarification_request',
   'approval_request',
   'error',
@@ -212,8 +217,10 @@ export async function applyTaskUpdate(args: ApplyTaskUpdateArgs): Promise<ApplyT
   }
 
   // 3b. Worker field-mutation scoping. Workers may only touch a narrow
-  //     allow-list (today: leaseExpiresAt via heartbeat). Any other
-  //     field is an orchestrator / system operation.
+  //     allow-list (today: leaseExpiresAt, though in practice the
+  //     runtime refreshes it from pi events — workers rarely need to
+  //     write this directly). Any other field is an orchestrator /
+  //     system operation.
   if (payload.fields && who.kind === 'worker') {
     for (const key of Object.keys(payload.fields)) {
       if (payload.fields[key as keyof typeof payload.fields] === undefined) continue;
@@ -279,20 +286,6 @@ export async function applyTaskUpdate(args: ApplyTaskUpdateArgs): Promise<ApplyT
       urgency: payload.comment.urgency ?? null,
       metadata: payload.comment.metadata ?? null,
     });
-
-    // Heartbeat semantics are "I'm alive" — only the newest one matters
-    // for lease checks. When any non-heartbeat comment from the same
-    // actor lands (progress, result, error, etc.), prior heartbeats are
-    // redundant; prune them so long-running workers don't accumulate
-    // hundreds of rows that crowd out real content in get_task results.
-    if (payload.comment.type !== 'heartbeat' && actor.startsWith('worker:')) {
-      try {
-        await pruneHeartbeats(db, task.id, actor);
-      } catch {
-        // Best-effort cleanup — pruning is advisory. If it fails,
-        // the heartbeats stay in place but the new comment still landed.
-      }
-    }
   }
 
   // Refresh the task row for the caller. `updateWorkItem` already bumped

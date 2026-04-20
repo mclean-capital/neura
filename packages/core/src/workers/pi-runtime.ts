@@ -50,6 +50,29 @@ import type { ResumeParams, WorkerHandle, WorkerRuntime } from './worker-runtime
 
 const log = new Logger('pi-runtime');
 
+/**
+ * Throttle window for the `onAlive` pulse that refreshes a worker's
+ * task lease. Pi emits many events per second on active turns (every
+ * streamed token, every tool status update); firing `onAlive` on each
+ * would drive a DB write per event. 30s is short enough that even a
+ * short lease window gets refreshed several times before it expires,
+ * yet long enough that a chatty turn isn't death-by-a-thousand-writes.
+ */
+const ALIVE_PULSE_THROTTLE_MS = 30_000;
+
+/**
+ * Interval at which pi-runtime fires `onAlive` for every active
+ * worker regardless of event activity. Event-driven refresh alone
+ * is enough for turns with streaming output, but pi's bash tool
+ * (and some custom tools) emit only `tool_execution_start` /
+ * `tool_execution_end` with no intermediate events. A long
+ * build/test run would otherwise go dark for minutes between events
+ * and silently expire the lease. 60s is well under the lease window
+ * (see `LEASE_WINDOW_MS` in agent-worker.ts) so even a missed tick
+ * has margin.
+ */
+const ALIVE_INTERVAL_MS = 60_000;
+
 /** Events from pi-agent-core that the voice fanout bridge understands. */
 const BRIDGE_EVENT_TYPES = new Set<string>([
   'agent_start',
@@ -145,6 +168,21 @@ interface ActiveWorker {
   /** Set by the steer() method before sending a pause; cleared on agent_end. */
   pendingPause: boolean;
   callbacks: WorkerCallbacks;
+  /**
+   * Monotonic ms timestamp of the last `onAlive` fire. Pi emits many
+   * events per second on active turns; we throttle the lease bump so
+   * the DB doesn't eat a write per streamed token. Read-modify-write
+   * is safe because pi's `subscribe` listener runs serially per
+   * session.
+   */
+  lastAliveAt: number;
+  /**
+   * setInterval handle for the defense-in-depth lease refresher.
+   * Keeps lease bumps flowing during long silent tool calls (bash
+   * compiles, test runs) where pi emits no intermediate events.
+   * Cleared in `finalizeWorker` when the worker terminates.
+   */
+  aliveInterval?: ReturnType<typeof setInterval>;
 }
 
 export class PiRuntime implements WorkerRuntime {
@@ -249,6 +287,20 @@ export class PiRuntime implements WorkerRuntime {
     const worker = this.active.get(workerId);
     if (!worker) return;
 
+    // Any event is proof of life — pi wouldn't emit if the session
+    // wasn't doing something. Throttle so a chatty turn doesn't hammer
+    // the DB through the `onAlive` callback the dispatcher uses to
+    // refresh the task lease.
+    const now = Date.now();
+    if (now - worker.lastAliveAt >= ALIVE_PULSE_THROTTLE_MS) {
+      worker.lastAliveAt = now;
+      try {
+        worker.callbacks.onAlive?.();
+      } catch (err) {
+        log.warn('onAlive callback threw', { workerId, err: String(err) });
+      }
+    }
+
     if (event.type === 'agent_start') {
       worker.callbacks.onStatusChange?.('running');
     } else if (event.type === 'agent_end') {
@@ -294,6 +346,15 @@ export class PiRuntime implements WorkerRuntime {
       worker.callbacks.onComplete?.(result);
       worker.resolveDone(result);
 
+      // Stop the interval pulse — terminal and idle_partial both mean
+      // "no more pi activity on this worker," so bumping the lease from
+      // here on is wrong (and would hit the dispatcher's terminal-state
+      // guard anyway).
+      if (worker.aliveInterval) {
+        clearInterval(worker.aliveInterval);
+        worker.aliveInterval = undefined;
+      }
+
       // Only evict fully terminal workers from the active map. An
       // idle_partial worker stays in the map so `resume()` can find it
       // by id if the orchestrator chooses to continue without re-
@@ -309,6 +370,29 @@ export class PiRuntime implements WorkerRuntime {
       }
     }
     return result;
+  }
+
+  /**
+   * Start the defense-in-depth interval that refreshes the worker's
+   * lease on a timer, independent of pi's event stream. Pi's bash
+   * tool (and any custom tool that doesn't stream) can go silent for
+   * minutes between `tool_execution_start` and `_end`; without this
+   * pulse the lease would expire and crash-recovery could kill a
+   * perfectly healthy worker that's just waiting on a subprocess.
+   * `unref()` so the timer doesn't keep the process alive on its own.
+   */
+  private startAliveInterval(worker: ActiveWorker): void {
+    worker.aliveInterval = setInterval(() => {
+      try {
+        worker.callbacks.onAlive?.();
+      } catch (err) {
+        log.warn('interval onAlive callback threw', {
+          workerId: worker.workerId,
+          err: String(err),
+        });
+      }
+    }, ALIVE_INTERVAL_MS);
+    worker.aliveInterval.unref?.();
   }
 
   /**
@@ -385,8 +469,10 @@ export class PiRuntime implements WorkerRuntime {
       idleWaiters: [],
       pendingPause: false,
       callbacks,
+      lastAliveAt: 0,
     };
     this.active.set(workerId, worker);
+    this.startAliveInterval(worker);
 
     // Fire the session.prompt call WITHOUT awaiting. When it resolves we
     // finalize the worker. Errors are caught and surfaced via `failed`.
@@ -440,8 +526,10 @@ export class PiRuntime implements WorkerRuntime {
       idleWaiters: [],
       pendingPause: false,
       callbacks,
+      lastAliveAt: 0,
     };
     this.active.set(workerId, worker);
+    this.startAliveInterval(worker);
 
     // Resume is a fresh prompt (NOT a steer) on an idle session —
     // verified empirically in Spike #4c / #4e.

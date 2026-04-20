@@ -9,7 +9,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite/vector';
 import { runMigrations } from '../stores/migrations.js';
 import { createWorkItem, getWorkItem, updateWorkItem } from '../stores/work-item-queries.js';
-import { insertComment, listComments } from '../stores/task-comment-queries.js';
+import { insertComment } from '../stores/task-comment-queries.js';
 import { applyTaskUpdate, InvalidUpdateError, resolveTask } from './task-update-handler.js';
 import type { DataStore, WorkItemEntry } from '@neura/types';
 
@@ -219,7 +219,7 @@ describe('applyTaskUpdate — author-spoofing guard', () => {
     ).rejects.toThrow(/cannot author/);
   });
 
-  it('worker can author clarification_request (part of 6-verb protocol)', async () => {
+  it('worker can author clarification_request (part of the worker protocol)', async () => {
     const task = await makeTask({ status: 'in_progress', workerId: 'w-1' });
     const result = await applyTaskUpdate({
       db,
@@ -348,80 +348,5 @@ describe('resolveTask', () => {
     } as unknown as DataStore;
     const found = await resolveTask(fakeStore, 'phase 6b');
     expect(found?.id).toBe(task.id);
-  });
-});
-
-describe('applyTaskUpdate — heartbeat pruning', () => {
-  it('prunes prior heartbeats from the same worker when a non-heartbeat comment lands', async () => {
-    const task = await makeTask({ status: 'in_progress', workerId: 'worker-1' });
-    const actor = 'worker:worker-1';
-    // Build up noisy heartbeat history.
-    for (let i = 0; i < 5; i++) {
-      await insertComment(db, {
-        taskId: task.id,
-        type: 'heartbeat',
-        author: actor,
-        content: `alive ${i}`,
-      });
-    }
-    let hb = await listComments(db, { taskId: task.id, type: 'heartbeat' });
-    expect(hb).toHaveLength(5);
-
-    // A progress comment should trigger the prune.
-    const current = await getWorkItem(db, task.id);
-    if (!current) throw new Error('task vanished');
-    await applyTaskUpdate({
-      db,
-      task: current,
-      payload: { comment: { type: 'progress', content: 'wrote file' } },
-      actor,
-    });
-
-    hb = await listComments(db, { taskId: task.id, type: 'heartbeat' });
-    expect(hb).toHaveLength(0);
-    const progress = await listComments(db, { taskId: task.id, type: 'progress' });
-    expect(progress).toHaveLength(1);
-  });
-
-  it('does not prune when the new comment is itself a heartbeat', async () => {
-    const task = await makeTask({ status: 'in_progress', workerId: 'worker-1' });
-    const actor = 'worker:worker-1';
-    await insertComment(db, {
-      taskId: task.id,
-      type: 'heartbeat',
-      author: actor,
-      content: 'alive 1',
-    });
-    const current = await getWorkItem(db, task.id);
-    if (!current) throw new Error('task vanished');
-    await applyTaskUpdate({
-      db,
-      task: current,
-      payload: { comment: { type: 'heartbeat', content: 'alive 2' } },
-      actor,
-    });
-    const hb = await listComments(db, { taskId: task.id, type: 'heartbeat' });
-    expect(hb).toHaveLength(2);
-  });
-
-  it("does not prune another worker's heartbeats", async () => {
-    const task = await makeTask({ status: 'in_progress', workerId: 'worker-A' });
-    await insertComment(db, {
-      taskId: task.id,
-      type: 'heartbeat',
-      author: 'worker:worker-B',
-      content: 'other worker alive',
-    });
-    const current = await getWorkItem(db, task.id);
-    if (!current) throw new Error('task vanished');
-    await applyTaskUpdate({
-      db,
-      task: current,
-      payload: { comment: { type: 'progress', content: 'hi' } },
-      actor: 'worker:worker-A',
-    });
-    const hb = await listComments(db, { taskId: task.id, type: 'heartbeat' });
-    expect(hb).toHaveLength(1);
-    expect(hb[0].author).toBe('worker:worker-B');
   });
 });

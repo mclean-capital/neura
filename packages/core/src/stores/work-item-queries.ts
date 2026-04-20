@@ -54,6 +54,23 @@ export async function getWorkItem(db: PGlite, id: string): Promise<WorkItemEntry
   return result.rows.length > 0 ? mapWorkItem(result.rows[0]) : null;
 }
 
+/**
+ * Look up the work item currently linked to a worker. Used by
+ * AgentWorker.resume to rebuild its in-memory `workerTaskIds` map
+ * after a core restart — the `dispatchForTask` path sets it directly,
+ * but resume needs to recover the link from the DB.
+ */
+export async function getWorkItemByWorkerId(
+  db: PGlite,
+  workerId: string
+): Promise<WorkItemEntry | null> {
+  const result = await db.query<WorkItemRow>(
+    'SELECT * FROM work_items WHERE worker_id = $1 LIMIT 1',
+    [workerId]
+  );
+  return result.rows.length > 0 ? mapWorkItem(result.rows[0]) : null;
+}
+
 export async function createWorkItem(
   db: PGlite,
   title: string,

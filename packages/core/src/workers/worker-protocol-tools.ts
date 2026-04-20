@@ -1,7 +1,7 @@
 /**
  * Phase 6b — Worker protocol tools.
  *
- * Pi AgentTool adapters for the 6-verb worker communication protocol from
+ * Pi AgentTool adapters for the 5-verb worker communication protocol from
  * docs/phase6b-task-driven-execution.md §Communication Protocol. Each verb
  * is a thin wrapper around `update_task` with a specific payload shape.
  * Workers get both these verbs AND the underlying `update_task` tool; the
@@ -11,7 +11,6 @@
  * | Verb                 | status transition       | comment type            |
  * | -------------------- | ----------------------- | ----------------------- |
  * | report_progress      | —                       | progress                |
- * | heartbeat            | —                       | heartbeat (pruned)      |
  * | request_clarification| → awaiting_clarification| clarification_request   |
  * | request_approval     | → awaiting_approval     | approval_request        |
  * | complete_task        | → done                  | result                  |
@@ -24,8 +23,13 @@
  * truth; the bridge just fans a notification to the live voice session so
  * responses have zero artificial delay.
  *
- * Non-blocking verbs (progress, heartbeat, complete, fail) return
- * immediately after the update_task call.
+ * Non-blocking verbs (progress, complete, fail) return immediately after
+ * the update_task call.
+ *
+ * Liveness: there is no `heartbeat` verb. Pi's event stream is the
+ * liveness signal — every tool call, turn start/end, and streamed token
+ * drives an `onAlive` pulse in the runtime that bumps the task lease.
+ * The model doesn't need to remember to ping.
  */
 
 import { Type, type Static } from '@sinclair/typebox';
@@ -39,23 +43,12 @@ import { applyTaskUpdate } from '../tools/task-update-handler.js';
 
 const log = new Logger('worker-protocol-tools');
 
-/** Default lease refresh window applied by every heartbeat. */
-const LEASE_WINDOW_MS = 5 * 60_000;
-
 // ────────────────────────────────────────────────────────────────────
 // Parameter schemas
 // ────────────────────────────────────────────────────────────────────
 
 const ReportProgressParams = Type.Object({
   message: Type.String({ description: 'Short status update the user may hear read aloud.' }),
-});
-
-const HeartbeatParams = Type.Object({
-  note: Type.Optional(
-    Type.String({
-      description: 'Optional short note. Heartbeats are pruned after your next real comment.',
-    })
-  ),
 });
 
 const RequestClarificationParams = Type.Object({
@@ -217,29 +210,6 @@ export function buildWorkerProtocolTools(options: WorkerProtocolToolsOptions): N
         taskId,
         workerId,
         commentId: result.comment?.id,
-      });
-    },
-  });
-
-  // ── heartbeat ──────────────────────────────────────────────────
-  tools.push({
-    name: 'heartbeat',
-    label: 'Heartbeat',
-    description:
-      "Signal that you're still alive on a long-running task. Refreshes the worker's lease. Emit at least every 2 minutes when you expect to run long so the orchestrator doesn't treat you as crashed.",
-    parameters: HeartbeatParams,
-    execute: async (_toolCallId, rawParams) => {
-      const params = rawParams as Static<typeof HeartbeatParams>;
-      const newLease = new Date(Date.now() + LEASE_WINDOW_MS).toISOString();
-      const result = await taskTools.updateTask(taskId, {
-        comment: { type: 'heartbeat', content: params.note ?? 'still working' },
-        fields: { leaseExpiresAt: newLease },
-      });
-      if (!result) throw new Error(`heartbeat: task ${taskId} not found`);
-      return textResult('Heartbeat recorded.', {
-        taskId,
-        workerId,
-        leaseExpiresAt: newLease,
       });
     },
   });
@@ -411,7 +381,6 @@ export function buildWorkerProtocolTools(options: WorkerProtocolToolsOptions): N
 /** Tool names exposed by {@link buildWorkerProtocolTools}. */
 export const WORKER_PROTOCOL_TOOL_NAMES: readonly string[] = [
   'report_progress',
-  'heartbeat',
   'request_clarification',
   'request_approval',
   'complete_task',

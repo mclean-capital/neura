@@ -130,4 +130,13 @@ export interface WorkerCallbacks {
 
   /** Fired when the worker reaches a terminal status. */
   onComplete?: (result: WorkerResult) => void;
+
+  /**
+   * Liveness pulse — fired (throttled) whenever the runtime sees any
+   * activity from the worker (turn start/end, tool execution, streaming
+   * tokens). The dispatcher uses this to auto-refresh the task's lease
+   * so workers don't need an explicit `heartbeat` tool; any evidence
+   * pi is still doing work counts.
+   */
+  onAlive?: () => void;
 }

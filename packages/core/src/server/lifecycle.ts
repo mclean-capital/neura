@@ -359,7 +359,7 @@ export async function initServices(): Promise<CoreServices> {
       // `applyTaskUpdate` enforces author scoping, cross-task writes, and
       // the transition matrix. Workers can create sub-tasks, read task
       // state, and update their own task (post comments + status
-      // transitions via the 6-verb protocol). Deletion is
+      // transitions via the worker protocol). Deletion is
       // orchestrator-only — stub-refused for workers.
       const buildWorkerTaskTools = (workerId: string): TaskToolHandler => {
         return {
@@ -492,7 +492,7 @@ export async function initServices(): Promise<CoreServices> {
           taskTools: workerTaskTools,
         });
 
-        // Phase 6b — append the 6-verb worker protocol tools when this
+        // Phase 6b — append the worker protocol verb tools when this
         // session has a linked task. Dispatch-for-task always passes
         // taskId; resume after a core restart currently doesn't (Wave 5
         // will thread it through). Without taskId the verb tools can't

@@ -556,6 +556,96 @@ describe('AgentWorker — dispatchForTask (Phase 6b)', () => {
     const row = await getWorkItem(db, taskId);
     expect(row?.status).toBe('done'); // still `done`, not overwritten
   });
+
+  it('refreshes task.leaseExpiresAt when the runtime fires onAlive (no heartbeat needed)', async () => {
+    // The runtime observes pi events (turn_start, tool_execution_*, etc.)
+    // and fires `callbacks.onAlive` throttled. The dispatcher must bump
+    // work_items.leaseExpiresAt in response so crash-recovery knows the
+    // worker is alive — without this the lease could expire during long
+    // tool calls and trip the crash sweep falsely.
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const taskId = await createWorkItem(db, 'Lease refresh', 'medium', {});
+    await worker.dispatchForTask(taskId);
+
+    const before = await getWorkItem(db, taskId);
+    expect(before?.leaseExpiresAt).toBeNull();
+
+    // Fire onAlive as pi would.
+    bundle.dispatched[0].callbacks.onAlive!();
+    await new Promise((r) => setTimeout(r, 30));
+
+    const after = await getWorkItem(db, taskId);
+    expect(after?.leaseExpiresAt).toBeTruthy();
+    expect(Date.parse(after!.leaseExpiresAt!)).toBeGreaterThan(Date.now());
+  });
+
+  it('skips lease refresh on terminal tasks (trailing pi events must not bump done rows)', async () => {
+    // Pi emits agent_end / tool_execution_end after the worker has
+    // already called complete_task. Without the terminal-state guard
+    // those trailing events would rewrite leaseExpiresAt on a `done`
+    // row, inflating version and triggering spurious expect_version
+    // conflicts on the orchestrator's next edit.
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const taskId = await createWorkItem(db, 'Terminal guard', 'medium', {});
+    await worker.dispatchForTask(taskId);
+
+    // Transition the task to `done` via the worker-protocol path.
+    const { updateWorkItem: uwi } = await import('../stores/work-item-queries.js');
+    await uwi(db, taskId, { status: 'done' });
+
+    const before = await getWorkItem(db, taskId);
+    const versionBefore = before!.version;
+    expect(before?.status).toBe('done');
+
+    // A stray onAlive from pi now should be a no-op.
+    bundle.dispatched[0].callbacks.onAlive!();
+    await new Promise((r) => setTimeout(r, 30));
+
+    const after = await getWorkItem(db, taskId);
+    expect(after?.leaseExpiresAt).toBeNull();
+    expect(after?.version).toBe(versionBefore);
+  });
+
+  it('wires onAlive on the resume path so resumed workers still refresh lease', async () => {
+    // Resume is a separate code path from dispatchForTask. Without
+    // explicit wiring, a paused-then-resumed worker would run without
+    // bumping leaseExpiresAt — latent bug that would bite the moment
+    // crash-recovery starts honoring the lease.
+    const bundle = makeMockRuntime();
+    const worker = new AgentWorker({
+      db,
+      runtime: bundle.runtime,
+      worktreeBasePath: worktreeBase,
+    });
+    const taskId = await createWorkItem(db, 'Resume path', 'medium', {});
+    const dispatched = await worker.dispatchForTask(taskId);
+
+    // Simulate pause: session_file is on the worker row after dispatch.
+    await worker.resume(dispatched.workerId, 'continue');
+
+    // Resume uses the most recent dispatch record (the resume mock
+    // fires onComplete immediately, so look at the resume call
+    // directly) — in practice, pi's event stream bumps the lease
+    // through the new wrapped onAlive. Assert by firing onAlive from
+    // the resume wrapper.
+    const resumeRecord = bundle.resumeCalls[0];
+    expect(resumeRecord).toBeTruthy();
+    resumeRecord.callbacks.onAlive!();
+    await new Promise((r) => setTimeout(r, 30));
+
+    const after = await getWorkItem(db, taskId);
+    expect(after?.leaseExpiresAt).toBeTruthy();
+  });
 });
 
 describe('buildCanonicalWorkerPrompt', () => {

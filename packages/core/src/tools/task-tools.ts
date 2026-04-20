@@ -41,9 +41,13 @@ const ALL_STATUSES: WorkItemStatus[] = [
   'failed',
 ];
 
+// 'heartbeat' is deliberately omitted — workers don't emit heartbeats
+// anymore (pi's event stream drives lease refresh in pi-runtime). If
+// a model tries to post one through update_task, the invariant layer's
+// author allow-list rejects it too. The type still exists in
+// TaskCommentType for read-back compatibility with legacy rows.
 const COMMENT_TYPES: TaskCommentType[] = [
   'progress',
-  'heartbeat',
   'clarification_request',
   'approval_request',
   'clarification_response',
@@ -151,7 +155,7 @@ export const taskToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'update_task',
     description:
-      'Update a task: field changes, status transitions, and/or comment appends (unified with the worker protocol). Workers use this for report_progress / heartbeat / request_clarification / request_approval / complete_task / fail_task. Orchestrator uses it for user responses (clarification_response / approval_response) and field edits.',
+      'Update a task: field changes, status transitions, and/or comment appends (unified with the worker protocol). Workers use this for report_progress / request_clarification / request_approval / complete_task / fail_task. Orchestrator uses it for user responses (clarification_response / approval_response) and field edits.',
     parameters: {
       type: 'object',
       properties: {

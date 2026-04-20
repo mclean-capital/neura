@@ -1,11 +1,12 @@
 /**
- * Tests for the 6-verb worker protocol tools (Phase 6b Pass 3).
+ * Tests for the worker protocol verb tools (Phase 6b).
  *
  * The tools wrap `update_task` through the per-worker TaskToolHandler, so
  * invariants (transition matrix, cross-task writes, completion gate) are
  * exercised via the handler. Here we pin the parameter translation:
- * report_progress posts the right comment type, heartbeat refreshes
- * lease_expires_at, complete_task targets status=done, etc.
+ * report_progress posts the right comment type, complete_task targets
+ * status=done, etc. The `heartbeat` verb was removed — liveness is now
+ * driven by pi's event stream via `onAlive` callbacks in pi-runtime.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -69,10 +70,9 @@ function firstText(content: { type: string; text?: string }[]): string {
 }
 
 describe('WORKER_PROTOCOL_TOOL_NAMES', () => {
-  it('lists all 6 verbs', () => {
+  it('lists all 5 verbs (heartbeat removed — lease refreshes via pi event stream)', () => {
     expect(WORKER_PROTOCOL_TOOL_NAMES).toEqual([
       'report_progress',
-      'heartbeat',
       'request_clarification',
       'request_approval',
       'complete_task',
@@ -109,26 +109,14 @@ describe('report_progress', () => {
   });
 });
 
-describe('heartbeat', () => {
-  it('refreshes lease_expires_at and posts a heartbeat comment', async () => {
-    const taskId = await seedLinkedTask();
-    const before = await getWorkItem(db, taskId);
-    expect(before?.leaseExpiresAt).toBeNull();
-
-    const tool = findTool(
-      buildWorkerProtocolTools({ workerId: WORKER_ID, taskId, taskTools: buildTaskTools() }),
-      'heartbeat'
-    );
-    const result = await tool.execute('c-1', { note: 'still alive' });
-
-    const after = await getWorkItem(db, taskId);
-    expect(after?.leaseExpiresAt).toBeTruthy();
-
-    const details = result.details as { leaseExpiresAt: string };
-    expect(details.leaseExpiresAt).toBeTruthy();
-
-    const comments = await listComments(db, { taskId });
-    expect(comments.find((c) => c.type === 'heartbeat')?.content).toBe('still alive');
+describe('heartbeat removal', () => {
+  it('is no longer exposed as a worker verb', () => {
+    const tools = buildWorkerProtocolTools({
+      workerId: WORKER_ID,
+      taskId: 'task-x',
+      taskTools: buildTaskTools(),
+    });
+    expect(tools.find((t) => t.name === 'heartbeat')).toBeUndefined();
   });
 });
 

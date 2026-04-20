@@ -44,13 +44,22 @@ import {
   updateWorker,
   type WorkerEntry,
 } from '../stores/worker-queries.js';
-import { getWorkItem, updateWorkItem } from '../stores/work-item-queries.js';
+import { getWorkItem, getWorkItemByWorkerId, updateWorkItem } from '../stores/work-item-queries.js';
 import { insertComment } from '../stores/task-comment-queries.js';
 import type { WorkerHandle, WorkerRuntime } from './worker-runtime.js';
 import { WorkerCancellation } from './worker-cancellation.js';
 import { WorktreeManager } from './worktree-manager.js';
 
 const log = new Logger('agent-worker');
+
+/**
+ * Window the runtime bumps `work_items.leaseExpiresAt` to on every
+ * event-stream pulse or interval tick. 15 minutes chosen so a long
+ * bash/test run (which emits zero intermediate events between
+ * `tool_execution_start` and `_end`) still stays inside the lease
+ * while pi-runtime's 60s interval pulse refreshes it regardless.
+ */
+const LEASE_WINDOW_MS = 15 * 60_000;
 
 export interface AgentWorkerOptions {
   db: PGlite;
@@ -73,8 +82,8 @@ export interface AgentWorkerOptions {
 /**
  * Canonical Neura worker system-prompt preamble. Injected ahead of every
  * task-driven dispatch via {@link buildCanonicalWorkerPrompt}. Defines the
- * role, tool posture, the reversibility rule, the 6-verb protocol, and
- * heartbeat cadence — things every worker reads the same way regardless
+ * role, tool posture, the reversibility rule, and the worker verb
+ * protocol — things every worker reads the same way regardless
  * of the specific task.
  *
  * Target length: ~500-700 words. Kept in code (not a skill) because
@@ -106,11 +115,12 @@ Actions inside your worktree (creating new files, editing files you created, run
 Communication protocol — use these tools to report back, not prose:
 
 - \`report_progress(message)\` — brief status updates. Surfaces to the user as ambient voice. Use sparingly: one update per meaningful step, not one per tool call.
-- \`heartbeat(note?)\` — signal you're alive on long tasks. Emit at least every 2 minutes when you expect to run longer than that, or the orchestrator will treat you as crashed.
 - \`request_clarification(question, context?, urgency?)\` — ask the user a blocking question. Returns their answer. Only escalate when you genuinely cannot resolve ambiguity from the task context. Try to answer from context first.
 - \`request_approval(action, rationale?, urgency?)\` — mandatory before destructive actions (see reversibility rule above).
 - \`complete_task(summary)\` — mark the task done. Include a short summary of what you did, keyed to the acceptance criteria. The invariant layer will reject this if any clarification or approval is still unresolved.
 - \`fail_task(reason, reason_code)\` — mark the task failed. Use the right reason_code: \`impossible\` (missing precondition), \`already_done\` (no-op), \`user_aborted\` (user stopped you), \`hard_error\` (exception/timeout).
+
+You do not need to emit keepalives or heartbeats. The runtime observes your activity through the tool-call stream and refreshes your lease automatically.
 
 Escalation discipline: escalate sparingly. The orchestrator is mediating a voice conversation with a human — every clarification interrupts it. Only escalate when:
 - You cannot determine which of several paths the user wants (and context doesn't make it obvious).
@@ -415,7 +425,10 @@ export class AgentWorker {
       throw err;
     }
 
-    // Wrap callbacks so status + results mirror into the workers table.
+    // Wrap callbacks so status + results mirror into the workers table,
+    // and lease deadlines refresh from pi's event stream (throttled in
+    // the runtime). This replaces the explicit `heartbeat` worker tool —
+    // any evidence pi is doing something is proof of life.
     const wrapped: WorkerCallbacks = {
       onStatusChange: (status) => {
         void updateWorker(this.db, workerId, { status }).catch((err: unknown) => {
@@ -424,6 +437,16 @@ export class AgentWorker {
         callbacks.onStatusChange?.(status);
       },
       onProgress: callbacks.onProgress,
+      onAlive: () => {
+        void this.refreshTaskLease(task.id).catch((err: unknown) => {
+          log.warn('failed to refresh task lease', {
+            workerId,
+            taskId: task.id,
+            err: String(err),
+          });
+        });
+        callbacks.onAlive?.();
+      },
       onComplete: (result) => {
         void this.persistTerminalResult(workerId, result).catch((err: unknown) => {
           log.warn('failed to persist terminal result', {
@@ -478,6 +501,17 @@ export class AgentWorker {
       throw new Error(`resume: worker ${workerId} has no session_file`);
     }
 
+    // Recover the worker → task link. `dispatchForTask` seeds the
+    // in-memory `workerTaskIds` map, but a core restart wipes it;
+    // on resume we look up the linked task from the DB so the
+    // onAlive callback can refresh the right lease row. If no task
+    // is linked (legacy pre-6b worker, or the task was deleted),
+    // we skip lease wiring but still resume the session.
+    const linkedTask = await getWorkItemByWorkerId(this.db, workerId);
+    if (linkedTask) {
+      this.workerTaskIds.set(workerId, linkedTask.id);
+    }
+
     const wrapped: WorkerCallbacks = {
       onStatusChange: (status) => {
         void updateWorker(this.db, workerId, { status }).catch((err: unknown) => {
@@ -486,6 +520,18 @@ export class AgentWorker {
         callbacks.onStatusChange?.(status);
       },
       onProgress: callbacks.onProgress,
+      onAlive: linkedTask
+        ? () => {
+            void this.refreshTaskLease(linkedTask.id).catch((err: unknown) => {
+              log.warn('failed to refresh task lease on resume', {
+                workerId,
+                taskId: linkedTask.id,
+                err: String(err),
+              });
+            });
+            callbacks.onAlive?.();
+          }
+        : callbacks.onAlive,
       onComplete: (result) => {
         void this.persistTerminalResult(workerId, result).catch((err: unknown) => {
           log.warn('failed to persist terminal result', {
@@ -606,6 +652,30 @@ export class AgentWorker {
   /** Number of workers currently registered with the cancellation coordinator. */
   get activeCount(): number {
     return this.cancellation.activeCount;
+  }
+
+  /**
+   * Refresh a task's lease. Called from the `onAlive` callback the
+   * runtime fires (throttled) on every pi event. Replaces the explicit
+   * `heartbeat` tool the worker used to emit — pi's event stream is a
+   * stronger signal than a self-reported ping and removes a verb from
+   * the worker protocol prompt.
+   *
+   * Terminal tasks are skipped. Pi emits trailing events (agent_end,
+   * final tool_execution_end) after `complete_task`/`fail_task`; without
+   * this guard the lease bump would rewrite `leaseExpiresAt` on a
+   * `done`/`failed`/`cancelled` row and inflate `version`/`updated_at`,
+   * causing spurious optimistic-lock conflicts for the orchestrator's
+   * next edit.
+   */
+  private async refreshTaskLease(taskId: string): Promise<void> {
+    const task = await getWorkItem(this.db, taskId);
+    if (!task) return;
+    if (task.status === 'done' || task.status === 'failed' || task.status === 'cancelled') {
+      return;
+    }
+    const newLease = new Date(Date.now() + LEASE_WINDOW_MS).toISOString();
+    await updateWorkItem(this.db, taskId, { leaseExpiresAt: newLease });
   }
 
   /**
