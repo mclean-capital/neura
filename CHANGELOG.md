@@ -1,3 +1,9 @@
+## [3.5.1](https://github.com/mclean-capital/neura/compare/v3.5.0...v3.5.1) (2026-04-20)
+
+### Bug Fixes
+
+- **core:** wire Neura provider keys into pi + surface worker errors ([ef48615](https://github.com/mclean-capital/neura/commit/ef48615e1629ae8d78fe3dad5b32b77b2fea5f08))
+
 # [3.5.0](https://github.com/mclean-capital/neura/compare/v3.4.1...v3.5.0) (2026-04-19)
 
 ### Bug Fixes
