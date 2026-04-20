@@ -1,3 +1,9 @@
+## [3.5.4](https://github.com/mclean-capital/neura/compare/v3.5.3...v3.5.4) (2026-04-20)
+
+### Bug Fixes
+
+- **core:** await onAnswer before resolving clarification; guard post-consume abort ([8470ca1](https://github.com/mclean-capital/neura/commit/8470ca13c26923c9cdfc51e64d72034e2ad5af03))
+
 ## [3.5.3](https://github.com/mclean-capital/neura/compare/v3.5.2...v3.5.3) (2026-04-20)
 
 ### Bug Fixes
