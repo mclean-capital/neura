@@ -43,6 +43,7 @@ function buildTaskTools(): TaskToolHandler {
     createTask: () => Promise.reject(new Error('not used')),
     listTasks: () => Promise.reject(new Error('not used')),
     getTask: (id) => getWorkItem(db, id),
+    listTaskComments: (taskId, options) => listComments(db, { taskId, limit: options?.limit }),
     updateTask: async (idOrTitle, payload) => {
       const current = await getWorkItem(db, idOrTitle);
       if (!current) return null;

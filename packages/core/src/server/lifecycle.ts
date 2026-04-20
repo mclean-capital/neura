@@ -35,6 +35,7 @@ import type {
   WorkerDispatchHandler,
 } from '../tools/index.js';
 import { applyTaskUpdate, buildSystemStateHandler } from '../tools/index.js';
+import { listComments } from '../stores/task-comment-queries.js';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
 
@@ -389,6 +390,9 @@ export async function initServices(): Promise<CoreServices> {
             return candidates.slice(0, limit);
           },
           getTask: (idOrTitle) => store.getWorkItem(idOrTitle),
+          listTaskComments: async (taskId, options) => {
+            return listComments(rawDb, { taskId, limit: options?.limit });
+          },
           updateTask: async (idOrTitle, payload) => {
             const current = await store.getWorkItem(idOrTitle);
             if (!current) return null;

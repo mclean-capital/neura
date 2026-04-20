@@ -8,6 +8,7 @@ import { createVisionWatcher } from '../providers/vision-watcher.js';
 import { CostTracker } from '../cost/index.js';
 import type { MemoryToolHandler, TaskToolHandler } from '../tools/index.js';
 import { applyTaskUpdate, resolveTask } from '../tools/task-update-handler.js';
+import { listComments } from '../stores/task-comment-queries.js';
 import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { OnnxWakeDetector } from '../presence/onnx-wake-detector.js';
@@ -283,6 +284,11 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
             return candidates.slice(0, limit);
           },
           getTask: (idOrTitle) => resolveTask(store, idOrTitle),
+          listTaskComments: async (taskId, options) => {
+            const db = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
+            if (!db) throw new Error('store does not expose a raw PGlite handle');
+            return listComments(db, { taskId, limit: options?.limit });
+          },
           updateTask: async (idOrTitle, payload) => {
             const current = await resolveTask(store, idOrTitle);
             if (!current) return null;

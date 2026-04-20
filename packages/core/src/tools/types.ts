@@ -52,6 +52,13 @@ export interface TaskToolHandler {
   }): Promise<WorkItemEntry[]>;
   getTask(idOrTitle: string): Promise<WorkItemEntry | null>;
   /**
+   * List recent comments for a task. Used by `get_task` to surface worker
+   * progress/result/error comments back to the orchestrator. Without
+   * this the orchestrator sees the task row only and can't tell the user
+   * why a task failed or what the worker actually accomplished.
+   */
+  listTaskComments(taskId: string, options?: { limit?: number }): Promise<TaskCommentEntry[]>;
+  /**
    * Update a task. Payload can include field changes, a comment, and/or
    * explicit status transitions. Returns the updated task + the new version
    * number (from the optimistic lock). `null` when the task can't be found.

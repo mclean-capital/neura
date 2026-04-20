@@ -60,7 +60,7 @@ export const taskToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'create_task',
     description:
-      'Create a new task. Use when the user asks you to do something actionable (file operations, research, code changes, reminders). Orchestrator uses create_task to brief a worker BEFORE dispatching — pair with dispatch_worker when the user confirms. Include `goal` whenever possible (what success looks like).',
+      'Create a new task. Use when the user asks you to do something actionable (file operations, research, code changes, reminders). Orchestrator uses create_task to brief a worker BEFORE dispatching — pair with dispatch_worker when the user confirms. Include `goal` whenever possible (what success looks like). The returned `id` is an internal handle for subsequent tool calls — NEVER speak it aloud; refer to the task by its title when talking to the user.',
     parameters: {
       type: 'object',
       properties: {
@@ -217,7 +217,7 @@ export const taskToolDefs: ToolDefinition[] = [
     type: 'function',
     name: 'dispatch_worker',
     description:
-      'Dispatch a worker to execute an existing task. The task must already have a clear goal + context — call create_task first, confirm with the user for non-trivial / destructive work, then dispatch. Returns a worker_id immediately; progress flows via comments on the task.',
+      "Dispatch a worker to execute an existing task. The task must already have a clear goal + context — call create_task first, confirm with the user for non-trivial / destructive work, then dispatch. Progress flows via comments on the task (see get_task). When confirming to the user, speak naturally about the task ('Dispatching the worker now') — do NOT quote task IDs or worker IDs aloud, the TTS reads UUIDs letter by letter and it's jarring.",
     parameters: {
       type: 'object',
       properties: {
@@ -302,7 +302,21 @@ export async function handleTaskTool(
         const query = args.query as string;
         const task = await ctx.taskTools.getTask(query);
         if (!task) return { result: { found: false } };
-        return { result: { found: true, task } };
+        // Include recent comments so the orchestrator can see worker
+        // progress, results, and error details. Without this,
+        // `get_task` returned only the work_items row and the
+        // orchestrator had no way to tell the user why a task failed
+        // or what the worker actually accomplished.
+        let comments: Awaited<ReturnType<typeof ctx.taskTools.listTaskComments>> = [];
+        try {
+          comments = await ctx.taskTools.listTaskComments(task.id, { limit: 50 });
+        } catch (err) {
+          log.warn('failed to load task comments for get_task', {
+            taskId: task.id,
+            err: String(err),
+          });
+        }
+        return { result: { found: true, task, comments } };
       }
 
       case 'update_task': {
@@ -371,14 +385,15 @@ export async function handleTaskTool(
         const taskId = args.task_id as string;
         const outcome = await ctx.workerDispatch.dispatchWorker(taskId);
         if ('error' in outcome) return { error: outcome.error };
-        // workerId is kept in the structured result for subsequent tool
-        // calls (pause/resume/cancel) but deliberately omitted from
-        // `message` — the voice model reads messages aloud verbatim and
-        // a UUID becomes "e three zero three f f b two…" letter by letter.
+        // workerId is deliberately NOT returned. The voice model reads
+        // tool results aloud verbatim, and a UUID comes out as
+        // "e three zero three f f b two…" letter by letter. Worker
+        // control tools (pause/resume/cancel) default to "most recent,"
+        // so the voice flow never needs a workerId. Worker lookups that
+        // genuinely need an id go through list_active_workers.
         return {
           result: {
             dispatched: true,
-            workerId: outcome.workerId,
             message: `Worker dispatched. You'll hear progress updates as it works.`,
           },
         };

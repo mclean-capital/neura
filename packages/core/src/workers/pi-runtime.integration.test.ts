@@ -192,6 +192,7 @@ async function buildHarness(): Promise<Harness> {
           createTask: () => Promise.resolve('task-1'),
           listTasks: () => Promise.resolve([]),
           getTask: () => Promise.resolve(null),
+          listTaskComments: () => Promise.resolve([]),
           updateTask: () => Promise.resolve(null),
           deleteTask: () => Promise.resolve(true),
         },
