@@ -287,7 +287,12 @@ export function attachWebSocket(httpServer: Server, services: CoreServices): Web
           listTaskComments: async (taskId, options) => {
             const db = store.getRawDb?.() as import('@electric-sql/pglite').PGlite | undefined;
             if (!db) throw new Error('store does not expose a raw PGlite handle');
-            return listComments(db, { taskId, limit: options?.limit });
+            return listComments(db, {
+              taskId,
+              limit: options?.limit,
+              order: options?.order,
+              excludeTypes: options?.excludeTypes,
+            });
           },
           updateTask: async (idOrTitle, payload) => {
             const current = await resolveTask(store, idOrTitle);

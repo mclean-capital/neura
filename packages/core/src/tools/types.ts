@@ -57,7 +57,16 @@ export interface TaskToolHandler {
    * this the orchestrator sees the task row only and can't tell the user
    * why a task failed or what the worker actually accomplished.
    */
-  listTaskComments(taskId: string, options?: { limit?: number }): Promise<TaskCommentEntry[]>;
+  listTaskComments(
+    taskId: string,
+    options?: {
+      limit?: number;
+      /** Chronological ('asc') or most-recent-first ('desc'). Default 'asc'. */
+      order?: 'asc' | 'desc';
+      /** Comment types to omit — e.g. `['heartbeat']` for a noise-free summary. */
+      excludeTypes?: TaskCommentType[];
+    }
+  ): Promise<TaskCommentEntry[]>;
   /**
    * Update a task. Payload can include field changes, a comment, and/or
    * explicit status transitions. Returns the updated task + the new version

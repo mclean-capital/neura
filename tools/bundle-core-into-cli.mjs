@@ -50,10 +50,12 @@ const CORE_DIST = join(ROOT, 'packages/core/dist');
 const CORE_DIST_CORE = join(CORE_DIST, 'core');
 const CORE_DIST_STORES = join(CORE_DIST, 'stores');
 const UI_DIST = join(ROOT, 'packages/ui/dist');
+const REPO_SKILLS = join(ROOT, '.neura/skills');
 const CLI_PKG = join(ROOT, 'packages/cli');
 const CLI_CORE = join(CLI_PKG, 'core');
 const CLI_STORES = join(CLI_PKG, 'stores');
 const CLI_UI = join(CLI_PKG, 'ui');
+const CLI_SKILLS = join(CLI_PKG, 'skills');
 
 // Always build core fresh before copying. Under turbo, `^build` already
 // ensures this, but someone running `npm run build -w @mclean-capital/neura`
@@ -111,6 +113,20 @@ if (!existsSync(join(UI_DIST, 'index.html'))) {
 }
 cpSync(UI_DIST, CLI_UI, { recursive: true });
 console.log('Bundled UI → packages/cli/ui');
+
+// Ship the repo's .neura/skills/ directory with the CLI so orchestrator
+// directives (two-step PM pattern, confirmation policy, anti-vocalize
+// rule) reach users who installed via `npm i -g @mclean-capital/neura`
+// without ever cloning the repo. SkillWatcher loads this path as
+// `bundledSkillsDir` at core startup, shadowed by user overrides in
+// `./.neura/skills/` or `~/.neura/skills/`.
+rmSync(CLI_SKILLS, { recursive: true, force: true });
+if (existsSync(REPO_SKILLS)) {
+  cpSync(REPO_SKILLS, CLI_SKILLS, { recursive: true });
+  console.log('Bundled skills → packages/cli/skills');
+} else {
+  console.log('No .neura/skills/ found at repo root — skipping skill bundle');
+}
 
 const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
 console.log(`Bundled core → packages/cli/core + packages/cli/stores (version ${rootPkg.version})`);

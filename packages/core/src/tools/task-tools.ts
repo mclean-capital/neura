@@ -25,6 +25,7 @@ import type {
 } from '@neura/types';
 import { Logger } from '@neura/utils/logger';
 import type { ToolCallContext, UpdateTaskPayload } from './types.js';
+import { redactCommentForVoice, redactTaskForVoice } from './voice-redact.js';
 
 const log = new Logger('tool:task');
 
@@ -291,7 +292,12 @@ export async function handleTaskTool(
               goal: t.goal,
               source: t.source,
               version: t.version,
-              workerId: t.workerId,
+              // workerId deliberately omitted from the voice-facing
+              // listing — TTS reads UUIDs letter-by-letter. Callers
+              // that need the worker id should go through
+              // list_active_workers (which runs internal tool calls
+              // that don't narrate).
+              hasActiveWorker: t.workerId !== null,
             })),
           },
         };
@@ -303,20 +309,36 @@ export async function handleTaskTool(
         const task = await ctx.taskTools.getTask(query);
         if (!task) return { result: { found: false } };
         // Include recent comments so the orchestrator can see worker
-        // progress, results, and error details. Without this,
-        // `get_task` returned only the work_items row and the
-        // orchestrator had no way to tell the user why a task failed
-        // or what the worker actually accomplished.
+        // progress, results, and error details.
+        //
+        // Ordering matters: listComments naively returns the OLDEST
+        // rows under LIMIT. For a long-running task with many
+        // progress/heartbeat entries that would truncate the final
+        // result/error — the very thing the caller asked about. So
+        // we fetch most-recent-first, exclude heartbeats (high noise,
+        // low information), then reverse to chronological order for
+        // natural narration.
         let comments: Awaited<ReturnType<typeof ctx.taskTools.listTaskComments>> = [];
         try {
-          comments = await ctx.taskTools.listTaskComments(task.id, { limit: 50 });
+          const recentDesc = await ctx.taskTools.listTaskComments(task.id, {
+            limit: 50,
+            order: 'desc',
+            excludeTypes: ['heartbeat'],
+          });
+          comments = recentDesc.reverse();
         } catch (err) {
-          log.warn('failed to load task comments for get_task', {
+          log.error('failed to load task comments for get_task', {
             taskId: task.id,
             err: String(err),
           });
         }
-        return { result: { found: true, task, comments } };
+        return {
+          result: {
+            found: true,
+            task: redactTaskForVoice(task),
+            comments: comments.map(redactCommentForVoice),
+          },
+        };
       }
 
       case 'update_task': {

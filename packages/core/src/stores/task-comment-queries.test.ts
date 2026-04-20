@@ -211,6 +211,59 @@ describe('task-comment-queries', () => {
       expect(limited).toHaveLength(3);
     });
 
+    it('order: desc returns newest first (needed so limit keeps the latest comments)', async () => {
+      for (let i = 0; i < 5; i++) {
+        await insertComment(db, {
+          taskId,
+          type: 'progress',
+          author: 'worker:1',
+          content: `msg ${i}`,
+        });
+        // Space out insert times so created_at differs deterministically.
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      const desc = await listComments(db, { taskId, order: 'desc', limit: 3 });
+      expect(desc.map((c) => c.content)).toEqual(['msg 4', 'msg 3', 'msg 2']);
+    });
+
+    it('excludeTypes drops matching rows', async () => {
+      await insertComment(db, {
+        taskId,
+        type: 'progress',
+        author: 'worker:1',
+        content: 'real work',
+      });
+      await insertComment(db, {
+        taskId,
+        type: 'heartbeat',
+        author: 'worker:1',
+        content: 'still alive',
+      });
+      await insertComment(db, {
+        taskId,
+        type: 'result',
+        author: 'worker:1',
+        content: 'done',
+      });
+      const filtered = await listComments(db, { taskId, excludeTypes: ['heartbeat'] });
+      expect(filtered.map((c) => c.type).sort()).toEqual(['progress', 'result']);
+    });
+
+    it('type filter wins over excludeTypes when both are set', async () => {
+      await insertComment(db, {
+        taskId,
+        type: 'heartbeat',
+        author: 'worker:1',
+        content: 'alive',
+      });
+      const filtered = await listComments(db, {
+        taskId,
+        type: 'heartbeat',
+        excludeTypes: ['heartbeat'],
+      });
+      expect(filtered).toHaveLength(1);
+    });
+
     it('cascades delete when parent task is deleted', async () => {
       await insertComment(db, {
         taskId,

@@ -45,8 +45,17 @@ export interface LoadNeuraSkillsOptions {
   globalSkillsDir?: string;
 
   /**
+   * Directory of skills shipped with the Neura install. Used by the CLI
+   * to deliver built-in orchestrator skills (e.g. `orchestrator-worker-control`)
+   * that would otherwise miss users who haven't cloned the repo. Loaded
+   * AFTER repo-local and global so a user override wins, but BEFORE
+   * `explicitPaths`.
+   */
+  bundledSkillsDir?: string;
+
+  /**
    * Additional paths passed through to pi's `skillPaths`. Processed after
-   * repo-local and global, so they occupy the lowest-priority slots.
+   * bundled, so they occupy the lowest-priority slots.
    */
   explicitPaths?: string[];
 }
@@ -83,8 +92,13 @@ export function loadNeuraSkills(options: LoadNeuraSkillsOptions = {}): LoadSkill
   const global = options.globalSkillsDir ?? resolve(homedir(), '.neura', 'skills');
   const explicit = options.explicitPaths ?? [];
 
-  // P4 order: repo-local first (highest), then global, then explicit.
-  const skillPaths = [repoLocal, global, ...explicit];
+  // Priority order: repo-local (highest) → global → bundled → explicit.
+  // Bundled skills ship with the CLI so orchestrator defaults reach
+  // users who never cloned the repo; user overrides at repo-local or
+  // global shadow the bundled copy by skill `name`.
+  const skillPaths = [repoLocal, global];
+  if (options.bundledSkillsDir) skillPaths.push(options.bundledSkillsDir);
+  skillPaths.push(...explicit);
 
   log.info('loading Neura skills (repo-local → global → explicit, pi defaults excluded)', {
     cwd,

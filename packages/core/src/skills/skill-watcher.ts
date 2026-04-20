@@ -32,6 +32,13 @@ export interface SkillWatcherOptions {
   /** Override for the global skill directory. Default: `~/.neura/skills`. */
   globalSkillsDir?: string;
 
+  /**
+   * Directory of skills that ship with the Neura install. Watched (so
+   * dev-mode edits to the shipped skill files reload) and loaded AFTER
+   * repo-local + global, so user overrides win.
+   */
+  bundledSkillsDir?: string;
+
   /** Extra skill paths to watch in addition to the defaults. */
   explicitPaths?: string[];
 
@@ -52,6 +59,7 @@ export class SkillWatcher {
   private readonly registry: SkillRegistry;
   private readonly cwd: string;
   private readonly globalSkillsDir: string;
+  private readonly bundledSkillsDir?: string;
   private readonly explicitPaths: string[];
   private readonly debounceMs: number;
   private readonly onReload?: (info: {
@@ -68,6 +76,7 @@ export class SkillWatcher {
     this.registry = options.registry;
     this.cwd = options.cwd ?? process.cwd();
     this.globalSkillsDir = options.globalSkillsDir ?? resolve(homedir(), '.neura', 'skills');
+    this.bundledSkillsDir = options.bundledSkillsDir;
     this.explicitPaths = options.explicitPaths ?? [];
     this.debounceMs = options.debounceMs ?? 200;
     this.onReload = options.onReload;
@@ -85,7 +94,9 @@ export class SkillWatcher {
     this.reload();
 
     const repoLocal = resolve(this.cwd, '.neura', 'skills');
-    const paths = [repoLocal, this.globalSkillsDir, ...this.explicitPaths];
+    const paths = [repoLocal, this.globalSkillsDir];
+    if (this.bundledSkillsDir) paths.push(this.bundledSkillsDir);
+    paths.push(...this.explicitPaths);
 
     log.info('starting skill watcher', { paths, debounceMs: this.debounceMs });
 
@@ -169,6 +180,7 @@ export class SkillWatcher {
       const result = loadNeuraSkills({
         cwd: this.cwd,
         globalSkillsDir: this.globalSkillsDir,
+        bundledSkillsDir: this.bundledSkillsDir,
         explicitPaths: this.explicitPaths,
       });
       this.registry.replaceAll(result.skills);

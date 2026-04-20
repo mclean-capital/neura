@@ -99,27 +99,49 @@ export async function handleWorkerControlTool(
   if (!WORKER_CONTROL_NAMES.has(name)) return null;
   if (!ctx.workerControl) return { error: 'Worker control not available' };
 
+  // Voice-facing results strip workerId so the TTS doesn't narrate
+  // UUIDs letter-by-letter. Internal operations already have the id
+  // (the control handlers resolve "most recent" when worker_id is
+  // omitted, which is the typical voice path).
   try {
     switch (name) {
       case 'pause_worker': {
         const workerId = args.worker_id as string | undefined;
         const result = await ctx.workerControl.pauseWorker(workerId);
-        return { result };
+        return {
+          result: { paused: result.paused, ...(result.reason ? { reason: result.reason } : {}) },
+        };
       }
       case 'resume_worker': {
         const workerId = args.worker_id as string | undefined;
         const message = args.message as string | undefined;
         const result = await ctx.workerControl.resumeWorker(workerId, message);
-        return { result };
+        return {
+          result: { resumed: result.resumed, ...(result.reason ? { reason: result.reason } : {}) },
+        };
       }
       case 'cancel_worker': {
         const workerId = args.worker_id as string | undefined;
         const result = await ctx.workerControl.cancelWorker(workerId);
-        return { result };
+        return {
+          result: {
+            cancelled: result.cancelled,
+            ...(result.reason ? { reason: result.reason } : {}),
+          },
+        };
       }
       case 'list_active_workers': {
         const workers = await ctx.workerControl.listActive();
-        return { result: { count: workers.length, workers } };
+        return {
+          result: {
+            count: workers.length,
+            workers: workers.map((w) => ({
+              status: w.status,
+              skillName: w.skillName,
+              startedAt: w.startedAt,
+            })),
+          },
+        };
       }
       default:
         return null;

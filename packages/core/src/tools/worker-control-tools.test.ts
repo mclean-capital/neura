@@ -77,8 +77,11 @@ describe('handleWorkerControlTool', () => {
       const ctx = makeCtx({ pauseWorker: pauseMock });
       const result = await handleWorkerControlTool('pause_worker', {}, ctx);
       expect(pauseMock).toHaveBeenCalledWith(undefined);
+      // workerId is deliberately stripped from the voice-facing result
+      // so the TTS doesn't narrate UUIDs. Internal handler still gets
+      // the id via the "most recent" resolution inside pauseWorker.
       expect(result).toEqual({
-        result: { paused: true, workerId: 'wk-42' },
+        result: { paused: true },
       });
     });
 
@@ -120,7 +123,7 @@ describe('handleWorkerControlTool', () => {
   });
 
   describe('list_active_workers', () => {
-    it('returns the list wrapped in count + workers', async () => {
+    it('returns the list wrapped in count + workers, without workerIds', async () => {
       const listMock = vi.fn().mockResolvedValue([
         {
           workerId: 'wk-1',
@@ -131,12 +134,15 @@ describe('handleWorkerControlTool', () => {
       ]);
       const ctx = makeCtx({ listActive: listMock });
       const result = await handleWorkerControlTool('list_active_workers', {}, ctx);
+      // workerId is intentionally omitted from the voice-facing list —
+      // the TTS would otherwise read "w k one" letter by letter.
+      // pause/resume/cancel default to "most recent" so the voice flow
+      // never needs the id.
       expect(result).toEqual({
         result: {
           count: 1,
           workers: [
             {
-              workerId: 'wk-1',
               status: 'running',
               skillName: 'red-test-triage',
               startedAt: '2026-04-11T00:00:00Z',

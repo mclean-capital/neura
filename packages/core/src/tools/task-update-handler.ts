@@ -29,7 +29,11 @@ import type {
   WorkItemEntry,
   WorkItemStatus,
 } from '@neura/types';
-import { insertComment, countOpenRequests } from '../stores/task-comment-queries.js';
+import {
+  insertComment,
+  countOpenRequests,
+  pruneHeartbeats,
+} from '../stores/task-comment-queries.js';
 import {
   getWorkItem,
   updateWorkItem,
@@ -275,6 +279,20 @@ export async function applyTaskUpdate(args: ApplyTaskUpdateArgs): Promise<ApplyT
       urgency: payload.comment.urgency ?? null,
       metadata: payload.comment.metadata ?? null,
     });
+
+    // Heartbeat semantics are "I'm alive" — only the newest one matters
+    // for lease checks. When any non-heartbeat comment from the same
+    // actor lands (progress, result, error, etc.), prior heartbeats are
+    // redundant; prune them so long-running workers don't accumulate
+    // hundreds of rows that crowd out real content in get_task results.
+    if (payload.comment.type !== 'heartbeat' && actor.startsWith('worker:')) {
+      try {
+        await pruneHeartbeats(db, task.id, actor);
+      } catch {
+        // Best-effort cleanup — pruning is advisory. If it fails,
+        // the heartbeats stay in place but the new comment still landed.
+      }
+    }
   }
 
   // Refresh the task row for the caller. `updateWorkItem` already bumped

@@ -76,8 +76,21 @@ export async function insertComment(
 export interface ListCommentsOptions {
   taskId: string;
   type?: TaskCommentType | TaskCommentType[];
+  /**
+   * Exclude these comment types from the result. Complements `type` — when
+   * both are set, `type` wins and `excludeTypes` is ignored. Primary use
+   * case: `get_task` wants recent comments without the heartbeat noise.
+   */
+  excludeTypes?: TaskCommentType[];
   since?: string; // ISO timestamp
   limit?: number;
+  /**
+   * Sort order by `created_at`. Default 'asc' (chronological) for history
+   * displays. Use 'desc' when you want the most recent rows and plan to
+   * apply `limit` — ASC + limit returns the *oldest* rows, which is
+   * rarely what the caller wants for long-running tasks.
+   */
+  order?: 'asc' | 'desc';
 }
 
 export async function listComments(
@@ -85,6 +98,7 @@ export async function listComments(
   opts: ListCommentsOptions
 ): Promise<TaskCommentEntry[]> {
   const limit = opts.limit ?? 500;
+  const order = opts.order ?? 'asc';
   const filters: string[] = ['task_id = $1'];
   const values: unknown[] = [opts.taskId];
   let idx = 2;
@@ -94,6 +108,10 @@ export async function listComments(
     const placeholders = types.map(() => `$${idx++}`).join(', ');
     filters.push(`type IN (${placeholders})`);
     values.push(...types);
+  } else if (opts.excludeTypes && opts.excludeTypes.length > 0) {
+    const placeholders = opts.excludeTypes.map(() => `$${idx++}`).join(', ');
+    filters.push(`type NOT IN (${placeholders})`);
+    values.push(...opts.excludeTypes);
   }
   if (opts.since) {
     filters.push(`created_at > $${idx++}`);
@@ -103,7 +121,7 @@ export async function listComments(
   const result = await db.query<TaskCommentRow>(
     `SELECT * FROM task_comments
      WHERE ${filters.join(' AND ')}
-     ORDER BY created_at ASC
+     ORDER BY created_at ${order === 'desc' ? 'DESC' : 'ASC'}
      LIMIT $${idx}`,
     [...values, limit]
   );

@@ -292,15 +292,29 @@ export async function initServices(): Promise<CoreServices> {
       const sessionDir = defaultSessionDir(agentDir);
       const globalSkillsDir = join(homedir(), '.neura', 'skills');
 
+      // Resolve the skills directory that ships with the install. When
+      // the CLI bundle runs, this file lives at
+      // `<pkg>/core/server.bundled.mjs`, and `tools/bundle-core-into-cli.mjs`
+      // copies `.neura/skills/` to a sibling `<pkg>/skills/`. In dev
+      // (source tree) the path resolves to `packages/core/../../.neura/skills`
+      // which is the repo's own `.neura/skills/` — it's the same as
+      // repo-local but harmless (pi dedupes by skill name).
+      const bundleDir = dirname(fileURLToPath(import.meta.url));
+      const bundledSkillsDir = join(bundleDir, '..', 'skills');
+
       // Skill registry is populated by the watcher's initial load.
       skillRegistry = new SkillRegistry();
       skillWatcher = new SkillWatcher({
         registry: skillRegistry,
         cwd: process.cwd(),
         globalSkillsDir,
+        bundledSkillsDir,
       });
       await skillWatcher.start();
-      log.info('skill registry loaded', { count: skillRegistry.size });
+      log.info('skill registry loaded', {
+        count: skillRegistry.size,
+        bundledSkillsDir,
+      });
 
       // Voice fanout bridge. Interjector is attached per-client via
       // bridge.setInterjector() from websocket.ts on connect/disconnect.
@@ -391,7 +405,12 @@ export async function initServices(): Promise<CoreServices> {
           },
           getTask: (idOrTitle) => store.getWorkItem(idOrTitle),
           listTaskComments: async (taskId, options) => {
-            return listComments(rawDb, { taskId, limit: options?.limit });
+            return listComments(rawDb, {
+              taskId,
+              limit: options?.limit,
+              order: options?.order,
+              excludeTypes: options?.excludeTypes,
+            });
           },
           updateTask: async (idOrTitle, payload) => {
             const current = await store.getWorkItem(idOrTitle);
