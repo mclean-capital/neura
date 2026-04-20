@@ -1,3 +1,9 @@
+## [3.5.2](https://github.com/mclean-capital/neura/compare/v3.5.1...v3.5.2) (2026-04-20)
+
+### Bug Fixes
+
+- **core:** surface worker comments in get_task, drop UUID from dispatch_worker ([d296c54](https://github.com/mclean-capital/neura/commit/d296c54617ccd5d63191b21a88784a77ba4572dd))
+
 ## [3.5.1](https://github.com/mclean-capital/neura/compare/v3.5.0...v3.5.1) (2026-04-20)
 
 ### Bug Fixes
